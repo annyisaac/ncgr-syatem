@@ -34,7 +34,12 @@ export default function DeliveriesPage() {
   const [query, setQuery] = useState("");
 
   const myOrders = useMemo(
-    () => (user ? visibleOrders(orders, user).filter((o) => o.status !== "refunded") : []),
+    () =>
+      user
+        ? visibleOrders(orders, user).filter(
+            (o) => o.status !== "refunded" && o.status !== "rejected"
+          )
+        : [],
     [orders, user]
   );
 

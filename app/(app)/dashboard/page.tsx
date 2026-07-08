@@ -174,19 +174,21 @@ function verifiedCollected(orders: Order[]): number {
     0
   );
 }
+const isClosed = (o: Order) => o.status === "refunded" || o.status === "rejected";
+
 function chicksSold(orders: Order[]): number {
-  return orders.filter((o) => o.status !== "refunded").reduce((s, o) => s + o.chicks, 0);
+  return orders.filter((o) => !isClosed(o)).reduce((s, o) => s + o.chicks, 0);
 }
 function outstanding(orders: Order[]): number {
   return orders
-    .filter((o) => o.status !== "refunded")
+    .filter((o) => !isClosed(o))
     .reduce((s, o) => s + Math.max(0, balance(o)), 0);
 }
 
 function chicksPerDate(orders: Order[]) {
   const map = new Map<string, number>();
   for (const o of orders) {
-    if (o.status === "refunded") continue;
+    if (isClosed(o)) continue;
     map.set(o.date, (map.get(o.date) ?? 0) + toDeliver(o));
   }
   return Array.from(map.entries())
@@ -197,7 +199,9 @@ function chicksPerDate(orders: Order[]) {
 function salesPerProduct(orders: Order[]) {
   return PRODUCTS.map((p) => ({
     label: p,
-    value: orders.filter((o) => o.product === p).reduce((s, o) => s + orderTotal(o), 0),
+    value: orders
+      .filter((o) => o.product === p && !isClosed(o))
+      .reduce((s, o) => s + orderTotal(o), 0),
   }));
 }
 
@@ -206,6 +210,7 @@ function statusPie(orders: Order[]) {
     { label: "Pending", value: orders.filter((o) => o.status === "pending").length },
     { label: "Fulfilled", value: orders.filter((o) => o.status === "fulfilled").length },
     { label: "Refunded", value: orders.filter((o) => o.status === "refunded").length },
+    { label: "Rejected", value: orders.filter((o) => o.status === "rejected").length },
   ];
 }
 

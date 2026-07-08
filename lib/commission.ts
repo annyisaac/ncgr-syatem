@@ -22,14 +22,18 @@ export function orderCommission(order: Order): number {
   return commissionChicks(order) * commissionRate(order.product);
 }
 
+function isClosedOrder(order: Order): boolean {
+  return order.status === "refunded" || order.status === "rejected";
+}
+
 /** Advance = fully paid but not yet delivered. */
 export function isAdvanceEligible(order: Order): boolean {
-  return !order.deliverOk && order.status !== "refunded" && isFullyPaid(order);
+  return !order.deliverOk && !isClosedOrder(order) && isFullyPaid(order);
 }
 
 /** An order that counts toward commission (delivered or paid-in-advance). */
 export function isCommissionEligible(order: Order): boolean {
-  if (order.status === "refunded") return false;
+  if (isClosedOrder(order)) return false;
   if (!order.dsrId) return false;
   return order.deliverOk || isFullyPaid(order);
 }

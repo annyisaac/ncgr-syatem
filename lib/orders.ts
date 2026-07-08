@@ -61,8 +61,13 @@ export function canConfirm(order: Order, isAdmin = false): string | null {
   return null;
 }
 
+/** True once an order is closed and can no longer move through the lifecycle. */
+export function isClosed(order: Order): boolean {
+  return order.status === "refunded" || order.status === "rejected";
+}
+
 export function canAddPayment(order: Order): string | null {
-  if (order.status === "refunded") return "Order was refunded.";
+  if (isClosed(order)) return `Order was ${order.status}.`;
   if (isFullyPaid(order) && allVerified(order))
     return "Order is fully paid and fully checked.";
   return null;
@@ -74,7 +79,7 @@ export function canAddPayment(order: Order): string | null {
  */
 export function canFulfill(order: Order): string | null {
   if (order.deliverOk) return "Already delivered.";
-  if (order.status === "refunded") return "Order was refunded.";
+  if (isClosed(order)) return `Order was ${order.status}.`;
   if (!order.confirmedOk) return "Confirm the order first.";
   if (!allVerified(order)) return "Payments are not all checker-verified.";
   if (!isFullyPaid(order)) return "Order is not fully paid.";
@@ -84,8 +89,15 @@ export function canFulfill(order: Order): string | null {
 /** Whether the Admin override "Approve debt" is meaningful for this order. */
 export function canApproveDebt(order: Order): string | null {
   if (order.deliverOk) return "Already delivered.";
-  if (order.status === "refunded") return "Order was refunded.";
+  if (isClosed(order)) return `Order was ${order.status}.`;
   if (isFullyPaid(order)) return "Order is already fully paid.";
+  return null;
+}
+
+/** Reject/cancel a pending order (Admin, Zone Manager, or Ross receiver). */
+export function canReject(order: Order): string | null {
+  if (order.deliverOk) return "Order was already delivered.";
+  if (isClosed(order)) return `Order was already ${order.status}.`;
   return null;
 }
 
@@ -134,6 +146,14 @@ export function refundOrder(order: Order, reason: string, actor: User): Order {
     { ...order, status: "refunded", request: undefined },
     actor,
     `Refunded — ${reason}`
+  );
+}
+
+export function rejectOrder(order: Order, reason: string, actor: User): Order {
+  return withHistory(
+    { ...order, status: "rejected", request: undefined },
+    actor,
+    `Rejected — ${reason}`
   );
 }
 

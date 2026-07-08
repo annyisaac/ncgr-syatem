@@ -33,11 +33,14 @@ import {
   canApproveDebt,
   canConfirm,
   canFulfill,
+  canReject,
   confirmOrder,
   fulfillOrder,
+  isClosed,
   isDebtApproved,
   paymentCheckState,
   refundOrder,
+  rejectOrder,
   reorderPlan,
   withHistory,
 } from "@/lib/orders";
@@ -47,6 +50,7 @@ type ModalState =
   | { type: "reschedule"; order: Order }
   | { type: "edit"; order: Order }
   | { type: "refund"; order: Order }
+  | { type: "reject"; order: Order }
   | { type: "request"; order: Order }
   | { type: "requestDebt"; order: Order }
   | { type: "approveReq"; order: Order }
@@ -97,7 +101,7 @@ function OrdersInner() {
     if (tile === "pending") list = list.filter((o) => o.status === "pending");
     else if (tile === "fulfilled") list = list.filter((o) => o.status === "fulfilled");
     else if (tile === "outstanding")
-      list = list.filter((o) => o.status !== "refunded" && balance(o) > 0);
+      list = list.filter((o) => !isClosed(o) && balance(o) > 0);
     else if (tile === "collected")
       list = list.filter((o) => allVerified(o));
 
@@ -171,7 +175,7 @@ function OrdersInner() {
     if (!canAct) return [];
     const acts: DropdownAction[] = [];
 
-    if (!o.confirmedOk && o.status !== "refunded") {
+    if (!o.confirmedOk && !isClosed(o)) {
       const r = canConfirm(o, isAdmin);
       acts.push({
         label:
@@ -194,7 +198,7 @@ function OrdersInner() {
       });
     }
 
-    if (!o.deliverOk && o.status !== "refunded") {
+    if (!o.deliverOk && !isClosed(o)) {
       const r = canFulfill(o);
       if (r === null) {
         acts.push({ label: "Fulfill (deliver)", onClick: () => doFulfill(o) });
@@ -209,12 +213,24 @@ function OrdersInner() {
       }
     }
 
-    if (!o.deliverOk && o.status !== "refunded") {
+    if (!o.deliverOk && !isClosed(o)) {
       acts.push({ label: "Reschedule", onClick: () => setModal({ type: "reschedule", order: o }) });
       acts.push({ label: "Edit", onClick: () => setModal({ type: "edit", order: o }) });
     }
 
-    if (isAdmin && o.status !== "refunded") {
+    // Reject/cancel a pending order — Admin, Zone Manager, or Ross receiver.
+    {
+      const r = canReject(o);
+      if (r === null) {
+        acts.push({
+          label: "Reject order",
+          danger: true,
+          onClick: () => setModal({ type: "reject", order: o }),
+        });
+      }
+    }
+
+    if (isAdmin && o.status !== "refunded" && o.status !== "rejected") {
       acts.push({
         label: "Refund",
         danger: true,
@@ -222,7 +238,7 @@ function OrdersInner() {
       });
     }
 
-    if (isSales && o.status !== "refunded" && !o.request) {
+    if (isSales && !isClosed(o) && !o.request) {
       acts.push({
         label: "Request refund / compensation",
         onClick: () => setModal({ type: "request", order: o }),
@@ -326,6 +342,7 @@ function OrdersInner() {
                   { value: "pending", label: "Pending" },
                   { value: "fulfilled", label: "Fulfilled" },
                   { value: "refunded", label: "Refunded" },
+                  { value: "rejected", label: "Rejected" },
                 ]}
               />
             </Field>
@@ -394,9 +411,11 @@ function OrdersInner() {
                               ? "fulfilled"
                               : o.status === "refunded"
                                 ? "refunded"
-                                : o.confirmedOk
-                                  ? "gold"
-                                  : "pending"
+                                : o.status === "rejected"
+                                  ? "red"
+                                  : o.confirmedOk
+                                    ? "gold"
+                                    : "pending"
                           }
                         >
                           {o.status === "pending" && !o.confirmedOk
@@ -484,6 +503,20 @@ function OrdersInner() {
           onClose={() => setModal(null)}
           onSave={(reason) => {
             act(refundOrder(modal.order, reason, user), "Order refunded.");
+            setModal(null);
+          }}
+        />
+      )}
+
+      {modal?.type === "reject" && (
+        <ReasonModal
+          title="Reject order"
+          label="Reason for rejecting this order"
+          confirmLabel="Reject order"
+          danger
+          onClose={() => setModal(null)}
+          onSave={(reason) => {
+            act(rejectOrder(modal.order, reason, user), "Order rejected.");
             setModal(null);
           }}
         />

@@ -123,7 +123,7 @@ export default function DSRsPage() {
   const chicksByDsr = useMemo(() => {
     const map = new Map<string, number>();
     for (const o of myOrders) {
-      if (!o.dsrId || o.status === "refunded") continue;
+      if (!o.dsrId || o.status === "refunded" || o.status === "rejected") continue;
       map.set(o.dsrId, (map.get(o.dsrId) ?? 0) + o.chicks);
     }
     return map;

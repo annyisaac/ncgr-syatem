@@ -183,7 +183,9 @@ export default function DSRDetailPage() {
                           ? "fulfilled"
                           : o.status === "refunded"
                             ? "refunded"
-                            : "pending"
+                            : o.status === "rejected"
+                              ? "red"
+                              : "pending"
                       }
                     >
                       {o.status}

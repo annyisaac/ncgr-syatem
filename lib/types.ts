@@ -99,7 +99,7 @@ export interface DSR {
 // Orders & payments
 // ---------------------------------------------------------------------------
 
-export type OrderStatus = "pending" | "fulfilled" | "refunded";
+export type OrderStatus = "pending" | "fulfilled" | "refunded" | "rejected";
 
 export interface Payment {
   amt: number; // amount recorded
