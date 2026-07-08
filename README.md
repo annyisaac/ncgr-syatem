@@ -14,21 +14,33 @@ payment verification, and DSR commissions for two chick products —
 - **recharts** (charts), **xlsx** (Excel), **jspdf** + **jspdf-autotable** (PDF)
 - **react-hook-form** + **zod** (forms & validation)
 
+## Authentication
+
+Login uses **Supabase Auth** (hashed passwords, JWT sessions managed by the
+browser client). Database access **requires authentication** — RLS restricts
+every table to the `authenticated` role, so nobody without a login can read or
+write data. Within the app, who-sees-what is enforced by role
+([`lib/permissions.ts`](lib/permissions.ts)).
+
+- Only the **Admin** creates accounts and resets passwords; that runs through
+  a service-role **edge function** (`supabase/functions/admin-users`) so the
+  service key never reaches the browser.
+- Users change their own password from **My Account**; for non-admins the
+  change goes to the Admin for approval, then is applied in Supabase Auth.
+- Passwords are hashed, so they can't be viewed — only reset.
+
 ## Data & persistence
 
 All persistence lives behind the data-access layer in [`lib/db.ts`](lib/db.ts),
-which is backed by **Supabase (Postgres)** — data is shared live across every
-computer. UI components never talk to Supabase directly; the swap from the
-original localStorage backend required **zero UI changes**.
+backed by **Supabase (Postgres)** — data is shared live across every computer.
+UI components never talk to Supabase directly.
 
 Setup: copy [`.env.example`](.env.example) to `.env` and fill in your Supabase
-project URL + publishable key. The schema (users, dsrs, orders, commissions,
-statements) is created by the migration in the Supabase project; RLS is
-enabled with open policies (no authentication yet — the app is intentionally
-open, with its own role-based login on top).
+project URL + publishable key. Tables (users, dsrs, orders, commissions,
+statements) and RLS policies are created by the project migrations.
 
-The login session stays per-browser (localStorage flag). **Download backup
-(JSON)** on the Admin dashboard still works and is still recommended weekly.
+**Download backup (JSON)** on the Admin dashboard still works and is still
+recommended weekly.
 
 ## Getting started
 
@@ -45,7 +57,7 @@ Open http://localhost:3000.
 ### First login (seeded Admin)
 
 - **Email:** `isaac@ncgrltd.com`
-- **Password:** `ncgr1234`
+- **Password:** `ncgr1234` (change this after first login)
 
 Only the Admin creates additional users. Accounts are never deleted — only
 activated/deactivated.
