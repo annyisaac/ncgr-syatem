@@ -123,6 +123,13 @@ body {
 .data-table tbody tr:nth-child(even) {
   background: var(--color-zebra);
 }
+
+/* The logo is dark artwork; give it a light backing in dark mode so it shows. */
+:root[data-theme="dark"] .brand-logo {
+  background: #f4f1ea;
+  border-radius: 10px;
+  padding: 4px 8px;
+}
 .data-table tbody tr:hover {
   background: var(--color-gold-bg);
 }

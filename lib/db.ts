@@ -130,6 +130,18 @@ export async function saveUsers(users: User[]): Promise<void> {
   return saveCollection("users", "email", users, (u) => u.email);
 }
 
+/** Fast single-user upsert (no full-collection scan). */
+export async function saveUser(user: User): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase()
+    .from("users")
+    .upsert(
+      { email: user.email, data: user, updated_at: new Date().toISOString() },
+      { onConflict: "email" }
+    );
+  if (error) throw new Error(`Could not save user: ${error.message}`);
+}
+
 export async function findUserByEmail(email: string): Promise<User | undefined> {
   if (!inBrowser()) return undefined;
   const { data, error } = await getSupabase()

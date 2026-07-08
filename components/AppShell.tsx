@@ -66,9 +66,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <Image
             src={COMPANY.logoPath}
             alt={`${COMPANY.name} logo`}
-            width={120}
-            height={40}
-            className="h-9 w-auto object-contain"
+            width={150}
+            height={48}
+            className="brand-logo h-12 w-auto object-contain"
             priority
             unoptimized
           />
@@ -136,12 +136,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-screen">
       {/* Top bar (all screen sizes) — the menu stays hidden until opened */}
-      <div className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-line bg-paper px-4">
+      <div className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-line bg-paper px-4">
         <div className="flex items-center gap-3">
           <button
             type="button"
             onClick={() => setDrawer((v) => !v)}
-            className="rounded-md border border-line px-3 py-1.5 text-[0.78rem] font-semibold text-ink transition hover:border-ink"
+            className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
             aria-expanded={drawer}
           >
             Menu
@@ -150,18 +150,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Image
               src={COMPANY.logoPath}
               alt={`${COMPANY.name} logo`}
-              width={100}
-              height={34}
-              className="h-8 w-auto object-contain"
+              width={160}
+              height={56}
+              className="brand-logo h-14 w-auto object-contain"
               unoptimized
             />
           </Link>
         </div>
         <Link href="/profile" className="flex items-center gap-2">
-          <span className="hidden text-[0.78rem] font-semibold text-ink sm:inline">
+          <span className="hidden text-[0.9rem] font-semibold text-ink sm:inline">
             {user.name}
           </span>
-          <Avatar user={user} size={32} />
+          <Avatar user={user} size={40} />
         </Link>
       </div>
 

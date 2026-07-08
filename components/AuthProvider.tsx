@@ -18,41 +18,33 @@ import {
   type ReactNode,
 } from "react";
 import type { DeviceSession, User } from "@/lib/types";
-import { findUserByEmail, getUsers, saveUsers } from "@/lib/db";
+import { findUserByEmail, saveUser } from "@/lib/db";
 import { getSupabase } from "@/lib/supabase";
 import { deviceLabel, getDeviceId } from "@/lib/device";
 
 /**
  * Record this browser as a signed-in / signed-out device on the user's profile
- * so the Admin can see where each account is active.
+ * so the Admin can see where each account is active. Targeted single-row update
+ * (does not touch other users) so it stays fast.
  */
-async function recordDevice(
-  email: string,
-  signedIn: boolean
-): Promise<User | undefined> {
+async function recordDevice(email: string, signedIn: boolean): Promise<void> {
   const now = new Date().toISOString();
   const id = getDeviceId();
-  const users = await getUsers();
-  let updated: User | undefined;
-  const next = users.map((u) => {
-    if (u.email !== email) return u;
-    const devices: DeviceSession[] = (u.devices ?? []).filter((d) => d.id !== id);
-    const existing = (u.devices ?? []).find((d) => d.id === id);
-    devices.push({
-      id,
-      label: deviceLabel(),
-      firstSeen: existing?.firstSeen ?? now,
-      lastSeen: now,
-      signedIn,
-    });
-    updated = { ...u, devices };
-    return updated;
+  const u = await findUserByEmail(email);
+  if (!u) return;
+  const devices: DeviceSession[] = (u.devices ?? []).filter((d) => d.id !== id);
+  const existing = (u.devices ?? []).find((d) => d.id === id);
+  devices.push({
+    id,
+    label: deviceLabel(),
+    firstSeen: existing?.firstSeen ?? now,
+    lastSeen: now,
+    signedIn,
   });
-  await saveUsers(next);
+  await saveUser({ ...u, devices });
   if (typeof window !== "undefined") {
     window.dispatchEvent(new Event("ncgr:db-updated"));
   }
-  return updated;
 }
 
 interface AuthContextValue {
@@ -125,8 +117,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await sb.auth.signOut();
         return { ok: false, error: "This account is deactivated." };
       }
-      const updated = await recordDevice(profile.email, true);
-      setUser(updated ?? profile);
+      setUser(profile);
+      // Record the device in the background so login stays fast.
+      void recordDevice(profile.email, true);
       return { ok: true };
     },
     [loadProfile]

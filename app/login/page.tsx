@@ -45,7 +45,7 @@ export default function LoginPage() {
             alt={`${COMPANY.name} logo`}
             width={200}
             height={72}
-            className="mx-auto h-auto w-[190px] object-contain"
+            className="brand-logo mx-auto h-auto w-[190px] object-contain"
             priority
             unoptimized
           />
