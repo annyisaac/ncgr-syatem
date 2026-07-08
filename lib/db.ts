@@ -1,11 +1,17 @@
 /**
- * Data-access layer.
+ * Data-access layer — Supabase backend.
  *
- * All persistence goes through this module. Today it is backed by the browser's
- * localStorage, but every function is async and typed so the backend can be
- * swapped for Firebase / Postgres / an API without touching any UI code.
+ * All persistence goes through this module. It was previously backed by
+ * localStorage; it now reads/writes Supabase (Postgres) so data is shared
+ * across every computer, while keeping the exact same typed async API — no
+ * UI code changed in the swap.
  *
- * UI code must NEVER read localStorage directly — it calls these functions.
+ * Each collection is a keyed table holding the full entity as jsonb:
+ *   users(email, data) · dsrs(id, data) · orders(id, data)
+ *   commissions(id, data) · statements(id, data)
+ *
+ * The login session stays in localStorage: it is a per-browser flag, not
+ * shared data.
  */
 
 import type {
@@ -17,99 +23,99 @@ import type {
   User,
 } from "./types";
 import { SEED_ADMIN } from "./config";
+import { getSupabase } from "./supabase";
 
-// ---------------------------------------------------------------------------
-// Storage keys & low-level access
-// ---------------------------------------------------------------------------
-
-const KEY = "ncgr.db.v1";
 const SESSION_KEY = "ncgr.session.v1";
 
-function emptyDb(): Database {
-  return {
-    users: [SEED_ADMIN],
-    dsrs: [],
-    orders: [],
-    commissions: [],
-    statements: [],
-  };
+// ---------------------------------------------------------------------------
+// Generic collection helpers
+// ---------------------------------------------------------------------------
+
+const inBrowser = () => typeof window !== "undefined";
+
+async function fetchCollection<T>(table: string): Promise<T[]> {
+  if (!inBrowser()) return [];
+  const { data, error } = await getSupabase()
+    .from(table)
+    .select("data")
+    .order("updated_at", { ascending: true });
+  if (error) throw new Error(`Could not load ${table}: ${error.message}`);
+  return (data ?? []).map((r) => r.data as T);
 }
 
 /**
- * The storage backend. Swapping this object (or its implementation) is the
- * single point of change when moving off localStorage.
+ * Full replace of a collection: upsert every item, then delete rows that are
+ * no longer in the list (e.g. removed bank statements, restored backups).
  */
-interface StorageBackend {
-  read(): Database;
-  write(db: Database): void;
-  readRaw(key: string): string | null;
-  writeRaw(key: string, value: string): void;
-  removeRaw(key: string): void;
-}
+async function saveCollection<T>(
+  table: string,
+  pk: string,
+  items: T[],
+  keyOf: (item: T) => string
+): Promise<void> {
+  if (!inBrowser()) return;
+  const sb = getSupabase();
+  const now = new Date().toISOString();
 
-const localStorageBackend: StorageBackend = {
-  read() {
-    if (typeof window === "undefined") return emptyDb();
-    const raw = window.localStorage.getItem(KEY);
-    if (!raw) {
-      const seeded = emptyDb();
-      window.localStorage.setItem(KEY, JSON.stringify(seeded));
-      return seeded;
-    }
-    try {
-      const parsed = JSON.parse(raw) as Partial<Database>;
-      // Merge with an empty db so missing collections never crash the UI.
-      return { ...emptyDb(), ...parsed } as Database;
-    } catch {
-      return emptyDb();
-    }
-  },
-  write(db) {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(KEY, JSON.stringify(db));
-  },
-  readRaw(key) {
-    if (typeof window === "undefined") return null;
-    return window.localStorage.getItem(key);
-  },
-  writeRaw(key, value) {
-    if (typeof window === "undefined") return;
-    window.localStorage.setItem(key, value);
-  },
-  removeRaw(key) {
-    if (typeof window === "undefined") return;
-    window.localStorage.removeItem(key);
-  },
-};
+  if (items.length > 0) {
+    const rows = items.map((item) => ({
+      [pk]: keyOf(item),
+      data: item,
+      updated_at: now,
+    }));
+    const { error } = await sb.from(table).upsert(rows, { onConflict: pk });
+    if (error) throw new Error(`Could not save ${table}: ${error.message}`);
+  }
 
-const backend: StorageBackend = localStorageBackend;
-
-// Simulate async so the interface already matches a real remote backend.
-function ok<T>(value: T): Promise<T> {
-  return Promise.resolve(value);
+  // Remove rows that are no longer present.
+  const { data: existing, error: readErr } = await sb.from(table).select(pk);
+  if (readErr) throw new Error(`Could not check ${table}: ${readErr.message}`);
+  const keep = new Set(items.map(keyOf));
+  const remove = ((existing ?? []) as unknown as Record<string, string>[])
+    .map((r) => r[pk])
+    .filter((k) => !keep.has(k));
+  if (remove.length > 0) {
+    const { error } = await sb.from(table).delete().in(pk, remove);
+    if (error) throw new Error(`Could not clean ${table}: ${error.message}`);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Whole-database access (used by backup / restore)
+// Whole-database access (used by backup / restore and the DataProvider)
 // ---------------------------------------------------------------------------
 
 export async function getDatabase(): Promise<Database> {
-  return ok(backend.read());
+  const [users, dsrs, orders, commissions, statements] = await Promise.all([
+    fetchCollection<User>("users"),
+    fetchCollection<DSR>("dsrs"),
+    fetchCollection<Order>("orders"),
+    fetchCollection<CommissionRequest>("commissions"),
+    fetchCollection<BankStatement>("statements"),
+  ]);
+  return { users, dsrs, orders, commissions, statements };
 }
 
+/** Replace everything (backup restore). */
 export async function replaceDatabase(db: Database): Promise<void> {
-  backend.write(db);
-  return ok(undefined);
+  await Promise.all([
+    saveUsers(db.users),
+    saveDSRs(db.dsrs),
+    saveOrders(db.orders),
+    saveCommissions(db.commissions),
+    saveStatements(db.statements),
+  ]);
 }
 
 /** Ensure the seed admin exists; called once on app start. */
 export async function ensureSeed(): Promise<void> {
-  const db = backend.read();
-  if (!db.users.some((u) => u.email === SEED_ADMIN.email)) {
-    db.users.push(SEED_ADMIN);
-    backend.write(db);
-  }
-  return ok(undefined);
+  if (!inBrowser()) return;
+  const { error } = await getSupabase()
+    .from("users")
+    .upsert(
+      { email: SEED_ADMIN.email, data: SEED_ADMIN },
+      { onConflict: "email", ignoreDuplicates: true }
+    );
+  if (error) throw new Error(`Could not seed admin: ${error.message}`);
 }
 
 // ---------------------------------------------------------------------------
@@ -117,19 +123,22 @@ export async function ensureSeed(): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function getUsers(): Promise<User[]> {
-  return ok(backend.read().users);
+  return fetchCollection<User>("users");
 }
 
 export async function saveUsers(users: User[]): Promise<void> {
-  const db = backend.read();
-  db.users = users;
-  backend.write(db);
-  return ok(undefined);
+  return saveCollection("users", "email", users, (u) => u.email);
 }
 
 export async function findUserByEmail(email: string): Promise<User | undefined> {
-  const users = backend.read().users;
-  return ok(users.find((u) => u.email.toLowerCase() === email.toLowerCase()));
+  if (!inBrowser()) return undefined;
+  const { data, error } = await getSupabase()
+    .from("users")
+    .select("data")
+    .ilike("email", email)
+    .maybeSingle();
+  if (error) throw new Error(`Could not look up user: ${error.message}`);
+  return (data?.data as User) ?? undefined;
 }
 
 // ---------------------------------------------------------------------------
@@ -137,14 +146,11 @@ export async function findUserByEmail(email: string): Promise<User | undefined> 
 // ---------------------------------------------------------------------------
 
 export async function getDSRs(): Promise<DSR[]> {
-  return ok(backend.read().dsrs);
+  return fetchCollection<DSR>("dsrs");
 }
 
 export async function saveDSRs(dsrs: DSR[]): Promise<void> {
-  const db = backend.read();
-  db.dsrs = dsrs;
-  backend.write(db);
-  return ok(undefined);
+  return saveCollection("dsrs", "id", dsrs, (d) => d.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,14 +158,11 @@ export async function saveDSRs(dsrs: DSR[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function getOrders(): Promise<Order[]> {
-  return ok(backend.read().orders);
+  return fetchCollection<Order>("orders");
 }
 
 export async function saveOrders(orders: Order[]): Promise<void> {
-  const db = backend.read();
-  db.orders = orders;
-  backend.write(db);
-  return ok(undefined);
+  return saveCollection("orders", "id", orders, (o) => o.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -167,16 +170,13 @@ export async function saveOrders(orders: Order[]): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function getCommissions(): Promise<CommissionRequest[]> {
-  return ok(backend.read().commissions);
+  return fetchCollection<CommissionRequest>("commissions");
 }
 
 export async function saveCommissions(
   commissions: CommissionRequest[]
 ): Promise<void> {
-  const db = backend.read();
-  db.commissions = commissions;
-  backend.write(db);
-  return ok(undefined);
+  return saveCollection("commissions", "id", commissions, (c) => c.id);
 }
 
 // ---------------------------------------------------------------------------
@@ -184,32 +184,32 @@ export async function saveCommissions(
 // ---------------------------------------------------------------------------
 
 export async function getStatements(): Promise<BankStatement[]> {
-  return ok(backend.read().statements);
+  return fetchCollection<BankStatement>("statements");
 }
 
 export async function saveStatements(
   statements: BankStatement[]
 ): Promise<void> {
-  const db = backend.read();
-  db.statements = statements;
-  backend.write(db);
-  return ok(undefined);
+  return saveCollection("statements", "id", statements, (s) => s.id);
 }
 
 // ---------------------------------------------------------------------------
-// Session (kept separate from the main db; a flag-based persisted session)
+// Session (per-browser flag; not shared data)
 // ---------------------------------------------------------------------------
 
 export function readSessionEmail(): string | null {
-  return backend.readRaw(SESSION_KEY);
+  if (!inBrowser()) return null;
+  return window.localStorage.getItem(SESSION_KEY);
 }
 
 export function writeSessionEmail(email: string): void {
-  backend.writeRaw(SESSION_KEY, email);
+  if (!inBrowser()) return;
+  window.localStorage.setItem(SESSION_KEY, email);
 }
 
 export function clearSession(): void {
-  backend.removeRaw(SESSION_KEY);
+  if (!inBrowser()) return;
+  window.localStorage.removeItem(SESSION_KEY);
 }
 
 // ---------------------------------------------------------------------------

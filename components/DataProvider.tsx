@@ -1,10 +1,10 @@
 "use client";
 
 /**
- * In-memory mirror of the database, kept in sync with lib/db (localStorage
- * today). All feature pages read from here and mutate through the provided
- * setters, which persist atomically. This keeps every screen consistent and
- * means no UI component ever touches storage directly.
+ * In-memory mirror of the database, kept in sync with lib/db (Supabase).
+ * All feature pages read from here and mutate through the provided setters,
+ * which update the UI immediately (optimistic) and persist the affected
+ * collection. No UI component ever talks to Supabase directly.
  */
 
 import {
@@ -23,7 +23,17 @@ import type {
   Order,
   User,
 } from "@/lib/types";
-import { getDatabase, replaceDatabase, ensureSeed, newId } from "@/lib/db";
+import {
+  ensureSeed,
+  getDatabase,
+  newId,
+  replaceDatabase,
+  saveCommissions,
+  saveDSRs,
+  saveOrders,
+  saveStatements,
+  saveUsers,
+} from "@/lib/db";
 
 interface DataContextValue {
   loading: boolean;
@@ -70,9 +80,13 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    await ensureSeed();
-    const next = await getDatabase();
-    setDb(next);
+    try {
+      await ensureSeed();
+      const next = await getDatabase();
+      setDb(next);
+    } catch (err) {
+      console.error("Failed to load data from Supabase:", err);
+    }
   }, []);
 
   useEffect(() => {
@@ -89,10 +103,18 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("ncgr:db-updated", onUpdate);
   }, [load]);
 
-  const persist = useCallback(async (next: Database) => {
-    setDb(next);
-    await replaceDatabase(next);
-  }, []);
+  /** Optimistic update: reflect in the UI now, persist in the background. */
+  function apply<K extends keyof Database>(
+    key: K,
+    list: Database[K],
+    save: (list: Database[K]) => Promise<void>
+  ): Promise<void> {
+    setDb((prev) => ({ ...prev, [key]: list }));
+    return save(list).catch((err) => {
+      console.error(`Failed to save ${key}:`, err);
+      throw err;
+    });
+  }
 
   const value: DataContextValue = {
     loading,
@@ -104,34 +126,34 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     reload: load,
 
-    setUsers: (users) => persist({ ...db, users }),
+    setUsers: (users) => apply("users", users, saveUsers),
     upsertUser: (user) =>
-      persist({
-        ...db,
-        users: upsert(db.users, user, (u) => u.email === user.email),
-      }),
+      apply("users", upsert(db.users, user, (u) => u.email === user.email), saveUsers),
 
-    setDSRs: (dsrs) => persist({ ...db, dsrs }),
+    setDSRs: (dsrs) => apply("dsrs", dsrs, saveDSRs),
     upsertDSR: (dsr) =>
-      persist({ ...db, dsrs: upsert(db.dsrs, dsr, (d) => d.id === dsr.id) }),
+      apply("dsrs", upsert(db.dsrs, dsr, (d) => d.id === dsr.id), saveDSRs),
 
-    setOrders: (orders) => persist({ ...db, orders }),
+    setOrders: (orders) => apply("orders", orders, saveOrders),
     upsertOrder: (order) =>
-      persist({
-        ...db,
-        orders: upsert(db.orders, order, (o) => o.id === order.id),
-      }),
+      apply("orders", upsert(db.orders, order, (o) => o.id === order.id), saveOrders),
 
-    setCommissions: (commissions) => persist({ ...db, commissions }),
+    setCommissions: (commissions) =>
+      apply("commissions", commissions, saveCommissions),
     upsertCommission: (c) =>
-      persist({
-        ...db,
-        commissions: upsert(db.commissions, c, (x) => x.id === c.id),
-      }),
+      apply(
+        "commissions",
+        upsert(db.commissions, c, (x) => x.id === c.id),
+        saveCommissions
+      ),
 
-    setStatements: (statements) => persist({ ...db, statements }),
+    setStatements: (statements) =>
+      apply("statements", statements, saveStatements),
 
-    replaceAll: (next) => persist(next),
+    replaceAll: async (next) => {
+      setDb(next);
+      await replaceDatabase(next);
+    },
 
     newId,
   };

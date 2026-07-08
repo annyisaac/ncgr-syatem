@@ -16,15 +16,19 @@ payment verification, and DSR commissions for two chick products —
 
 ## Data & persistence
 
-All persistence lives behind the data-access layer in [`lib/db.ts`](lib/db.ts).
-Today it reads/writes the browser's `localStorage`; every function is typed and
-async so the backend can be swapped for Firebase / Postgres **without changing
-any UI code**. UI components never touch `localStorage` directly.
+All persistence lives behind the data-access layer in [`lib/db.ts`](lib/db.ts),
+which is backed by **Supabase (Postgres)** — data is shared live across every
+computer. UI components never talk to Supabase directly; the swap from the
+original localStorage backend required **zero UI changes**.
 
-> **Important:** because storage is per-browser today, each computer holds its
-> own data. Use **Download backup (JSON)** on the Admin dashboard to move or
-> safeguard data (weekly backups recommended). Swapping in a real database via
-> `lib/db.ts` makes all data shared automatically.
+Setup: copy [`.env.example`](.env.example) to `.env` and fill in your Supabase
+project URL + publishable key. The schema (users, dsrs, orders, commissions,
+statements) is created by the migration in the Supabase project; RLS is
+enabled with open policies (no authentication yet — the app is intentionally
+open, with its own role-based login on top).
+
+The login session stays per-browser (localStorage flag). **Download backup
+(JSON)** on the Admin dashboard still works and is still recommended weekly.
 
 ## Getting started
 
@@ -111,16 +115,15 @@ public/
 
 ## Deployment
 
-The app is a standard Next.js build with no required environment variables
-(see [`.env.example`](.env.example) for the future backend config). Any Node
-host works:
+Standard Next.js build. Set the two `NEXT_PUBLIC_SUPABASE_*` environment
+variables (see [`.env.example`](.env.example)) on the host, then:
 
 ```bash
 npm run build && npm run start
 ```
 
-or deploy directly to Vercel/Netlify. Because data is stored in each user's
-browser today, deploying does not migrate data — use backup/restore.
+or deploy to Vercel/Netlify (add the same env vars in the project settings).
+All deployments share the same Supabase data.
 
 ## Domain notes
 
