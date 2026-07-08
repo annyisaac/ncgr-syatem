@@ -218,7 +218,7 @@ function NavLink({
     <Link
       href={href}
       className={cn(
-        "block rounded-lg px-3 py-2 text-[0.84rem] font-semibold transition-colors",
+        "block rounded-lg px-3.5 py-2.5 text-[1.05rem] font-semibold transition-colors",
         active
           ? "bg-gold text-[#231b04]"
           : "text-muted hover:bg-grey-bg hover:text-ink"

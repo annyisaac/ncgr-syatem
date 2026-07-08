@@ -49,9 +49,12 @@ export default function LoginPage() {
             priority
             unoptimized
           />
-          <p className="mb-6 mt-1 text-[0.8rem] text-muted">Sales &amp; Delivery Portal</p>
+          <p className="mb-6 mt-1 text-[1rem] text-muted">Sales &amp; Delivery Portal</p>
 
-          <form onSubmit={onSubmit} className="space-y-4 text-left">
+          <form
+            onSubmit={onSubmit}
+            className="space-y-4 text-left [&_label]:text-[0.82rem] [&_input]:text-[1.05rem] [&_input]:py-3"
+          >
             <Field label="Email" htmlFor="email">
               <Input
                 id="email"
@@ -82,7 +85,12 @@ export default function LoginPage() {
               </p>
             )}
 
-            <Button variant="secondary" type="submit" className="w-full" disabled={submitting}>
+            <Button
+              variant="secondary"
+              type="submit"
+              className="w-full py-3 text-[1.05rem]"
+              disabled={submitting}
+            >
               {submitting ? "Signing in…" : "Sign in"}
             </Button>
           </form>

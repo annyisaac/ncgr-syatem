@@ -18,6 +18,7 @@
   --color-card: #ffffff;
   --color-field: #fcfbf8; /* input background */
   --color-onyx: #1c1a16; /* constant dark surface (table head, dark buttons) */
+  --color-zebra: #faf9f5; /* alternating table row background */
 
   --color-green: #2e7d32;
   --color-green-bg: #e8f3e9;
@@ -60,6 +61,7 @@ body {
   --color-card: #201d18;
   --color-field: #2a2620; /* inputs */
   --color-onyx: #2c2820; /* raised dark chips */
+  --color-zebra: #26221c; /* alternating row background (dark) */
   --color-grey-bg: #2a2620;
   --color-gold-bg: #3a3018;
   --color-green-bg: #17301b;
@@ -119,7 +121,7 @@ body {
 
 /* Data tables: zebra striping + gold hover, applied via .data-table on <table>. */
 .data-table tbody tr:nth-child(even) {
-  background: #faf9f5;
+  background: var(--color-zebra);
 }
 .data-table tbody tr:hover {
   background: var(--color-gold-bg);
