@@ -1,0 +1,377 @@
+/**
+ * Report generation & data portability.
+ *
+ * jspdf / jspdf-autotable / xlsx are browser libraries and are imported
+ * dynamically on the client only.
+ */
+
+import { COMPANY, formatRWF } from "./config";
+import { formatDate, formatDateTime, nowISO } from "./format";
+import {
+  balance,
+  extra2,
+  orderTotal,
+  paidAmount,
+  toDeliver,
+  type Database,
+  type Order,
+} from "./types";
+import type { DSRCommissionRow } from "./commission";
+
+// ---------------------------------------------------------------------------
+// Shared PDF header / footer
+// ---------------------------------------------------------------------------
+
+async function loadLogoDataUrl(): Promise<string | null> {
+  try {
+    const res = await fetch(COMPANY.logoPath);
+    const blob = await res.blob();
+    return await new Promise((resolve) => {
+      const r = new FileReader();
+      r.onload = () => resolve(r.result as string);
+      r.onerror = () => resolve(null);
+      r.readAsDataURL(blob);
+    });
+  } catch {
+    return null;
+  }
+}
+
+const GOLD: [number, number, number] = [212, 160, 23];
+const INK: [number, number, number] = [28, 26, 22];
+
+interface DocBundle {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  doc: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  autoTable: any;
+  startY: number;
+}
+
+async function brandedDoc(title: string, metaLines: string[]): Promise<DocBundle> {
+  const { jsPDF } = await import("jspdf");
+  const autoTable = (await import("jspdf-autotable")).default;
+
+  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const logo = await loadLogoDataUrl();
+  if (logo) {
+    try {
+      doc.addImage(logo, "PNG", 40, 28, 46, 46);
+    } catch {
+      /* ignore image errors */
+    }
+  }
+
+  doc.setTextColor(...INK);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(16);
+  doc.text(COMPANY.name, 98, 44);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  doc.text(COMPANY.address, 98, 58);
+  doc.text(COMPANY.email, 98, 70);
+
+  doc.setFont("helvetica", "italic");
+  doc.setTextColor(...GOLD);
+  doc.setFontSize(10);
+  const pageWidth = doc.internal.pageSize.getWidth();
+  doc.text(COMPANY.tagline, pageWidth - 40, 44, { align: "right" });
+
+  // Gold rule
+  doc.setDrawColor(...GOLD);
+  doc.setLineWidth(2);
+  doc.line(40, 84, pageWidth - 40, 84);
+
+  // Title + metadata
+  doc.setTextColor(...INK);
+  doc.setFont("helvetica", "bold");
+  doc.setFontSize(13);
+  doc.text(title, 40, 104);
+
+  doc.setFont("helvetica", "normal");
+  doc.setFontSize(9);
+  let y = 118;
+  doc.text(`Generated: ${formatDateTime(nowISO())}`, 40, y);
+  for (const line of metaLines) {
+    y += 12;
+    doc.text(line, 40, y);
+  }
+
+  return { doc, autoTable, startY: y + 14 };
+}
+
+function addSignatures(doc: DocBundle["doc"]) {
+  const pageWidth = doc.internal.pageSize.getWidth();
+  const y = doc.lastAutoTable ? doc.lastAutoTable.finalY + 50 : 400;
+  const finalY = Math.min(y, doc.internal.pageSize.getHeight() - 60);
+  doc.setDrawColor(...INK);
+  doc.setLineWidth(0.5);
+  doc.setFontSize(9);
+  doc.setTextColor(...INK);
+
+  doc.line(40, finalY, 220, finalY);
+  doc.text("Prepared by (name & signature)", 40, finalY + 14);
+
+  doc.line(pageWidth - 260, finalY, pageWidth - 40, finalY);
+  doc.text("Operations Manager (name & signature)", pageWidth - 260, finalY + 14);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Delivery & Payment report
+// ---------------------------------------------------------------------------
+
+export async function deliveryPaymentPDF(
+  orders: Order[],
+  dateLabel: string
+): Promise<void> {
+  const { doc, autoTable, startY } = await brandedDoc(
+    "Delivery & Payment Report",
+    [`Delivery date: ${dateLabel}`, `Orders: ${orders.length}`]
+  );
+
+  const body = orders.map((o) => [
+    formatDate(o.date),
+    o.name,
+    o.district,
+    o.sector,
+    o.product,
+    o.chicks,
+    extra2(o),
+    o.comp,
+    toDeliver(o),
+    orderTotal(o),
+    paidAmount(o),
+    balance(o),
+    o.status,
+  ]);
+
+  const sum = (fn: (o: Order) => number) => orders.reduce((s, o) => s + fn(o), 0);
+
+  autoTable(doc, {
+    startY,
+    head: [[
+      "Date", "Client", "District", "Sector", "Product",
+      "Chicks", "2% Extra", "Comp", "To Deliver", "Total", "Paid", "Balance", "Status",
+    ]],
+    body,
+    foot: [[
+      "Totals", "", "", "", "",
+      sum((o) => o.chicks),
+      sum((o) => extra2(o)),
+      sum((o) => o.comp),
+      sum((o) => toDeliver(o)),
+      sum((o) => orderTotal(o)),
+      sum((o) => paidAmount(o)),
+      sum((o) => balance(o)),
+      "",
+    ]],
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  doc.save(`NCGR-Delivery-Payment-${dateLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Orders report (from a dashboard / date filter)
+// ---------------------------------------------------------------------------
+
+export async function ordersPDF(orders: Order[], filterLabel: string): Promise<void> {
+  const { doc, autoTable, startY } = await brandedDoc("Orders Report", [
+    `Filter: ${filterLabel}`,
+    `Orders: ${orders.length}`,
+  ]);
+
+  const body = orders.map((o) => [
+    formatDate(o.date),
+    o.product,
+    o.name,
+    o.phone,
+    o.district,
+    o.dsr ?? "—",
+    o.chicks,
+    orderTotal(o),
+    paidAmount(o),
+    balance(o),
+    o.status,
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [[
+      "Date", "Product", "Client", "Phone", "District", "DSR",
+      "Chicks", "Total", "Paid", "Balance", "Status",
+    ]],
+    body,
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  doc.save(`NCGR-Orders-${filterLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: DSR Commission report
+// ---------------------------------------------------------------------------
+
+export async function commissionPDF(
+  rows: DSRCommissionRow[],
+  rangeLabel: string
+): Promise<void> {
+  const { doc, autoTable, startY } = await brandedDoc("DSR Commission Report", [
+    `Period: ${rangeLabel}`,
+    `DSRs: ${rows.length}`,
+  ]);
+
+  const body = rows.map((r) => [
+    r.dsrName,
+    r.district,
+    r.product,
+    r.chicks,
+    r.amount,
+    r.dueAmount + r.initiatedAmount,
+    r.paidAmount,
+  ]);
+
+  const sum = (fn: (r: DSRCommissionRow) => number) => rows.reduce((s, r) => s + fn(r), 0);
+
+  autoTable(doc, {
+    startY,
+    head: [["DSR", "District", "Product", "Chicks", "Commission", "To Give", "Given"]],
+    body,
+    foot: [[
+      "Totals", "", "",
+      sum((r) => r.chicks),
+      sum((r) => r.amount),
+      sum((r) => r.dueAmount + r.initiatedAmount),
+      sum((r) => r.paidAmount),
+    ]],
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  doc.save(`NCGR-Commission-${rangeLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// Excel export / import of orders
+// ---------------------------------------------------------------------------
+
+function orderToExcelRow(o: Order): Record<string, string | number> {
+  return {
+    ID: o.id,
+    Product: o.product,
+    Province: o.province,
+    District: o.district,
+    Sector: o.sector,
+    DSR: o.dsr ?? "",
+    Client: o.name,
+    Phone: o.phone,
+    Chicks: o.chicks,
+    "2% Extra": extra2(o),
+    Compensated: o.comp,
+    "To Deliver": toDeliver(o),
+    Price: o.price,
+    Total: orderTotal(o),
+    Paid: paidAmount(o),
+    Balance: balance(o),
+    "Delivery Date": o.date,
+    Status: o.status,
+    Zone: o.zone,
+    "Payment Refs": o.payments.map((p) => `${p.ref}:${p.amt}${p.verified ? "(v)" : ""}`).join(" | "),
+    "Created At": o.createdAt,
+    "Created By": o.by,
+    History: o.history.join(" || "),
+  };
+}
+
+export async function exportOrdersExcel(orders: Order[]): Promise<void> {
+  const XLSX = await import("xlsx");
+  const rows = orders.map(orderToExcelRow);
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Orders");
+  XLSX.writeFile(wb, `NCGR-Orders-${nowISO().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * Best-effort import of an orders Excel file previously exported by this app.
+ * Unknown columns are ignored; new orders get fresh audit history.
+ */
+export async function importOrdersExcel(file: File): Promise<Order[]> {
+  const XLSX = await import("xlsx");
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf, { type: "array" });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: "" });
+
+  return raw.map((r, i) => {
+    const num = (k: string) => Number(String(r[k] ?? "0").replace(/[^0-9.-]/g, "")) || 0;
+    const str = (k: string) => String(r[k] ?? "").trim();
+    const chicks = num("Chicks");
+    const paid = num("Paid");
+    const payments =
+      paid > 0
+        ? [{ amt: paid, ref: "IMPORTED", on: nowISO(), by: "import", verified: false }]
+        : [];
+    return {
+      id: str("ID") || `imp_${Date.now()}_${i}`,
+      product: (str("Product") as Order["product"]) || "Ross 308",
+      province: (str("Province") as Order["province"]) || "Eastern",
+      district: str("District"),
+      sector: str("Sector"),
+      dsr: str("DSR") || undefined,
+      name: str("Client"),
+      phone: str("Phone"),
+      chicks,
+      comp: num("Compensated"),
+      price: num("Price"),
+      date: str("Delivery Date") || nowISO().slice(0, 10),
+      status: (str("Status") as Order["status"]) || "pending",
+      by: str("Created By") || "import",
+      zone: (str("Zone") as Order["zone"]) || "Zone 1",
+      created: str("Delivery Date") || nowISO().slice(0, 10),
+      createdAt: str("Created At") || nowISO(),
+      history: [`${nowISO()} — Imported from Excel`],
+      plan: i,
+      payments,
+    } satisfies Order;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Backup / restore (JSON of everything)
+// ---------------------------------------------------------------------------
+
+export function downloadBackup(db: Database): void {
+  const blob = new Blob([JSON.stringify(db, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `NCGR-backup-${nowISO().slice(0, 10)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export async function readBackup(file: File): Promise<Database> {
+  const text = await file.text();
+  const parsed = JSON.parse(text) as Partial<Database>;
+  return {
+    users: parsed.users ?? [],
+    dsrs: parsed.dsrs ?? [],
+    orders: parsed.orders ?? [],
+    commissions: parsed.commissions ?? [],
+    statements: parsed.statements ?? [],
+  };
+}
+
+export { formatRWF };

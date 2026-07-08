@@ -1,0 +1,126 @@
+@import "tailwindcss";
+
+/*
+ * NCGR Ltd design system — ported from the company's original portal.
+ * Tailwind v4 exposes each token below as utilities (bg-gold, text-muted, …).
+ */
+@theme {
+  --color-ink: #1c1a16; /* lettering / dark surfaces */
+  --color-muted: #7c766a; /* secondary text */
+  --color-line: #e7e4dc; /* borders */
+
+  --color-gold: #d4a017; /* brand gold */
+  --color-gold-dark: #a87d0e; /* gold text on light */
+  --color-gold-bg: #fbf3dd; /* gold wash */
+
+  --color-cream: #f6f5f1; /* page background */
+  --color-paper: #ffffff;
+  --color-card: #ffffff;
+  --color-field: #fcfbf8; /* input background */
+  --color-onyx: #1c1a16; /* constant dark surface (table head, dark buttons) */
+
+  --color-green: #2e7d32;
+  --color-green-bg: #e8f3e9;
+  --color-red: #b3261e;
+  --color-red-bg: #fbe9e7;
+  --color-blue: #1565c0;
+  --color-blue-bg: #e7f0fb;
+  --color-amber: #9a7208;
+  --color-amber-bg: #fbf3dd;
+  --color-purple: #6a4fa3;
+  --color-purple-bg: #f0ebfa;
+  --color-grey-bg: #efeeea;
+
+  /* alias kept for existing error/flag text (renders red) */
+  --color-status-refunded: #b3261e;
+
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+
+  --shadow-card: 0 1px 3px rgba(30, 25, 10, 0.05);
+  --shadow-pop: 0 12px 40px rgba(30, 25, 10, 0.14);
+}
+
+html,
+body {
+  height: 100%;
+}
+
+/*
+ * Dark theme. Colors are driven by CSS variables, so overriding the tokens
+ * here recolors the whole app. --color-onyx stays dark in both themes for
+ * surfaces that are meant to read as dark chips (table heads, dark buttons).
+ */
+:root[data-theme="dark"] {
+  --color-ink: #f2eee4; /* primary text becomes light */
+  --color-muted: #a29b8c;
+  --color-line: #38332b;
+  --color-cream: #141310; /* page background */
+  --color-paper: #201d18; /* cards / sidebar */
+  --color-card: #201d18;
+  --color-field: #2a2620; /* inputs */
+  --color-onyx: #2c2820; /* raised dark chips */
+  --color-grey-bg: #2a2620;
+  --color-gold-bg: #3a3018;
+  --color-green-bg: #17301b;
+  --color-red-bg: #3a1e1c;
+  --color-blue-bg: #16273a;
+  --color-amber-bg: #3a3018;
+  --color-purple-bg: #251f36;
+}
+
+/* Scale the whole UI down proportionally (all rem-based sizes shrink with it). */
+html {
+  font-size: 12.5px;
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+  font-family: var(--font-sans), "Segoe UI", Arial, Helvetica, sans-serif;
+}
+
+/* Page heading with a gold accent bar. */
+.section-heading {
+  position: relative;
+  padding-left: 0.7rem;
+  font-weight: 700;
+  color: var(--color-ink);
+}
+.section-heading::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0.12em;
+  bottom: 0.12em;
+  width: 4px;
+  border-radius: 9999px;
+  background: var(--color-gold);
+}
+
+/* Uppercase card title with a small gold square marker. */
+.card-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink);
+}
+.card-title::before {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  background: var(--color-gold);
+}
+
+/* Data tables: zebra striping + gold hover, applied via .data-table on <table>. */
+.data-table tbody tr:nth-child(even) {
+  background: #faf9f5;
+}
+.data-table tbody tr:hover {
+  background: var(--color-gold-bg);
+}
