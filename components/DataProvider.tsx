@@ -24,7 +24,6 @@ import type {
   User,
 } from "@/lib/types";
 import {
-  ensureSeed,
   getDatabase,
   newId,
   replaceDatabase,
@@ -34,6 +33,7 @@ import {
   saveStatements,
   saveUsers,
 } from "@/lib/db";
+import { useAuth } from "./AuthProvider";
 
 interface DataContextValue {
   loading: boolean;
@@ -76,12 +76,12 @@ const EMPTY: Database = {
 };
 
 export function DataProvider({ children }: { children: ReactNode }) {
+  const { user } = useAuth();
   const [db, setDb] = useState<Database>(EMPTY);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     try {
-      await ensureSeed();
       const next = await getDatabase();
       setDb(next);
     } catch (err) {
@@ -89,12 +89,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Data is only readable once authenticated — load when a user is present,
+  // and clear it on sign-out.
   useEffect(() => {
-    (async () => {
-      await load();
+    let active = true;
+    if (!user) {
+      setDb(EMPTY);
       setLoading(false);
+      return;
+    }
+    (async () => {
+      setLoading(true);
+      await load();
+      if (active) setLoading(false);
     })();
-  }, [load]);
+    return () => {
+      active = false;
+    };
+  }, [user, load]);
 
   // Auth writes (device sign-ins) happen outside this provider — stay in sync.
   useEffect(() => {

@@ -1,12 +1,12 @@
 "use client";
 
 /**
- * Client-side auth/session context.
+ * Authentication via Supabase Auth.
  *
- * Authentication is checked against the users table via lib/db. The session is
- * persisted as a flag (the logged-in email) in storage, and the User object is
- * held in memory. This is deliberately isolated so it can move to real auth
- * (e.g. NextAuth / Firebase Auth) without changing consumers.
+ * Login/logout/session are handled by Supabase (hashed passwords, JWT session
+ * persisted by the browser client). The user's profile (role, zone, name,
+ * avatar, devices, pending password request) lives in the public.users table,
+ * loaded after the session is established.
  */
 
 import {
@@ -18,21 +18,13 @@ import {
   type ReactNode,
 } from "react";
 import type { DeviceSession, User } from "@/lib/types";
-import {
-  clearSession,
-  ensureSeed,
-  findUserByEmail,
-  getUsers,
-  readSessionEmail,
-  saveUsers,
-  writeSessionEmail,
-} from "@/lib/db";
+import { findUserByEmail, getUsers, saveUsers } from "@/lib/db";
+import { getSupabase } from "@/lib/supabase";
 import { deviceLabel, getDeviceId } from "@/lib/device";
 
 /**
- * Record this browser as a signed-in (or signed-out) device on the user's
- * account, so the Admin can see where each account is active. Notifies the
- * DataProvider so its in-memory copy stays fresh.
+ * Record this browser as a signed-in / signed-out device on the user's profile
+ * so the Admin can see where each account is active.
  */
 async function recordDevice(
   email: string,
@@ -66,9 +58,12 @@ async function recordDevice(
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<{ ok: boolean; error?: string }>;
-  logout: () => void;
-  /** Re-read the current user from storage (after Admin edits their record). */
+  login: (
+    email: string,
+    password: string
+  ) => Promise<{ ok: boolean; error?: string }>;
+  logout: () => Promise<void>;
+  /** Re-read the current user's profile from storage. */
   refresh: () => Promise<void>;
 }
 
@@ -78,49 +73,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      await ensureSeed();
-      const email = readSessionEmail();
-      if (email) {
-        const u = await findUserByEmail(email);
-        if (!cancelled && u && u.active) setUser(u);
-        else clearSession();
-      }
-      if (!cancelled) setLoading(false);
-    })();
-    return () => {
-      cancelled = true;
-    };
+  const loadProfile = useCallback(async (email: string): Promise<User | null> => {
+    const profile = await findUserByEmail(email);
+    return profile ?? null;
   }, []);
+
+  // Restore an existing session on load, and clear on external sign-out.
+  useEffect(() => {
+    const sb = getSupabase();
+    let active = true;
+    (async () => {
+      const { data } = await sb.auth.getSession();
+      const email = data.session?.user?.email;
+      if (email) {
+        const profile = await loadProfile(email);
+        if (profile && !profile.active) {
+          await sb.auth.signOut();
+          if (active) setUser(null);
+        } else if (active) {
+          setUser(profile);
+        }
+      }
+      if (active) setLoading(false);
+    })();
+
+    const { data: sub } = sb.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") setUser(null);
+    });
+    return () => {
+      active = false;
+      sub.subscription.unsubscribe();
+    };
+  }, [loadProfile]);
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const u = await findUserByEmail(email);
-      if (!u) return { ok: false, error: "No account with that email." };
-      if (!u.active) return { ok: false, error: "This account is deactivated." };
-      if (u.password !== password) return { ok: false, error: "Wrong password." };
-      writeSessionEmail(u.email);
-      const updated = await recordDevice(u.email, true);
-      setUser(updated ?? u);
+      const sb = getSupabase();
+      const { data, error } = await sb.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+      if (error || !data.user?.email) {
+        return { ok: false, error: "Wrong email or password." };
+      }
+      const profile = await loadProfile(data.user.email);
+      if (!profile) {
+        await sb.auth.signOut();
+        return { ok: false, error: "No profile exists for this account." };
+      }
+      if (!profile.active) {
+        await sb.auth.signOut();
+        return { ok: false, error: "This account is deactivated." };
+      }
+      const updated = await recordDevice(profile.email, true);
+      setUser(updated ?? profile);
       return { ok: true };
     },
-    []
+    [loadProfile]
   );
 
-  const logout = useCallback(() => {
-    if (user) void recordDevice(user.email, false);
-    clearSession();
+  const logout = useCallback(async () => {
+    if (user) await recordDevice(user.email, false);
+    await getSupabase().auth.signOut();
     setUser(null);
   }, [user]);
 
   const refresh = useCallback(async () => {
     if (!user) return;
-    const u = await findUserByEmail(user.email);
-    if (u && u.active) setUser(u);
-    else logout();
-  }, [user, logout]);
+    const profile = await loadProfile(user.email);
+    if (profile && profile.active) setUser(profile);
+    else {
+      await getSupabase().auth.signOut();
+      setUser(null);
+    }
+  }, [user, loadProfile]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, logout, refresh }}>

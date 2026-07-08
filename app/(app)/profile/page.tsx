@@ -13,6 +13,7 @@ import { Avatar } from "@/components/ui/Avatar";
 import { GmailLink } from "@/components/ui/GmailLink";
 import { cn } from "@/lib/cn";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
+import { getSupabase } from "@/lib/supabase";
 
 export default function ProfilePage() {
   const { user, refresh } = useAuth();
@@ -58,15 +59,24 @@ export default function ProfilePage() {
   async function changePassword(e: React.FormEvent) {
     e.preventDefault();
     setPwErr(null);
-    if (curPw !== user!.password) return setPwErr("Your current password is incorrect.");
     if (newPw.length < 6) return setPwErr("New password must be at least 6 characters.");
     if (newPw === curPw) return setPwErr("New password must be different.");
+
+    const sb = getSupabase();
+    // Verify the current password by re-authenticating.
+    const { error: verifyErr } = await sb.auth.signInWithPassword({
+      email: user!.email,
+      password: curPw,
+    });
+    if (verifyErr) return setPwErr("Your current password is incorrect.");
+
     if (user!.role === "Admin") {
-      // Admins approve requests themselves, so they change directly.
-      await upsertUser({ ...user!, password: newPw });
+      // Admins approve requests themselves, so they change directly in Auth.
+      const { error } = await sb.auth.updateUser({ password: newPw });
+      if (error) return setPwErr(error.message);
       toast("Password changed.");
     } else {
-      // Everyone else needs Admin approval.
+      // Everyone else needs Admin approval (the new password is held pending).
       await upsertUser({ ...user!, pwRequest: { newPassword: newPw, on: nowISO() } });
       toast("Password change sent to the Admin for approval.");
     }

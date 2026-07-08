@@ -17,10 +17,11 @@ import type { Role, User, Zone } from "@/lib/types";
 import { ROLES } from "@/lib/types";
 import { ZONES } from "@/lib/config";
 import { nowISO, formatDate, formatDateTime } from "@/lib/format";
+import { adminCreateUser, adminSetPassword } from "@/lib/adminApi";
 
 export default function UsersPage() {
   const { user, refresh } = useAuth();
-  const { users, upsertUser } = useData();
+  const { users, upsertUser, reload } = useData();
   const { toast } = useToast();
 
   const [showForm, setShowForm] = useState(false);
@@ -30,10 +31,10 @@ export default function UsersPage() {
   const [zone, setZone] = useState<Zone>("Zone 1");
   const [password, setPassword] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const [resetting, setResetting] = useState<User | null>(null);
   const [devicesFor, setDevicesFor] = useState<User | null>(null);
-  const [shownPw, setShownPw] = useState<Set<string>>(new Set());
 
   const pwRequests = users.filter((u) => u.pwRequest);
 
@@ -45,7 +46,7 @@ export default function UsersPage() {
     );
   }
 
-  function create(e: React.FormEvent) {
+  async function create(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     if (name.trim().length < 2) return setErr("Enter the user's name.");
@@ -54,22 +55,30 @@ export default function UsersPage() {
       return setErr("A user with that email already exists.");
     if (password.length < 6) return setErr("Password must be at least 6 characters.");
 
-    const newUser: User = {
+    const profile: User = {
       name: name.trim(),
       email: email.trim().toLowerCase(),
       role,
       zone: role === "Tetra Zone Manager" ? zone : undefined,
-      password,
+      password: "",
       active: true,
       created: nowISO(),
     };
-    upsertUser(newUser);
-    toast(`Created ${newUser.name}.`);
-    setName("");
-    setEmail("");
-    setPassword("");
-    setRole("Ross Order Receiver");
-    setShowForm(false);
+    setBusy(true);
+    try {
+      await adminCreateUser(profile.email, password, profile);
+      await reload();
+      toast(`Created ${profile.name}.`);
+      setName("");
+      setEmail("");
+      setPassword("");
+      setRole("Ross Order Receiver");
+      setShowForm(false);
+    } catch (e2) {
+      setErr(e2 instanceof Error ? e2.message : "Could not create the account.");
+    } finally {
+      setBusy(false);
+    }
   }
 
   function toggleActive(u: User) {
@@ -82,23 +91,19 @@ export default function UsersPage() {
   }
 
   async function approvePw(u: User) {
-    await upsertUser({ ...u, password: u.pwRequest!.newPassword, pwRequest: undefined });
-    if (u.email === user!.email) await refresh();
-    toast(`Password change approved for ${u.name}.`);
+    try {
+      await adminSetPassword(u.email, u.pwRequest!.newPassword);
+      await upsertUser({ ...u, pwRequest: undefined });
+      if (u.email === user!.email) await refresh();
+      toast(`Password change approved for ${u.name}.`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : "Could not approve.", "error");
+    }
   }
 
   async function rejectPw(u: User) {
     await upsertUser({ ...u, pwRequest: undefined });
     toast(`Password change rejected for ${u.name}.`);
-  }
-
-  function togglePw(email: string) {
-    setShownPw((prev) => {
-      const next = new Set(prev);
-      if (next.has(email)) next.delete(email);
-      else next.add(email);
-      return next;
-    });
   }
 
   return (
@@ -144,7 +149,7 @@ export default function UsersPage() {
             )}
             <div className="sm:col-span-2 flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setShowForm(false)}>Cancel</Button>
-              <Button type="submit">Save user</Button>
+              <Button type="submit" disabled={busy}>{busy ? "Creating…" : "Save user"}</Button>
             </div>
           </form>
         </Card>
@@ -198,7 +203,6 @@ export default function UsersPage() {
               <Th>Email</Th>
               <Th>Role</Th>
               <Th>Zone</Th>
-              <Th>Password</Th>
               <Th>Devices</Th>
               <Th>Created</Th>
               <Th>Status</Th>
@@ -207,7 +211,7 @@ export default function UsersPage() {
           </thead>
           <tbody>
             {users.length === 0 ? (
-              <EmptyRow colSpan={9} text="No users." />
+              <EmptyRow colSpan={8} text="No users." />
             ) : (
               users.map((u) => {
                 const signedIn = (u.devices ?? []).filter((d) => d.signedIn).length;
@@ -217,16 +221,6 @@ export default function UsersPage() {
                     <Td><GmailLink email={u.email} /></Td>
                     <Td>{u.role}</Td>
                     <Td>{u.zone ?? "—"}</Td>
-                    <Td>
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono">
-                          {shownPw.has(u.email) ? u.password : "••••••"}
-                        </span>
-                        <Button size="sm" variant="ghost" onClick={() => togglePw(u.email)}>
-                          {shownPw.has(u.email) ? "Hide" : "Show"}
-                        </Button>
-                      </div>
-                    </Td>
                     <Td>
                       <Button size="sm" variant="ghost" onClick={() => setDevicesFor(u)}>
                         Devices ({signedIn} in)
@@ -266,10 +260,16 @@ export default function UsersPage() {
         <ResetModal
           user={resetting}
           onClose={() => setResetting(null)}
-          onSave={(pwd) => {
-            upsertUser({ ...resetting, password: pwd, pwRequest: undefined });
-            toast(`Password reset for ${resetting.name}.`);
-            setResetting(null);
+          onSave={async (pwd) => {
+            const target = resetting;
+            try {
+              await adminSetPassword(target.email, pwd);
+              if (target.pwRequest) await upsertUser({ ...target, pwRequest: undefined });
+              toast(`Password reset for ${target.name}.`);
+              setResetting(null);
+            } catch (e) {
+              toast(e instanceof Error ? e.message : "Could not reset password.", "error");
+            }
           }}
         />
       )}

@@ -38,8 +38,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setDrawer(false);
   }
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logout();
     router.replace("/login");
   }
   async function handleRefresh() {
