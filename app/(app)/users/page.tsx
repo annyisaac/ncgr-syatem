@@ -34,6 +34,7 @@ export default function UsersPage() {
   const [busy, setBusy] = useState(false);
 
   const [resetting, setResetting] = useState<User | null>(null);
+  const [editing, setEditing] = useState<User | null>(null);
   const [devicesFor, setDevicesFor] = useState<User | null>(null);
 
   const pwRequests = users.filter((u) => u.pwRequest);
@@ -235,7 +236,10 @@ export default function UsersPage() {
                       )}
                     </Td>
                     <Td>
-                      <div className="flex gap-1">
+                      <div className="flex flex-wrap gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => setEditing(u)}>
+                          Reassign / edit
+                        </Button>
                         <Button size="sm" variant="ghost" onClick={() => setResetting(u)}>
                           Reset password
                         </Button>
@@ -269,6 +273,30 @@ export default function UsersPage() {
               setResetting(null);
             } catch (e) {
               toast(e instanceof Error ? e.message : "Could not reset password.", "error");
+            }
+          }}
+        />
+      )}
+
+      {editing && (
+        <EditUserModal
+          user={editing}
+          onClose={() => setEditing(null)}
+          onSave={async ({ name: n, role: r, zone: z, newPassword }) => {
+            const target = editing;
+            try {
+              await upsertUser({
+                ...target,
+                name: n,
+                role: r,
+                zone: r === "Tetra Zone Manager" ? z : undefined,
+              });
+              if (newPassword) await adminSetPassword(target.email, newPassword);
+              if (target.email === user!.email) await refresh();
+              toast(`Account ${target.email} reassigned to ${n}.`);
+              setEditing(null);
+            } catch (e) {
+              toast(e instanceof Error ? e.message : "Could not update the account.", "error");
             }
           }}
         />
@@ -313,6 +341,77 @@ export default function UsersPage() {
         </Modal>
       )}
     </div>
+  );
+}
+
+function EditUserModal({
+  user,
+  onClose,
+  onSave,
+}: {
+  user: User;
+  onClose: () => void;
+  onSave: (v: { name: string; role: Role; zone: Zone; newPassword: string }) => void;
+}) {
+  const [name, setName] = useState(user.name);
+  const [role, setRole] = useState<Role>(user.role);
+  const [zone, setZone] = useState<Zone>(user.zone ?? "Zone 1");
+  const [newPassword, setNewPassword] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title="Reassign / edit account"
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (name.trim().length < 2) return setErr("Enter the person's name.");
+              if (newPassword && newPassword.length < 6)
+                return setErr("New password must be at least 6 characters.");
+              onSave({ name: name.trim(), role, zone, newPassword });
+            }}
+          >
+            Save changes
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="rounded-md bg-gold-bg px-3 py-2 text-xs text-muted">
+          Hand this account to a new worker. The login email{" "}
+          <strong className="text-ink">{user.email}</strong> stays the same, so all
+          its data is kept. Set a new password so the previous worker can no longer
+          sign in.
+        </p>
+        <Field label="Worker name">
+          <Input value={name} onChange={(e) => setName(e.target.value)} />
+        </Field>
+        <Field label="Role">
+          <Select
+            value={role}
+            onChange={(e) => setRole(e.target.value as Role)}
+            options={ROLES.map((r) => ({ value: r, label: r }))}
+          />
+        </Field>
+        {role === "Tetra Zone Manager" && (
+          <Field label="Zone">
+            <Select
+              value={zone}
+              onChange={(e) => setZone(e.target.value as Zone)}
+              options={ZONES.map((z) => ({ value: z, label: z }))}
+            />
+          </Field>
+        )}
+        <Field label="New password" hint="Leave blank to keep the current password.">
+          <Input type="text" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
+        </Field>
+        {err && <p className="text-sm text-status-refunded">{err}</p>}
+      </div>
+    </Modal>
   );
 }
 
