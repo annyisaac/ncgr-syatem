@@ -6,6 +6,7 @@
  */
 
 import type { Order, Role, User } from "./types";
+import { HATCHERY_ORDER_ROLES } from "./types";
 
 // ---------------------------------------------------------------------------
 // Order visibility gate
@@ -25,7 +26,8 @@ export function canSee(order: Order, user: User): boolean {
     case "Ross Payment Checker":
       return order.product === "Ross 308";
     default:
-      return false;
+      // Hatchery coordination/oversight roles see all orders for allocation.
+      return HATCHERY_ORDER_ROLES.includes(user.role);
   }
 }
 
@@ -42,6 +44,15 @@ export interface NavItem {
   href: string;
 }
 
+// Hatchery nav building blocks
+const H_DASH: NavItem = { label: "Hatchery", href: "/hatchery" };
+const H_BATCHES: NavItem = { label: "Batches", href: "/hatchery/batches" };
+const H_MONITOR: NavItem = { label: "Monitoring", href: "/hatchery/monitoring" };
+const H_HEALTH: NavItem = { label: "Health & Vaccination", href: "/hatchery/health" };
+const H_BIO: NavItem = { label: "Biosecurity", href: "/hatchery/biosecurity" };
+const H_MAINT: NavItem = { label: "Maintenance", href: "/hatchery/maintenance" };
+const H_COORD: NavItem = { label: "Coordination", href: "/hatchery/coordination" };
+
 const NAV: Record<Role, NavItem[]> = {
   Admin: [
     { label: "Dashboard", href: "/dashboard" },
@@ -52,6 +63,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Deliveries", href: "/deliveries" },
     { label: "Orders", href: "/orders" },
     { label: "New Order", href: "/orders/new" },
+    H_DASH, H_BATCHES, H_MONITOR, H_HEALTH, H_BIO, H_MAINT, H_COORD,
   ],
   "Tetra Zone Manager": [
     { label: "Dashboard", href: "/dashboard" },
@@ -80,7 +92,46 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Deliveries", href: "/deliveries" },
     { label: "Orders", href: "/orders" },
   ],
+
+  // ---- Hatchery roles ----
+  "Hatchery Manager": [
+    { ...H_DASH, label: "Dashboard" },
+    H_BATCHES, H_MONITOR, H_HEALTH, H_BIO, H_MAINT, H_COORD,
+  ],
+  "Hatchery Operations Manager": [
+    { ...H_DASH, label: "Dashboard" },
+    H_BATCHES, H_MONITOR, H_COORD,
+  ],
+  "Production Technician": [
+    { ...H_DASH, label: "Dashboard" },
+    H_BATCHES,
+  ],
+  "Hatchery Attendant": [
+    { ...H_DASH, label: "Dashboard" },
+    H_MONITOR, H_BIO,
+  ],
+  "Hatchery Veterinary": [
+    { ...H_DASH, label: "Dashboard" },
+    H_HEALTH, H_BIO, H_BATCHES,
+  ],
+  "Maintenance Technician": [
+    { ...H_DASH, label: "Dashboard" },
+    H_MAINT,
+  ],
+  "Hatchery Sales & Coordination Officer": [
+    { ...H_DASH, label: "Dashboard" },
+    H_COORD, H_BATCHES,
+  ],
+  "Operations Manager": [
+    { ...H_DASH, label: "Dashboard" },
+    H_BATCHES, H_MONITOR, H_HEALTH, H_BIO, H_MAINT, H_COORD,
+  ],
 };
+
+/** Landing route after login for a role. */
+export function homeForRole(role: Role): string {
+  return NAV[role]?.[0]?.href ?? "/dashboard";
+}
 
 export function navForRole(role: Role): NavItem[] {
   return NAV[role] ?? [];

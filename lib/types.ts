@@ -33,11 +33,21 @@ export type Zone = "Zone 1" | "Zone 2";
 // ---------------------------------------------------------------------------
 
 export type Role =
+  // Sales & delivery
   | "Admin"
   | "Tetra Zone Manager"
   | "Tetra Payment Checker"
   | "Ross Order Receiver"
-  | "Ross Payment Checker";
+  | "Ross Payment Checker"
+  // Hatchery
+  | "Hatchery Manager"
+  | "Hatchery Operations Manager"
+  | "Production Technician"
+  | "Hatchery Attendant"
+  | "Hatchery Veterinary"
+  | "Maintenance Technician"
+  | "Hatchery Sales & Coordination Officer"
+  | "Operations Manager";
 
 export const ROLES: Role[] = [
   "Admin",
@@ -45,6 +55,37 @@ export const ROLES: Role[] = [
   "Tetra Payment Checker",
   "Ross Order Receiver",
   "Ross Payment Checker",
+  "Hatchery Manager",
+  "Hatchery Operations Manager",
+  "Production Technician",
+  "Hatchery Attendant",
+  "Hatchery Veterinary",
+  "Maintenance Technician",
+  "Hatchery Sales & Coordination Officer",
+  "Operations Manager",
+];
+
+/** Roles that belong to the hatchery department. */
+export const HATCHERY_ROLES: Role[] = [
+  "Hatchery Manager",
+  "Hatchery Operations Manager",
+  "Production Technician",
+  "Hatchery Attendant",
+  "Hatchery Veterinary",
+  "Maintenance Technician",
+  "Hatchery Sales & Coordination Officer",
+  "Operations Manager",
+];
+
+export function isHatcheryRole(role: Role): boolean {
+  return HATCHERY_ROLES.includes(role);
+}
+
+/** Hatchery roles allowed to see & allocate sales orders. */
+export const HATCHERY_ORDER_ROLES: Role[] = [
+  "Hatchery Manager",
+  "Hatchery Sales & Coordination Officer",
+  "Operations Manager",
 ];
 
 /** A browser/device this account has signed in from. */

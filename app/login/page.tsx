@@ -7,6 +7,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Select";
 import { COMPANY } from "@/lib/config";
+import { homeForRole } from "@/lib/permissions";
 
 export default function LoginPage() {
   const { user, loading, login } = useAuth();
@@ -17,9 +18,9 @@ export default function LoginPage() {
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
-  // Already logged in → go to the dashboard.
+  // Already logged in → go to the role's home.
   useEffect(() => {
-    if (!loading && user) router.replace("/dashboard");
+    if (!loading && user) router.replace(homeForRole(user.role));
   }, [loading, user, router]);
 
   async function onSubmit(e: React.FormEvent) {
@@ -32,8 +33,8 @@ export default function LoginPage() {
     setSubmitting(true);
     const res = await login(email.trim(), password);
     setSubmitting(false);
-    if (res.ok) router.replace("/dashboard");
-    else setError(res.error ?? "Login failed.");
+    if (!res.ok) setError(res.error ?? "Login failed.");
+    // On success the effect above redirects to the role's home.
   }
 
   return (
