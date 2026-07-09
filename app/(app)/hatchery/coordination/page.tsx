@@ -60,7 +60,7 @@ export default function CoordinationPage() {
   }, [allocations]);
 
   const batchNo = (id: string) => batches.find((b) => b.id === id)?.batchNo ?? id;
-  const orderName = (id: string) => orders.find((o) => o.id === id)?.name ?? id;
+  const orderName = (id?: string) => (id ? orders.find((o) => o.id === id)?.name ?? id : "—");
 
   if (!user) return null;
 
@@ -105,34 +105,33 @@ export default function CoordinationPage() {
     setAllocStatus(a, "cancelled", "Cancelled allocation");
   }
 
-  function doDispatch(a: Allocation, vehicle: string) {
+  function doDispatch(a: Allocation, pickupLocation: string, carrier: string, carrierType: Dispatch["carrierType"]) {
     const d: Dispatch = {
       id: newId("disp"),
       orderId: a.orderId,
       batchId: a.batchId,
       quantity: a.quantity,
-      vehicle,
+      pickupLocation,
+      carrier,
+      carrierType,
       dispatchedAt: nowISO(),
       by: user!.email,
     };
     upsertDispatch(d);
-    // Move batch to dispatched + mark steps.
+    // Move batch to dispatched + mark the dispatch step.
     const b = batches.find((x) => x.id === a.batchId);
     if (b) {
-      let nb = b;
-      for (const k of ["boxing", "allocation", "dispatch"]) {
-        if (!nb.steps[k]) nb = markStep(nb, k, user!);
-      }
+      const nb = b.steps["dispatch"] ? b : markStep(b, "dispatch", user!);
       upsertBatch({ ...nb, status: "dispatched" });
     }
     // Update the shared sales order's tracking.
     const so = orders.find((o) => o.id === a.orderId);
     if (so) {
       upsertOrder(
-        withHistory(so, user!, `Dispatched from hatchery — batch ${batchNo(a.batchId)}, vehicle ${vehicle}`)
+        withHistory(so, user!, `Dispatched from hatchery — batch ${batchNo(a.batchId)}, ${carrierType} ${carrier} (pickup ${pickupLocation})`)
       );
     }
-    setAllocStatus(a, "approved", `Dispatched (vehicle ${vehicle})`);
+    setAllocStatus(a, "approved", `Dispatched (${carrier})`);
     toast(`Dispatched ${a.quantity} chicks for ${orderName(a.orderId)}.`);
     setDispatchFor(null);
   }
@@ -272,7 +271,8 @@ export default function CoordinationPage() {
               <Th>Client</Th>
               <Th>Batch</Th>
               <Th className="text-right">Qty</Th>
-              <Th>Vehicle</Th>
+              <Th>Pickup</Th>
+              <Th>Carrier</Th>
               <Th>Dispatched</Th>
               <Th>Status</Th>
               <Th>Action</Th>
@@ -280,7 +280,7 @@ export default function CoordinationPage() {
           </thead>
           <tbody>
             {dispatches.length === 0 ? (
-              <EmptyRow colSpan={7} text="No dispatches yet." />
+              <EmptyRow colSpan={8} text="No dispatches yet." />
             ) : (
               dispatches
                 .slice()
@@ -290,7 +290,8 @@ export default function CoordinationPage() {
                     <Td>{orderName(d.orderId)}</Td>
                     <Td>{batchNo(d.batchId)}</Td>
                     <Td className="text-right">{d.quantity.toLocaleString()}</Td>
-                    <Td>{d.vehicle}</Td>
+                    <Td>{d.pickupLocation}</Td>
+                    <Td>{d.carrier} <span className="text-xs text-muted">({d.carrierType})</span></Td>
                     <Td>{formatDate(d.dispatchedAt)}</Td>
                     <Td>
                       {d.deliveredAt ? <Pill tone="fulfilled">Delivered</Pill> : <Pill tone="gold">In transit</Pill>}
@@ -324,7 +325,7 @@ export default function CoordinationPage() {
         <DispatchModal
           allocation={dispatchFor}
           onClose={() => setDispatchFor(null)}
-          onSave={(vehicle) => doDispatch(dispatchFor, vehicle)}
+          onSave={(pickup, carrier, carrierType) => doDispatch(dispatchFor, pickup, carrier, carrierType)}
         />
       )}
     </div>
@@ -398,9 +399,11 @@ function DispatchModal({
 }: {
   allocation: Allocation;
   onClose: () => void;
-  onSave: (vehicle: string) => void;
+  onSave: (pickupLocation: string, carrier: string, carrierType: Dispatch["carrierType"]) => void;
 }) {
-  const [vehicle, setVehicle] = useState("");
+  const [pickup, setPickup] = useState("");
+  const [carrier, setCarrier] = useState("");
+  const [carrierType, setCarrierType] = useState<Dispatch["carrierType"]>("vehicle");
   const [err, setErr] = useState<string | null>(null);
   return (
     <Modal
@@ -410,14 +413,25 @@ function DispatchModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => (vehicle.trim() ? onSave(vehicle.trim()) : setErr("Enter the vehicle."))}>Dispatch</Button>
+          <Button onClick={() => {
+            if (!pickup.trim()) return setErr("Enter the pickup location.");
+            if (!carrier.trim()) return setErr(`Enter the ${carrierType}.`);
+            onSave(pickup.trim(), carrier.trim(), carrierType);
+          }}>Dispatch</Button>
         </>
       }
     >
       <div className="space-y-3 text-sm">
         <p className="text-muted">{allocation.quantity.toLocaleString()} chicks · {allocation.productType}</p>
-        <Field label="Vehicle / driver">
-          <Input value={vehicle} onChange={(e) => setVehicle(e.target.value)} placeholder="e.g. RAD 123 A / John" />
+        <Field label="Pickup location">
+          <Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. Hatchery gate / Kigali depot" />
+        </Field>
+        <Field label="Taken by">
+          <Select value={carrierType} onChange={(e) => setCarrierType(e.target.value as Dispatch["carrierType"])}
+            options={[{ value: "vehicle", label: "Vehicle" }, { value: "person", label: "Person" }]} />
+        </Field>
+        <Field label={carrierType === "vehicle" ? "Vehicle (plate)" : "Person"}>
+          <Input value={carrier} onChange={(e) => setCarrier(e.target.value)} placeholder={carrierType === "vehicle" ? "e.g. RAD 123 A" : "e.g. John Uwera"} />
         </Field>
         {err && <p className="text-status-refunded">{err}</p>}
       </div>

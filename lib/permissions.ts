@@ -45,13 +45,30 @@ export interface NavItem {
 }
 
 // Hatchery nav building blocks
-const H_DASH: NavItem = { label: "Hatchery", href: "/hatchery" };
-const H_BATCHES: NavItem = { label: "Batches", href: "/hatchery/batches" };
-const H_MONITOR: NavItem = { label: "Monitoring", href: "/hatchery/monitoring" };
-const H_HEALTH: NavItem = { label: "Health & Vaccination", href: "/hatchery/health" };
+const H_DASH: NavItem = { label: "Dashboard", href: "/hatchery" };
+const H_RECEPTION: NavItem = { label: "Egg reception", href: "/hatchery/reception" };
+const H_STORE: NavItem = { label: "Store room", href: "/hatchery/storeroom" };
+const H_FUMIGATION: NavItem = { label: "Fumigation", href: "/hatchery/fumigation" };
+const H_MACHINES: NavItem = { label: "Machines", href: "/hatchery/machines" };
+const H_OPERATORS: NavItem = { label: "Hatchery attendants", href: "/hatchery/operators" };
+const H_BATCHES: NavItem = { label: "Batches / setting", href: "/hatchery/batches" };
+const H_CANDLING: NavItem = { label: "Candling", href: "/hatchery/candling" };
+const H_HATCH: NavItem = { label: "Hatch", href: "/hatchery/hatch" };
+const H_COUNTING: NavItem = { label: "Counting", href: "/hatchery/counting" };
+const H_BOXES: NavItem = { label: "Boxes", href: "/hatchery/boxes" };
+const H_VACCINATION: NavItem = { label: "Vaccination", href: "/hatchery/vaccination" };
+const H_FARM_VISITS: NavItem = { label: "Farm visits", href: "/hatchery/farm-visits" };
+const H_VAC_REQUESTS: NavItem = { label: "Vaccine requests", href: "/hatchery/vaccine-requests" };
+const H_COORD: NavItem = { label: "Coordination", href: "/hatchery/coordination" };
+const H_INVENTORY: NavItem = { label: "Inventory", href: "/hatchery/inventory" };
 const H_BIO: NavItem = { label: "Biosecurity", href: "/hatchery/biosecurity" };
 const H_MAINT: NavItem = { label: "Maintenance", href: "/hatchery/maintenance" };
-const H_COORD: NavItem = { label: "Coordination", href: "/hatchery/coordination" };
+
+const H_ALL: NavItem[] = [
+  H_DASH, H_RECEPTION, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_BATCHES,
+  H_CANDLING, H_HATCH, H_COUNTING, H_BOXES, H_VACCINATION, H_VAC_REQUESTS,
+  H_FARM_VISITS, H_COORD, H_INVENTORY, H_BIO, H_MAINT,
+];
 
 const NAV: Record<Role, NavItem[]> = {
   Admin: [
@@ -63,7 +80,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Deliveries", href: "/deliveries" },
     { label: "Orders", href: "/orders" },
     { label: "New Order", href: "/orders/new" },
-    H_DASH, H_BATCHES, H_MONITOR, H_HEALTH, H_BIO, H_MAINT, H_COORD,
+    ...H_ALL,
   ],
   "Tetra Zone Manager": [
     { label: "Dashboard", href: "/dashboard" },
@@ -94,37 +111,33 @@ const NAV: Record<Role, NavItem[]> = {
   ],
 
   // ---- Hatchery roles ----
-  "Hatchery Manager": [
-    { ...H_DASH, label: "Dashboard" },
-    H_BATCHES, H_MONITOR, H_HEALTH, H_BIO, H_MAINT, H_COORD,
-  ],
+  "Hatchery Manager": H_ALL,
+  "Operations Manager": H_ALL,
   "Hatchery Operations Manager": [
-    { ...H_DASH, label: "Dashboard" },
-    H_BATCHES, H_MONITOR, H_COORD,
+    H_DASH, H_RECEPTION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
+    H_COUNTING, H_BOXES, H_COORD, H_INVENTORY,
   ],
   "Production Technician": [
-    { ...H_DASH, label: "Dashboard" },
-    H_BATCHES,
+    H_DASH, H_RECEPTION, H_FUMIGATION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
   ],
+  // Shared tablet account. No side menu — everything is launched from the
+  // attendant home hub. No inventory page, but box making shows live stock.
   "Hatchery Attendant": [
-    { ...H_DASH, label: "Dashboard" },
-    H_MONITOR, H_BIO,
+    { label: "Home", href: "/hatchery/attendant" },
+    H_STORE,
+    { label: "Record machines", href: "/hatchery/machines" },
+    { label: "Box making", href: "/hatchery/boxes" },
+    { label: "Counting chicks", href: "/hatchery/counting" },
+    H_BIO,
   ],
   "Hatchery Veterinary": [
-    { ...H_DASH, label: "Dashboard" },
-    H_HEALTH, H_BIO, H_BATCHES,
+    H_DASH, H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
   ],
   "Maintenance Technician": [
-    { ...H_DASH, label: "Dashboard" },
-    H_MAINT,
+    H_DASH, H_MACHINES, H_MAINT,
   ],
   "Hatchery Sales & Coordination Officer": [
-    { ...H_DASH, label: "Dashboard" },
-    H_COORD, H_BATCHES,
-  ],
-  "Operations Manager": [
-    { ...H_DASH, label: "Dashboard" },
-    H_BATCHES, H_MONITOR, H_HEALTH, H_BIO, H_MAINT, H_COORD,
+    H_DASH, H_COORD, H_FARM_VISITS, H_INVENTORY, H_BATCHES,
   ],
 };
 

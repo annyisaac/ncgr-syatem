@@ -7,6 +7,8 @@ import Image from "next/image";
 import { useAuth } from "./AuthProvider";
 import { useData } from "./DataProvider";
 import { useTheme } from "./ThemeProvider";
+import { useOperator } from "./OperatorProvider";
+import { OperatorGate } from "./OperatorGate";
 import { useToast } from "./ui/Toast";
 import { Avatar } from "./ui/Avatar";
 import { canAccess, navForRole } from "@/lib/permissions";
@@ -22,6 +24,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const { reload } = useData();
   const { theme, toggle } = useTheme();
+  const { operator, clearOperator } = useOperator();
   const { toast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
@@ -58,6 +61,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const nav = navForRole(user.role);
   const allowed = canAccess(user.role, pathname);
+  // Shared attendant tablet: no side menu, and must identify the operator first.
+  const isAttendant = user.role === "Hatchery Attendant";
+  const needsOperator = isAttendant && !operator;
+  const homeHref = isAttendant ? "/hatchery/attendant" : "/dashboard";
 
   const sidebar = (
     <div className="flex h-full flex-col">
@@ -135,18 +142,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-screen">
+      {/* Attendant tablet: company logo as a faint body-wide background */}
+      {isAttendant && (
+        <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center">
+          <Image
+            src={COMPANY.logoPath}
+            alt=""
+            width={760}
+            height={300}
+            className="w-[72%] max-w-3xl object-contain opacity-[0.08]"
+            unoptimized
+          />
+        </div>
+      )}
+
       {/* Top bar (all screen sizes) — the menu stays hidden until opened */}
       <div className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-line bg-paper px-4">
         <div className="flex items-center gap-3">
-          <button
-            type="button"
-            onClick={() => setDrawer((v) => !v)}
-            className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
-            aria-expanded={drawer}
-          >
-            Menu
-          </button>
-          <Link href="/dashboard" className="flex items-center">
+          {isAttendant ? (
+            <Link
+              href={homeHref}
+              className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
+            >
+              Home
+            </Link>
+          ) : (
+            <button
+              type="button"
+              onClick={() => setDrawer((v) => !v)}
+              className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
+              aria-expanded={drawer}
+            >
+              Menu
+            </button>
+          )}
+          <Link href={homeHref} className="flex items-center">
             <Image
               src={COMPANY.logoPath}
               alt={`${COMPANY.name} logo`}
@@ -157,16 +187,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             />
           </Link>
         </div>
-        <Link href="/profile" className="flex items-center gap-2">
-          <span className="hidden text-[0.9rem] font-semibold text-ink sm:inline">
-            {user.name}
-          </span>
-          <Avatar user={user} size={40} />
-        </Link>
+        <div className="flex items-center gap-3">
+          {operator && (
+            <div className="flex items-center gap-2 rounded-full border border-gold/50 bg-gold-bg px-3 py-1.5">
+              <span className="text-[0.82rem] font-semibold text-gold-dark">{operator.name}</span>
+              <button
+                type="button"
+                onClick={clearOperator}
+                className="rounded-md border border-gold/50 px-2 py-0.5 text-[0.68rem] font-semibold text-gold-dark transition hover:bg-gold hover:text-[#231b04]"
+              >
+                Switch user
+              </button>
+            </div>
+          )}
+          <Link href="/profile" className="flex items-center gap-2">
+            <span className="hidden text-[0.9rem] font-semibold text-ink sm:inline">
+              {user.name}
+            </span>
+            <Avatar user={user} size={40} />
+          </Link>
+        </div>
       </div>
 
       {/* Slide-in menu (opens on demand, closes on navigation or backdrop) */}
-      {drawer && (
+      {drawer && !isAttendant && (
         <div className="fixed inset-0 z-40">
           <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
           <aside className="absolute inset-y-0 left-0 w-64 border-r border-line bg-paper shadow-pop">
@@ -178,7 +222,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {/* Main */}
       <div className="flex min-h-screen flex-col">
         <main className="mx-auto w-full max-w-[1200px] grow px-4 py-6 md:px-6">
-          {allowed ? (
+          {needsOperator ? (
+            <OperatorGate />
+          ) : allowed ? (
             children
           ) : (
             <div className="rounded-2xl border border-line bg-paper p-8 text-center text-muted shadow-card">

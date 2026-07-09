@@ -135,7 +135,7 @@ export default function ProfilePage() {
         </div>
         <p className="mt-3 text-xs text-muted">
           Only an Admin can change your name, role, or email. You can update your
-          picture, theme, and password here.
+          picture and theme here{user.role !== "Hatchery Attendant" ? ", and change your password below" : ""}.
         </p>
       </Card>
 
@@ -161,7 +161,8 @@ export default function ProfilePage() {
         </div>
       </Card>
 
-      {/* Change password */}
+      {/* Change password — hidden for the shared attendant tablet account */}
+      {user.role !== "Hatchery Attendant" && (
       <Card>
         <CardHeader title="Change password" />
         {user.pwRequest ? (
@@ -202,6 +203,7 @@ export default function ProfilePage() {
           </>
         )}
       </Card>
+      )}
     </div>
   );
 }

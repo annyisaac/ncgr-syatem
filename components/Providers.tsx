@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AuthProvider } from "./AuthProvider";
 import { DataProvider } from "./DataProvider";
 import { HatcheryProvider } from "./HatcheryProvider";
+import { OperatorProvider } from "./OperatorProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { ToastProvider } from "./ui/Toast";
 
@@ -14,7 +15,9 @@ export function Providers({ children }: { children: ReactNode }) {
       <AuthProvider>
         <DataProvider>
           <HatcheryProvider>
-            <ToastProvider>{children}</ToastProvider>
+            <OperatorProvider>
+              <ToastProvider>{children}</ToastProvider>
+            </OperatorProvider>
           </HatcheryProvider>
         </DataProvider>
       </AuthProvider>

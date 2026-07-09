@@ -27,28 +27,56 @@ import {
 import type {
   Allocation,
   Batch,
+  BoxLog,
+  ChickCount,
   ChickInventory,
   Dispatch,
+  FarmVisit,
+  Fumigation,
   LogEntry,
+  Machine,
   MachineReading,
+  Operator,
+  Reception,
+  StoreReading,
+  Supply,
   Vaccination,
+  VaccineRequest,
 } from "@/lib/hatchery/types";
 
 interface HatcheryContextValue {
   loading: boolean;
+  receptions: Reception[];
+  storeReadings: StoreReading[];
+  fumigations: Fumigation[];
+  machines: Machine[];
+  operators: Operator[];
   batches: Batch[];
   readings: MachineReading[];
+  counts: ChickCount[];
+  boxLogs: BoxLog[];
+  supplies: Supply[];
   vaccinations: Vaccination[];
   biosecurity: LogEntry[];
   maintenance: LogEntry[];
   inventory: ChickInventory[];
   allocations: Allocation[];
   dispatches: Dispatch[];
+  farmVisits: FarmVisit[];
+  vaccineRequests: VaccineRequest[];
 
   reload: () => Promise<void>;
 
+  upsertReception: (r: Reception) => Promise<void>;
+  upsertStoreReading: (r: StoreReading) => Promise<void>;
+  upsertFumigation: (f: Fumigation) => Promise<void>;
+  upsertMachine: (m: Machine) => Promise<void>;
+  upsertOperator: (o: Operator) => Promise<void>;
   upsertBatch: (b: Batch) => Promise<void>;
   upsertReading: (r: MachineReading) => Promise<void>;
+  upsertCount: (c: ChickCount) => Promise<void>;
+  upsertBoxLog: (l: BoxLog) => Promise<void>;
+  upsertSupply: (s: Supply) => Promise<void>;
   upsertVaccination: (v: Vaccination) => Promise<void>;
   upsertBiosecurity: (l: LogEntry) => Promise<void>;
   upsertMaintenance: (l: LogEntry) => Promise<void>;
@@ -56,6 +84,8 @@ interface HatcheryContextValue {
   removeInventory: (id: string) => Promise<void>;
   upsertAllocation: (a: Allocation) => Promise<void>;
   upsertDispatch: (d: Dispatch) => Promise<void>;
+  upsertFarmVisit: (v: FarmVisit) => Promise<void>;
+  upsertVaccineRequest: (r: VaccineRequest) => Promise<void>;
 
   newId: (prefix: string) => string;
 }
@@ -75,35 +105,67 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const enabled = !!user && (isHatcheryRole(user.role) || user.role === "Admin");
 
   const [loading, setLoading] = useState(true);
+  const [receptions, setReceptions] = useState<Reception[]>([]);
+  const [storeReadings, setStoreReadings] = useState<StoreReading[]>([]);
+  const [fumigations, setFumigations] = useState<Fumigation[]>([]);
+  const [machines, setMachines] = useState<Machine[]>([]);
+  const [operators, setOperators] = useState<Operator[]>([]);
   const [batches, setBatches] = useState<Batch[]>([]);
   const [readings, setReadings] = useState<MachineReading[]>([]);
+  const [counts, setCounts] = useState<ChickCount[]>([]);
+  const [boxLogs, setBoxLogs] = useState<BoxLog[]>([]);
+  const [supplies, setSupplies] = useState<Supply[]>([]);
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
   const [biosecurity, setBiosecurity] = useState<LogEntry[]>([]);
   const [maintenance, setMaintenance] = useState<LogEntry[]>([]);
   const [inventory, setInventory] = useState<ChickInventory[]>([]);
   const [allocations, setAllocations] = useState<Allocation[]>([]);
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
+  const [farmVisits, setFarmVisits] = useState<FarmVisit[]>([]);
+  const [vaccineRequests, setVaccineRequests] = useState<VaccineRequest[]>([]);
 
   const load = useCallback(async () => {
     try {
-      const [b, r, v, bio, mnt, inv, alloc, disp] = await Promise.all([
+      const [
+        rec, store, fum, mac, op, bat, rd, cnt, box, sup, vac, bio, mnt, inv, alloc, disp, fv, vr,
+      ] = await Promise.all([
+        fetchTable<Reception>("receptions"),
+        fetchTable<StoreReading>("store_readings"),
+        fetchTable<Fumigation>("fumigations"),
+        fetchTable<Machine>("machines"),
+        fetchTable<Operator>("operators"),
         fetchTable<Batch>("batches"),
         fetchTable<MachineReading>("machine_readings"),
+        fetchTable<ChickCount>("chick_counts"),
+        fetchTable<BoxLog>("box_logs"),
+        fetchTable<Supply>("supplies"),
         fetchTable<Vaccination>("vaccinations"),
         fetchTable<LogEntry>("biosecurity_logs"),
         fetchTable<LogEntry>("maintenance_logs"),
         fetchTable<ChickInventory>("chick_inventory"),
         fetchTable<Allocation>("allocations"),
         fetchTable<Dispatch>("dispatches"),
+        fetchTable<FarmVisit>("farm_visits"),
+        fetchTable<VaccineRequest>("vaccine_requests"),
       ]);
-      setBatches(b);
-      setReadings(r);
-      setVaccinations(v);
+      setReceptions(rec);
+      setStoreReadings(store);
+      setFumigations(fum);
+      setMachines(mac);
+      setOperators(op);
+      setBatches(bat);
+      setReadings(rd);
+      setCounts(cnt);
+      setBoxLogs(box);
+      setSupplies(sup);
+      setVaccinations(vac);
       setBiosecurity(bio);
       setMaintenance(mnt);
       setInventory(inv);
       setAllocations(alloc);
       setDispatches(disp);
+      setFarmVisits(fv);
+      setVaccineRequests(vr);
     } catch (err) {
       console.error("Failed to load hatchery data:", err);
     }
@@ -126,7 +188,6 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     };
   }, [enabled, load]);
 
-  // Live inventory (sales portal + other hatchery users see changes instantly).
   useEffect(() => {
     if (!enabled) return;
     const sb = getSupabase();
@@ -136,9 +197,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
         "postgres_changes",
         { event: "*", schema: "public", table: "chick_inventory" },
         () => {
-          fetchTable<ChickInventory>("chick_inventory")
-            .then(setInventory)
-            .catch(() => {});
+          fetchTable<ChickInventory>("chick_inventory").then(setInventory).catch(() => {});
         }
       )
       .subscribe();
@@ -147,13 +206,13 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     };
   }, [enabled]);
 
-  async function persist<T extends { id: string }>(
+  function persist<T extends { id: string }>(
     table: HatcheryTable,
     row: T,
     setter: (updater: (prev: T[]) => T[]) => void
-  ) {
+  ): Promise<void> {
     setter((prev) => upsertLocal(prev, row));
-    await upsertRow(table, row).catch((e) => {
+    return upsertRow(table, row).catch((e) => {
       console.error(`save ${table} failed`, e);
       throw e;
     });
@@ -161,17 +220,20 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
 
   const value: HatcheryContextValue = {
     loading,
-    batches,
-    readings,
-    vaccinations,
-    biosecurity,
-    maintenance,
-    inventory,
-    allocations,
-    dispatches,
+    receptions, storeReadings, fumigations, machines, operators, batches, readings,
+    counts, boxLogs, supplies, vaccinations, biosecurity, maintenance,
+    inventory, allocations, dispatches, farmVisits, vaccineRequests,
     reload: load,
+    upsertReception: (r) => persist("receptions", r, setReceptions),
+    upsertStoreReading: (r) => persist("store_readings", r, setStoreReadings),
+    upsertFumigation: (f) => persist("fumigations", f, setFumigations),
+    upsertMachine: (m) => persist("machines", m, setMachines),
+    upsertOperator: (o) => persist("operators", o, setOperators),
     upsertBatch: (b) => persist("batches", b, setBatches),
     upsertReading: (r) => persist("machine_readings", r, setReadings),
+    upsertCount: (c) => persist("chick_counts", c, setCounts),
+    upsertBoxLog: (l) => persist("box_logs", l, setBoxLogs),
+    upsertSupply: (s) => persist("supplies", s, setSupplies),
     upsertVaccination: (v) => persist("vaccinations", v, setVaccinations),
     upsertBiosecurity: (l) => persist("biosecurity_logs", l, setBiosecurity),
     upsertMaintenance: (l) => persist("maintenance_logs", l, setMaintenance),
@@ -182,14 +244,12 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     },
     upsertAllocation: (a) => persist("allocations", a, setAllocations),
     upsertDispatch: (d) => persist("dispatches", d, setDispatches),
+    upsertFarmVisit: (v) => persist("farm_visits", v, setFarmVisits),
+    upsertVaccineRequest: (r) => persist("vaccine_requests", r, setVaccineRequests),
     newId,
   };
 
-  return (
-    <HatcheryContext.Provider value={value}>
-      {children}
-    </HatcheryContext.Provider>
-  );
+  return <HatcheryContext.Provider value={value}>{children}</HatcheryContext.Provider>;
 }
 
 export function useHatchery(): HatcheryContextValue {

@@ -164,6 +164,8 @@ export interface Order {
   dsr?: string; // DSR name (denormalized for display)
   dsrId?: string;
   name: string; // client name
+  clientDistrict?: string; // the client's own district
+  clientSector?: string; // the client's own sector
   phone: string;
   chicks: number; // ordered chicks
   comp: number; // compensated (free) chicks

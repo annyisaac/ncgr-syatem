@@ -1,114 +1,274 @@
 /**
- * Hatchery domain types. Same storage convention as the sales side:
- * each row is { id, data: <this type>, updated_at } in its Supabase table.
+ * Hatchery domain types — modelled on the real NCGR process.
+ * Storage convention matches the sales side: { id, data, updated_at } jsonb rows.
  * Every record carries the acting user + timestamp for traceability.
  */
 
 import type { Product } from "../types";
 
 // ---------------------------------------------------------------------------
-// Batch traceability
+// Constants
 // ---------------------------------------------------------------------------
 
-export interface LifecycleStepDef {
-  key: string;
-  label: string;
-}
+export const CHICKS_PER_BOX = 102;
+export const MAX_MACHINE_TEMP_F = 120;
+export const INCUBATION_DAYS = 21;
+export const CANDLING_1_DAY = 10;
+export const CANDLING_2_DAY = 18;
 
-/** The 15-step batch lifecycle (egg receiving → delivery confirmation). */
-export const LIFECYCLE_STEPS: LifecycleStepDef[] = [
-  { key: "egg-receiving", label: "Egg receiving" },
-  { key: "quality-inspection", label: "Quality inspection" },
-  { key: "storage", label: "Storage" },
-  { key: "setting", label: "Setting" },
-  { key: "incubation", label: "Incubation" },
-  { key: "candling-1", label: "Candling 1 (day 10)" },
-  { key: "candling-2", label: "Candling 2 (day 18)" },
-  { key: "transfer", label: "Transfer" },
-  { key: "hatching", label: "Hatching" },
-  { key: "chick-pulling", label: "Chick pulling" },
-  { key: "grading", label: "Grading" },
-  { key: "vaccination", label: "Vaccination" },
-  { key: "boxing", label: "Boxing" },
-  { key: "allocation", label: "Allocation" },
-  { key: "dispatch", label: "Dispatch" },
-  { key: "delivery", label: "Delivery confirmation" },
-];
+/** Trailing batch-code segment: 01 = Ross 308, 02 = Tetra Super Harco. */
+export const PRODUCT_CODE: Record<Product, "01" | "02"> = {
+  "Ross 308": "01",
+  "Tetra Super Harco": "02",
+};
+export function productFromCode(code: string): Product {
+  return code === "01" ? "Ross 308" : "Tetra Super Harco";
+}
 
 export interface StepMark {
   by: string;
-  on: string; // ISO datetime
+  on: string;
 }
 
-export interface Candling {
-  stage: 1 | 2;
-  day: number; // 10 or 18
-  date: string; // ISO date
-  fertileKept: number;
-  removed: number; // infertile / dead removed
+/** Lifecycle steps in order (the real NCGR flow). */
+export const LIFECYCLE_STEPS: { key: string; label: string }[] = [
+  { key: "reception", label: "Egg reception" },
+  { key: "storage", label: "Store room" },
+  { key: "fumigation", label: "Fumigation" },
+  { key: "setting", label: "Setting" },
+  { key: "candling-1", label: "Candling 1" },
+  { key: "candling-2", label: "Candling 2" },
+  { key: "transfer", label: "Transfer to hatcher" },
+  { key: "hatching", label: "Hatching" },
+  { key: "counting", label: "Counting & boxing" },
+  { key: "vaccination", label: "Vaccination" },
+  { key: "dispatch", label: "Dispatch" },
+  { key: "delivery", label: "Delivery" },
+];
+
+// ---------------------------------------------------------------------------
+// Egg reception
+// ---------------------------------------------------------------------------
+
+/** Where a reception currently sits after intake. */
+export type ReceptionLocation = "store" | "ready";
+
+export interface Reception {
+  id: string;
+  date: string; // ISO date received
+  farm: string;
+  flockId: string;
+  ageOfFlock: number; // weeks
+  eggsReceived: number;
+  ageOfEggs: number; // days
+  crackedOnFarm: number;
+  crackedOnSet: number;
+  misshapen: number;
+  dirty: number;
+  productType: Product;
+  location?: ReceptionLocation; // chosen after intake: egg store room, or ready to set
+  fumigatedEggs?: number; // running total fumigated across trolleys
+  by: string;
+  on: string;
+  batchId?: string; // set once combined into a batch
+}
+
+/** Store-room temperature/humidity reading while eggs wait. */
+export interface StoreReading {
+  id: string;
+  timestamp: string;
+  temp: number; // °F
+  humidity: number; // %
+  recordedBy: string;
+}
+
+/** One trolley loaded for a fumigation run. */
+export interface TrolleyRow {
+  label: string; // trolley number / name
+  eggs: number;
+}
+
+export interface Fumigation {
+  id: string;
+  date: string;
+  receptionId?: string; // which reception was fumigated
+  farm?: string;
+  flockId?: string;
+  chemicals: string;
+  trolleys: TrolleyRow[];
+  totalEggs: number; // sum of trolley eggs
+  time: string; // clock time / duration
   by: string;
   on: string;
 }
+
+// ---------------------------------------------------------------------------
+// Machines
+// ---------------------------------------------------------------------------
+
+export type MachineType = "setter" | "hatcher";
+
+export interface Machine {
+  id: string;
+  code: string; // S01 / H01
+  type: MachineType;
+  capacity: number; // eggs
+  active: boolean;
+  by: string;
+  on: string;
+}
+
+/**
+ * A named hatchery operator. All attendants share one login, so the manager
+ * registers each person and the system issues a unique code they enter to
+ * prove who recorded a reading.
+ */
+export interface Operator {
+  id: string;
+  name: string;
+  code: string; // unique short code, system-generated
+  active: boolean;
+  by: string;
+  on: string;
+}
+
+/** Eggs placed into a specific machine (setter or hatcher). */
+export interface MachineAssignment {
+  machineCode: string;
+  eggs: number;
+}
+
+export interface MachineReading {
+  id: string;
+  machineCode: string;
+  batchId?: string;
+  timestamp: string;
+  fanSpeed: number;
+  dryF: number;
+  wetF: number;
+  digitalTempF: number;
+  digitalHumidityF: number;
+  operator: string; // operator name (verified by code)
+  operatorCode?: string; // the code the operator entered to prove identity
+  comment?: string;
+  recordedBy: string;
+}
+
+// ---------------------------------------------------------------------------
+// Candling
+// ---------------------------------------------------------------------------
+
+export const CANDLING_1_CATEGORIES = [
+  { key: "infertile", label: "Infertile" },
+  { key: "earlyDead", label: "Early dead" },
+  { key: "bloodring", label: "Bloodring" },
+  { key: "contaminated", label: "Contaminated" },
+  { key: "cracked", label: "Cracked" },
+  { key: "others", label: "Others" },
+];
+export const CANDLING_2_CATEGORIES = [
+  { key: "midDead", label: "Mid dead" },
+  { key: "contaminated", label: "Contaminated" },
+  { key: "cracked", label: "Cracked" },
+  { key: "others", label: "Others" },
+];
+
+export interface Candling {
+  stage: 1 | 2;
+  date: string;
+  categories: Record<string, number>; // removals by category
+  totalRemoved: number;
+  by: string;
+  on: string;
+}
+
+// ---------------------------------------------------------------------------
+// Batch
+// ---------------------------------------------------------------------------
 
 export type BatchStatus = "active" | "dispatched" | "delivered";
 
 export interface Batch {
   id: string;
-  batchNo: string; // human-friendly id
+  batchNo: string; // NCGR-H26-W29-02
   productType: Product;
-  eggSource: string;
-  eggCount: number;
-  qualityGrade?: string;
-  incubator?: string; // setter machine id
-  setDate: string; // ISO date
-  expectedHatchDate: string; // set + 21
-  candling1Date: string; // set + 10
-  candling2Date: string; // set + 18
-  currentStep: string; // lifecycle step key
-  steps: Record<string, StepMark>; // who/when for each completed step
-  fertileCount: number; // running fertile-egg count
-  hatchedCount: number;
-  gradeAcount: number;
-  rejectedCount: number; // rejected by vet
-  sellableCount: number;
-  status: BatchStatus;
+  farm: string;
+  flockId: string;
+  receptionIds: string[]; // combined daily receptions
+  eggsSet: number; // total eggs set
+  setters: MachineAssignment[];
+  transfers: MachineAssignment[];
   candlings: Candling[];
+  hatchedCount: number;
+  culls: number;
+  unhatchedCount: number;
+  saleableCount: number; // hatched - culls
+  countedTotal: number; // from box-by-box counting
+  vaccinated: boolean;
+  currentStep: string;
+  status: BatchStatus;
+  steps: Record<string, StepMark>;
   history: string[];
-  by: string; // who created
+  by: string;
   createdAt: string;
 }
 
-export interface MachineReading {
+// ---------------------------------------------------------------------------
+// Counting & boxes
+// ---------------------------------------------------------------------------
+
+/** Box-by-box counting session for a batch (attendant tallies each box). */
+export interface ChickCount {
   id: string;
   batchId: string;
-  machineId: "setter" | "hatcher";
-  timestamp: string; // ISO datetime
-  temp: number; // °C
-  humidity: number; // %
-  recordedBy: string;
+  boxes: number[]; // chicks counted in each box
+  total: number;
+  by: string;
+  on: string;
 }
+
+/** Daily boxes assembled from bought unassembled stock. */
+export interface BoxLog {
+  id: string;
+  date: string;
+  boxesMade: number;
+  by: string;
+  on: string;
+}
+
+// ---------------------------------------------------------------------------
+// Supplies inventory (unassembled boxes + vaccines)
+// ---------------------------------------------------------------------------
+
+export type SupplyKind = "box" | "vaccine";
+
+export interface Supply {
+  id: string;
+  kind: SupplyKind;
+  name: string;
+  unit: string; // e.g. "boxes", "doses"
+  quantity: number; // current stock
+  history: string[];
+  by: string;
+  on: string;
+}
+
+// ---------------------------------------------------------------------------
+// Vaccination
+// ---------------------------------------------------------------------------
 
 export interface Vaccination {
   id: string;
   batchId: string;
-  vaccine: string;
-  date: string; // ISO date
+  vaccine: string; // supply name
+  doses: number;
+  date: string;
   administeredBy: string;
   on: string;
 }
 
-export interface LogEntry {
-  id: string;
-  kind: string; // biosecurity: cleaning/footbath/incident · maintenance: preventive/corrective/downtime
-  area?: string; // biosecurity area / equipment
-  notes: string;
-  downtimeHours?: number; // maintenance only
-  staff: string; // acting user
-  on: string; // ISO datetime
-}
-
 // ---------------------------------------------------------------------------
-// Shared with sales
+// Shared with sales + logs
 // ---------------------------------------------------------------------------
 
 export interface ChickInventory {
@@ -121,11 +281,7 @@ export interface ChickInventory {
   on: string;
 }
 
-export type AllocationStatus =
-  | "proposed" // coordination officer matched
-  | "finalized" // hatchery manager finalized
-  | "approved" // operations manager approved
-  | "cancelled";
+export type AllocationStatus = "proposed" | "finalized" | "approved" | "cancelled";
 
 export interface Allocation {
   id: string;
@@ -134,7 +290,7 @@ export interface Allocation {
   quantity: number;
   productType: Product;
   status: AllocationStatus;
-  by: string; // proposed by
+  by: string;
   on: string;
   finalizedBy?: string;
   approvedBy?: string;
@@ -143,11 +299,72 @@ export interface Allocation {
 
 export interface Dispatch {
   id: string;
-  orderId: string;
+  orderId?: string;
   batchId: string;
   quantity: number;
-  vehicle: string;
+  pickupLocation: string;
+  carrier: string; // vehicle or person
+  carrierType: "vehicle" | "person";
   dispatchedAt: string;
   deliveredAt?: string;
   by: string;
+}
+
+export interface LogEntry {
+  id: string;
+  kind: string;
+  area?: string;
+  notes: string;
+  downtimeHours?: number;
+  staff: string;
+  on: string;
+}
+
+// ---------------------------------------------------------------------------
+// Veterinary — farm visits & vaccine requests
+// ---------------------------------------------------------------------------
+
+/**
+ * A vet's farm visit to a customer to collect flock health data. If the deaths
+ * were caused by a hatchery problem, the report is forwarded to sales so the
+ * customer can be compensated.
+ */
+export interface FarmVisit {
+  id: string;
+  date: string;
+  customerName: string;
+  product: Product; // routes compensation to the Ross / Tetra salesperson
+  chicksBought: number;
+  mortality7Day: number; // deaths within 7 days
+  mortalityAfter7Day: number; // deaths after 7 days
+  cause: string; // investigated cause of death
+  problem: string;
+  solution: string; // suggested solution
+  hatcheryCaused: boolean; // deaths due to a hatchery problem → compensation
+  sentToSales: boolean; // report forwarded to sales
+  by: string; // vet
+  on: string;
+  history: string[];
+}
+
+export type VaccineRequestStatus = "requested" | "confirmed" | "sent" | "declined";
+
+/**
+ * Vet requests a vaccine to be bought → Operations Manager confirms →
+ * Hatchery Manager receives it and adds it to inventory.
+ */
+export interface VaccineRequest {
+  id: string;
+  date: string;
+  vaccine: string;
+  quantity: number;
+  unit: string; // e.g. "doses"
+  reason?: string;
+  status: VaccineRequestStatus;
+  requestedBy: string; // vet
+  confirmedBy?: string; // operations manager
+  sentBy?: string; // hatchery manager
+  by: string;
+  on: string;
+  history: string[];
 }

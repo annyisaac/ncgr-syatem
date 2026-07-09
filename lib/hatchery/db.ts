@@ -15,7 +15,17 @@ export type HatcheryTable =
   | "maintenance_logs"
   | "chick_inventory"
   | "allocations"
-  | "dispatches";
+  | "dispatches"
+  | "receptions"
+  | "store_readings"
+  | "fumigations"
+  | "machines"
+  | "operators"
+  | "chick_counts"
+  | "box_logs"
+  | "supplies"
+  | "farm_visits"
+  | "vaccine_requests";
 
 export async function fetchTable<T>(table: HatcheryTable): Promise<T[]> {
   if (!inBrowser()) return [];

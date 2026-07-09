@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
+import { useOperator } from "@/components/OperatorProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -32,6 +33,7 @@ export function LogModule({
   newId: (p: string) => string;
 }) {
   const { user } = useAuth();
+  const { recorder } = useOperator();
   const { toast } = useToast();
   const [kind, setKind] = useState(kinds[0]);
   const [area, setArea] = useState("");
@@ -51,7 +53,7 @@ export function LogModule({
       area: area.trim() || undefined,
       notes: notes.trim(),
       downtimeHours: withDowntime ? Number(downtime) || 0 : undefined,
-      staff: user!.email,
+      staff: recorder(user!.email),
       on: nowISO(),
     };
     onSave(entry);
