@@ -49,6 +49,8 @@ export default function NewOrderPage() {
   const [dsrId, setDsrId] = useState("");
   const [sector, setSector] = useState("");
   const [name, setName] = useState("");
+  const [clientDistrict, setClientDistrict] = useState("");
+  const [clientSector, setClientSector] = useState("");
   const [phone, setPhone] = useState("");
   const [chicks, setChicks] = useState("");
   const [comp, setComp] = useState("0");
@@ -117,6 +119,8 @@ export default function NewOrderPage() {
     if (!sector.trim()) return setError("Enter or choose a sector.");
     if (!name.trim()) return setError("Enter the client name.");
     if (phone.trim().length < 6) return setError("Enter a valid phone number.");
+    if (!clientDistrict) return setError("Choose the client's district.");
+    if (!clientSector.trim()) return setError("Enter the client's sector.");
     if (nChicks <= 0) return setError("Chicks must be greater than zero.");
     if (nComp < 0) return setError("Compensated chicks cannot be negative.");
     if (nPrice <= 0) return setError("Enter a unit price.");
@@ -158,6 +162,8 @@ export default function NewOrderPage() {
       dsr: selectedDsr?.name,
       dsrId: dsrId || undefined,
       name: name.trim(),
+      clientDistrict,
+      clientSector: clientSector.trim(),
       phone: phone.trim(),
       chicks: nChicks,
       comp: nComp,
@@ -309,6 +315,17 @@ export default function NewOrderPage() {
                 </Field>
                 <Field label="Phone">
                   <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" />
+                </Field>
+                <Field label="District">
+                  <Select
+                    value={clientDistrict}
+                    placeholder="Select district"
+                    options={ALL_DISTRICTS.map((d) => ({ value: d, label: d }))}
+                    onChange={(e) => setClientDistrict(e.target.value)}
+                  />
+                </Field>
+                <Field label="Sector">
+                  <Input value={clientSector} onChange={(e) => setClientSector(e.target.value)} placeholder="Client's sector" />
                 </Field>
                 <Field label="Chicks ordered">
                   <Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} />
