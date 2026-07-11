@@ -39,7 +39,14 @@ async function fetchCollection<T>(table: string): Promise<T[]> {
     .from(table)
     .select("data")
     .order("updated_at", { ascending: true });
-  if (error) throw new Error(`Could not load ${table}: ${error.message}`);
+  if (error) {
+    // A table this role isn't permitted to read (row-level security) — or a
+    // transient error — must not crash the whole app. Degrade to empty so the
+    // pages a role DOES use keep working. This is what lets RLS be tightened
+    // per-role safely.
+    console.warn(`Could not load ${table}: ${error.message}`);
+    return [];
+  }
   return (data ?? []).map((r) => r.data as T);
 }
 
