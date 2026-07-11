@@ -371,6 +371,8 @@ export async function readBackup(file: File): Promise<Database> {
     orders: parsed.orders ?? [],
     commissions: parsed.commissions ?? [],
     statements: parsed.statements ?? [],
+    routes: parsed.routes ?? [],
+    availability: parsed.availability ?? [],
   };
 }
 

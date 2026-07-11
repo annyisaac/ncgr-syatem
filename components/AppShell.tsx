@@ -11,7 +11,7 @@ import { useOperator } from "./OperatorProvider";
 import { OperatorGate } from "./OperatorGate";
 import { useToast } from "./ui/Toast";
 import { Avatar } from "./ui/Avatar";
-import { canAccess, navForRole } from "@/lib/permissions";
+import { canAccess, navForRole, homeForRole } from "@/lib/permissions";
 import { COMPANY } from "@/lib/config";
 import { cn } from "@/lib/cn";
 
@@ -64,7 +64,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Shared attendant tablet: no side menu, and must identify the operator first.
   const isAttendant = user.role === "Hatchery Attendant";
   const needsOperator = isAttendant && !operator;
-  const homeHref = isAttendant ? "/hatchery/attendant" : "/dashboard";
+  const homeHref = homeForRole(user.role);
 
   const sidebar = (
     <div className="flex h-full flex-col">

@@ -16,21 +16,33 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  Availability,
   BankStatement,
   CommissionRequest,
   Database,
   DSR,
   Order,
+  Route,
   User,
 } from "@/lib/types";
 import {
   getDatabase,
   newId,
   replaceDatabase,
+  saveAvailability,
+  saveAvailabilityOne,
   saveCommissions,
+  saveCommissionOne,
   saveDSRs,
+  saveDSROne,
   saveOrders,
+  saveOrderOne,
+  placeOrder as placeOrderDb,
+  type PlaceResult,
+  saveRoutes,
+  saveRouteOne,
   saveStatements,
+  saveUser,
   saveUsers,
 } from "@/lib/db";
 import { useAuth } from "./AuthProvider";
@@ -42,6 +54,8 @@ interface DataContextValue {
   orders: Order[];
   commissions: CommissionRequest[];
   statements: BankStatement[];
+  routes: Route[];
+  availability: Availability[];
 
   reload: () => Promise<void>;
 
@@ -53,11 +67,19 @@ interface DataContextValue {
 
   setOrders: (orders: Order[]) => Promise<void>;
   upsertOrder: (order: Order) => Promise<void>;
+  /** Race-safe order creation: server re-checks the day's availability. */
+  placeOrder: (order: Order) => Promise<PlaceResult>;
 
   setCommissions: (c: CommissionRequest[]) => Promise<void>;
   upsertCommission: (c: CommissionRequest) => Promise<void>;
 
   setStatements: (s: BankStatement[]) => Promise<void>;
+
+  setRoutes: (r: Route[]) => Promise<void>;
+  upsertRoute: (r: Route) => Promise<void>;
+
+  setAvailability: (a: Availability[]) => Promise<void>;
+  upsertAvailability: (a: Availability) => Promise<void>;
 
   /** Full replace (backup restore). */
   replaceAll: (db: Database) => Promise<void>;
@@ -73,6 +95,8 @@ const EMPTY: Database = {
   orders: [],
   commissions: [],
   statements: [],
+  routes: [],
+  availability: [],
 };
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -116,7 +140,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("ncgr:db-updated", onUpdate);
   }, [load]);
 
-  /** Optimistic update: reflect in the UI now, persist in the background. */
+  /** Optimistic bulk update: reflect in the UI now, persist the whole collection. */
   function apply<K extends keyof Database>(
     key: K,
     list: Database[K],
@@ -129,6 +153,24 @@ export function DataProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  /**
+   * Optimistic single-row update. Merges the item into the latest state
+   * (functional update, never a stale closure) and persists only that one row,
+   * so a concurrent save from another user can never delete it.
+   */
+  function applyOne<K extends keyof Database, T extends { }>(
+    key: K,
+    item: T,
+    matches: (x: T) => boolean,
+    saveRow: () => Promise<void>
+  ): Promise<void> {
+    setDb((prev) => ({ ...prev, [key]: upsert(prev[key] as unknown as T[], item, matches) as unknown as Database[K] }));
+    return saveRow().catch((err) => {
+      console.error(`Failed to save ${key}:`, err);
+      throw err;
+    });
+  }
+
   const value: DataContextValue = {
     loading,
     users: db.users,
@@ -136,32 +178,45 @@ export function DataProvider({ children }: { children: ReactNode }) {
     orders: db.orders,
     commissions: db.commissions,
     statements: db.statements,
+    routes: db.routes ?? [],
+    availability: db.availability ?? [],
 
     reload: load,
 
     setUsers: (users) => apply("users", users, saveUsers),
     upsertUser: (user) =>
-      apply("users", upsert(db.users, user, (u) => u.email === user.email), saveUsers),
+      applyOne("users", user, (u) => u.email === user.email, () => saveUser(user)),
 
     setDSRs: (dsrs) => apply("dsrs", dsrs, saveDSRs),
     upsertDSR: (dsr) =>
-      apply("dsrs", upsert(db.dsrs, dsr, (d) => d.id === dsr.id), saveDSRs),
+      applyOne("dsrs", dsr, (d) => d.id === dsr.id, () => saveDSROne(dsr)),
 
     setOrders: (orders) => apply("orders", orders, saveOrders),
     upsertOrder: (order) =>
-      apply("orders", upsert(db.orders, order, (o) => o.id === order.id), saveOrders),
+      applyOne("orders", order, (o) => o.id === order.id, () => saveOrderOne(order)),
+    placeOrder: async (order) => {
+      const res = await placeOrderDb(order);
+      if (res.ok) {
+        setDb((prev) => ({ ...prev, orders: upsert(prev.orders, order, (o) => o.id === order.id) }));
+      }
+      return res;
+    },
 
     setCommissions: (commissions) =>
       apply("commissions", commissions, saveCommissions),
     upsertCommission: (c) =>
-      apply(
-        "commissions",
-        upsert(db.commissions, c, (x) => x.id === c.id),
-        saveCommissions
-      ),
+      applyOne("commissions", c, (x) => x.id === c.id, () => saveCommissionOne(c)),
 
     setStatements: (statements) =>
       apply("statements", statements, saveStatements),
+
+    setRoutes: (routes) => apply("routes", routes, saveRoutes),
+    upsertRoute: (r) =>
+      applyOne("routes", r, (x) => x.id === r.id, () => saveRouteOne(r)),
+
+    setAvailability: (a) => apply("availability", a, saveAvailability),
+    upsertAvailability: (a) =>
+      applyOne("availability", a, (x) => x.id === a.id, () => saveAvailabilityOne(a)),
 
     replaceAll: async (next) => {
       setDb(next);

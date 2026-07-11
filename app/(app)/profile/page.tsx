@@ -161,8 +161,8 @@ export default function ProfilePage() {
         </div>
       </Card>
 
-      {/* Change password — hidden for the shared attendant tablet account */}
-      {user.role !== "Hatchery Attendant" && (
+      {/* Change password — hidden for accounts that don't use a password */}
+      {user.role !== "Hatchery Attendant" && user.role !== "DSR" && (
       <Card>
         <CardHeader title="Change password" />
         {user.pwRequest ? (

@@ -15,11 +15,13 @@
  */
 
 import type {
+  Availability,
   BankStatement,
   CommissionRequest,
   Database,
   DSR,
   Order,
+  Route,
   User,
 } from "./types";
 import { SEED_ADMIN } from "./config";
@@ -39,7 +41,14 @@ async function fetchCollection<T>(table: string): Promise<T[]> {
     .from(table)
     .select("data")
     .order("updated_at", { ascending: true });
-  if (error) throw new Error(`Could not load ${table}: ${error.message}`);
+  if (error) {
+    // A table this role isn't permitted to read (row-level security) — or a
+    // transient error — must not crash the whole app. Degrade to empty so the
+    // pages a role DOES use keep working. This is what lets RLS be tightened
+    // per-role safely later.
+    console.warn(`Could not load ${table}: ${error.message}`);
+    return [];
+  }
   return (data ?? []).map((r) => r.data as T);
 }
 
@@ -85,14 +94,16 @@ async function saveCollection<T>(
 // ---------------------------------------------------------------------------
 
 export async function getDatabase(): Promise<Database> {
-  const [users, dsrs, orders, commissions, statements] = await Promise.all([
+  const [users, dsrs, orders, commissions, statements, routes, availability] = await Promise.all([
     fetchCollection<User>("users"),
     fetchCollection<DSR>("dsrs"),
     fetchCollection<Order>("orders"),
     fetchCollection<CommissionRequest>("commissions"),
     fetchCollection<BankStatement>("statements"),
+    fetchCollection<Route>("routes"),
+    fetchCollection<Availability>("availability"),
   ]);
-  return { users, dsrs, orders, commissions, statements };
+  return { users, dsrs, orders, commissions, statements, routes, availability };
 }
 
 /** Replace everything (backup restore). */
@@ -103,6 +114,8 @@ export async function replaceDatabase(db: Database): Promise<void> {
     saveOrders(db.orders),
     saveCommissions(db.commissions),
     saveStatements(db.statements),
+    saveRoutes(db.routes ?? []),
+    saveAvailability(db.availability ?? []),
   ]);
 }
 
@@ -192,6 +205,30 @@ export async function saveCommissions(
 }
 
 // ---------------------------------------------------------------------------
+// Delivery routes
+// ---------------------------------------------------------------------------
+
+export async function getRoutes(): Promise<Route[]> {
+  return fetchCollection<Route>("routes");
+}
+
+export async function saveRoutes(routes: Route[]): Promise<void> {
+  return saveCollection("routes", "id", routes, (r) => r.id);
+}
+
+// ---------------------------------------------------------------------------
+// Ordering availability
+// ---------------------------------------------------------------------------
+
+export async function getAvailability(): Promise<Availability[]> {
+  return fetchCollection<Availability>("availability");
+}
+
+export async function saveAvailability(items: Availability[]): Promise<void> {
+  return saveCollection("availability", "id", items, (a) => a.id);
+}
+
+// ---------------------------------------------------------------------------
 // Bank statements
 // ---------------------------------------------------------------------------
 
@@ -233,3 +270,48 @@ export function newId(prefix = "id"): string {
     .toString(36)
     .slice(2, 8)}`;
 }
+
+// ---------------------------------------------------------------------------
+// Single-row upserts (safe for concurrent multi-user edits)
+//
+// Unlike saveCollection (which also DELETES rows missing from the passed list),
+// these touch exactly one row — so one user saving an order can never wipe out
+// another user's concurrently-created data.
+// ---------------------------------------------------------------------------
+
+async function upsertOne<T>(table: string, pk: string, key: string, item: T): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase()
+    .from(table)
+    .upsert({ [pk]: key, data: item, updated_at: new Date().toISOString() }, { onConflict: pk });
+  if (error) throw new Error(`Could not save to ${table}: ${error.message}`);
+}
+
+export const saveOrderOne = (o: Order) => upsertOne("orders", "id", o.id, o);
+
+// ---------------------------------------------------------------------------
+// Atomic order placement (availability-checked, race-safe)
+//
+// Goes through a security-definer Postgres function that locks the day's
+// availability row, re-checks the remaining chicks server-side, and inserts —
+// so two people can't both place orders that together oversell the day.
+// ---------------------------------------------------------------------------
+
+export type PlaceResult =
+  | { ok: true }
+  | { ok: false; reason: "not_enough" | "date_closed" | "failed"; left?: number; message?: string };
+
+export async function placeOrder(order: Order): Promise<PlaceResult> {
+  if (!inBrowser()) return { ok: false, reason: "failed" };
+  const { error } = await getSupabase().rpc("place_order", { p_order: order });
+  if (!error) return { ok: true };
+  const m = error.message || "";
+  const nm = m.match(/NOT_ENOUGH:(-?\d+)/);
+  if (nm) return { ok: false, reason: "not_enough", left: Math.max(0, Number(nm[1])) };
+  if (m.includes("DATE_CLOSED")) return { ok: false, reason: "date_closed" };
+  return { ok: false, reason: "failed", message: m };
+}
+export const saveDSROne = (d: DSR) => upsertOne("dsrs", "id", d.id, d);
+export const saveRouteOne = (r: Route) => upsertOne("routes", "id", r.id, r);
+export const saveAvailabilityOne = (a: Availability) => upsertOne("availability", "id", a.id, a);
+export const saveCommissionOne = (c: CommissionRequest) => upsertOne("commissions", "id", c.id, c);

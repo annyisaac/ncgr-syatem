@@ -39,6 +39,7 @@ export type Role =
   | "Tetra Payment Checker"
   | "Ross Order Receiver"
   | "Ross Payment Checker"
+  | "DSR"
   // Hatchery
   | "Hatchery Manager"
   | "Hatchery Operations Manager"
@@ -55,6 +56,7 @@ export const ROLES: Role[] = [
   "Tetra Payment Checker",
   "Ross Order Receiver",
   "Ross Payment Checker",
+  "DSR",
   "Hatchery Manager",
   "Hatchery Operations Manager",
   "Production Technician",
@@ -134,6 +136,12 @@ export interface DSR {
   zone: Zone; // derived from district/province
   active: boolean;
   by: string; // email of the user who registered them
+  monthlyTarget?: number; // chicks/month target set by the zone manager
+  // DSR login (code, locked to one device)
+  loginCode?: string; // system-generated sign-in code
+  deviceId?: string; // the single device the code is bound to
+  deviceLabel?: string; // human label of that device
+  authEmail?: string; // derived Supabase auth email backing the code login
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +192,50 @@ export interface Order {
   commReq?: boolean; // commission has been requested for this order
   commPaid?: boolean; // commission paid for this order
   request?: OrderRequest; // pending refund/compensation request
+  // Delivery planning
+  routeId?: string; // assigned delivery route
+  deliveryChicks?: number; // chicks allocated for delivery
+  pickupLocation?: string; // where the chicks are picked up
+}
+
+// ---------------------------------------------------------------------------
+// Delivery routes (delivery planning)
+// ---------------------------------------------------------------------------
+
+export interface Route {
+  id: string;
+  name: string;
+  driver: string;
+  capacity?: number; // max chicks the driver/vehicle can carry (for overload warnings)
+  by: string; // salesperson who created it
+  on: string; // ISO datetime
+}
+
+// ---------------------------------------------------------------------------
+// Ordering availability (Admin opens delivery dates with a per-product cap)
+// ---------------------------------------------------------------------------
+
+export interface Availability {
+  id: string; // the date, yyyy-mm-dd
+  date: string;
+  ross: number; // chicks available for Ross 308 that day
+  tetra: number; // chicks available for Tetra Super Harco that day
+  by: string;
+  on: string;
+}
+
+/** Chicks a product can still take on a given date (available − already ordered). */
+export function availableFor(
+  avail: Availability | undefined,
+  product: Product,
+  orders: Pick<Order, "date" | "product" | "chicks" | "status">[]
+): number {
+  if (!avail) return 0;
+  const cap = product === "Ross 308" ? avail.ross : avail.tetra;
+  const used = orders
+    .filter((o) => o.date === avail.date && o.product === product && o.status !== "refunded" && o.status !== "rejected")
+    .reduce((s, o) => s + o.chicks, 0);
+  return Math.max(0, cap - used);
 }
 
 /**
@@ -251,6 +303,8 @@ export interface Database {
   orders: Order[];
   commissions: CommissionRequest[];
   statements: BankStatement[];
+  routes: Route[];
+  availability: Availability[];
 }
 
 // ---------------------------------------------------------------------------

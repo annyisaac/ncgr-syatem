@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
@@ -217,38 +218,48 @@ export default function DeliveriesPage() {
               const advance = list.reduce((s, o) => s + paidAmount(o), 0);
               const bal = pending.reduce((s, o) => s + Math.max(0, balance(o)), 0);
               return (
-                <button
+                <div
                   key={dt}
-                  type="button"
-                  onClick={() => openDate(dt)}
                   className={cn(
-                    "flex w-full flex-wrap items-center justify-between gap-3 rounded-xl border p-4 text-left transition hover:shadow-pop",
+                    "flex flex-wrap items-stretch gap-2 rounded-xl border p-1",
                     dt === today ? "border-l-4 border-gold" : "border-line"
                   )}
                 >
-                  <div>
-                    <p className="font-bold">
-                      {formatDate(dt)}
-                      {dt === today && (
-                        <span className="ml-2 text-gold-dark">· TODAY</span>
-                      )}
-                    </p>
-                    <p className="text-xs text-muted">
-                      {list.length} order(s) · click to open in Orders
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2 text-xs">
-                    <span className="rounded-full bg-grey-bg px-3 py-1 font-semibold">
-                      {chicks.toLocaleString()} chicks to deliver
-                    </span>
-                    <span className="rounded-full bg-green-bg px-3 py-1 font-semibold text-green">
-                      Advance: {formatRWF(advance)}
-                    </span>
-                    <span className="rounded-full bg-red-bg px-3 py-1 font-semibold text-red">
-                      Balance: {formatRWF(bal)}
-                    </span>
-                  </div>
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => openDate(dt)}
+                    className="flex flex-1 flex-wrap items-center justify-between gap-3 rounded-lg p-3 text-left transition hover:bg-grey-bg"
+                  >
+                    <div>
+                      <p className="font-bold">
+                        {formatDate(dt)}
+                        {dt === today && (
+                          <span className="ml-2 text-gold-dark">· TODAY</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-muted">
+                        {list.length} order(s) · click to open in Orders
+                      </p>
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs">
+                      <span className="rounded-full bg-grey-bg px-3 py-1 font-semibold">
+                        {chicks.toLocaleString()} chicks to deliver
+                      </span>
+                      <span className="rounded-full bg-green-bg px-3 py-1 font-semibold text-green">
+                        Advance: {formatRWF(advance)}
+                      </span>
+                      <span className="rounded-full bg-red-bg px-3 py-1 font-semibold text-red">
+                        Balance: {formatRWF(bal)}
+                      </span>
+                    </div>
+                  </button>
+                  <Link
+                    href={`/planning/${dt}`}
+                    className="flex items-center rounded-lg border border-line px-3 text-xs font-semibold text-gold-dark transition hover:border-gold"
+                  >
+                    Plan routes →
+                  </Link>
+                </div>
               );
             })}
           </div>

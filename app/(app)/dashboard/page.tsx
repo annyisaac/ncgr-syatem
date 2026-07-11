@@ -14,13 +14,14 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { DateRange, ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { Kpi } from "@/components/dashboard/Kpi";
 import { LineChartView, PieChartView } from "@/components/charts/Charts";
+import { GlobalSearch } from "@/components/sales/GlobalSearch";
 
 import type { Order } from "@/lib/types";
 import { PRODUCTS } from "@/lib/types";
 import { balance, orderTotal, paidAmount, toDeliver } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
 import { provinceOfDistrict } from "@/lib/config";
-import { formatDate } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { commissionByDSR } from "@/lib/commission";
 import {
@@ -32,8 +33,10 @@ import {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { orders, replaceAll, setOrders, users, dsrs, commissions, statements } = useData();
+  const { orders, replaceAll, setOrders, users, dsrs, commissions, statements, routes, availability } = useData();
   const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
+
+  const visible = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
   const scoped = useMemo(() => {
     if (!user) return [];
@@ -51,6 +54,19 @@ export default function DashboardPage() {
         <Pill tone="gold">{user.role}</Pill>
       </div>
 
+      <GlobalSearch orders={visible} dsrs={dsrs} routes={routes} />
+
+      {/* Ordering is gated to Admin-opened dates — warn when none are open. */}
+      {user.role === "Admin" && !availability.some((a) => a.date >= todayISO() && (a.ross > 0 || a.tetra > 0)) && (
+        <Card className="border-gold bg-gold-bg/40">
+          <p className="text-sm">
+            <strong className="text-ink">No upcoming ordering dates are open.</strong>{" "}
+            <span className="text-muted">New orders can&apos;t be placed until you open a date on </span>
+            <Link href="/availability" className="font-semibold text-gold-dark underline">Availability</Link>.
+          </p>
+        </Card>
+      )}
+
       {/* Admin sees everything waiting for their approval, before anything else. */}
       {user.role === "Admin" && (
         <ApprovalsCard users={users} orders={orders} commissions={commissions} />
@@ -63,7 +79,7 @@ export default function DashboardPage() {
       {user.role === "Admin" && (
         <AdminDashboard
           orders={scoped}
-          db={{ users, dsrs, orders, commissions, statements }}
+          db={{ users, dsrs, orders, commissions, statements, routes, availability }}
           replaceAll={replaceAll}
           setOrders={setOrders}
         />

@@ -50,3 +50,15 @@ export function monthLabel(year: number, monthIndex0: number): string {
 export function nowISO(): string {
   return new Date().toISOString();
 }
+
+/**
+ * Normalize a Rwandan phone number to a comparable key so that
+ * "0788598673", "+250788598673", "250788598673" and "788 598 673" all match.
+ * Returns the 9-digit local core (e.g. "788598673").
+ */
+export function normalizePhone(phone: string): string {
+  let d = (phone || "").replace(/\D/g, "");
+  if (d.startsWith("250")) d = d.slice(3);
+  if (d.length === 10 && d.startsWith("0")) d = d.slice(1);
+  return d;
+}

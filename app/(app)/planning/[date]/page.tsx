@@ -1,0 +1,267 @@
+"use client";
+
+import { useMemo, useState } from "react";
+import { useParams } from "next/navigation";
+import Link from "next/link";
+
+import { useAuth } from "@/components/AuthProvider";
+import { useData } from "@/components/DataProvider";
+import { useToast } from "@/components/ui/Toast";
+import { Card, CardHeader } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Field, Input, Select } from "@/components/ui/Select";
+import { Pill } from "@/components/ui/Pill";
+import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
+import { visibleOrders } from "@/lib/permissions";
+import { COMPANY } from "@/lib/config";
+import { nowISO, formatDate } from "@/lib/format";
+import { fulfillOrder } from "@/lib/orders";
+import { toDeliver, type Order, type Route } from "@/lib/types";
+
+const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
+const deliverChicks = (o: Order) => o.deliveryChicks ?? toDeliver(o);
+const isActive = (o: Order) => o.status !== "refunded" && o.status !== "rejected";
+
+// ---- reports --------------------------------------------------------------
+
+function csvCell(v: string) { return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
+function esc(s: string) { return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!)); }
+
+function downloadCsv(route: Route, dateLabel: string, orders: Order[]) {
+  const rows: string[][] = [
+    ["Delivery report"], ["Route", route.name], ["Driver", route.driver], ["Date", dateLabel], [],
+    ["#", "Customer", "Phone", "Sector", "District", "Pickup", "Chicks", "Product"],
+  ];
+  let total = 0;
+  orders.forEach((o, i) => { const c = deliverChicks(o); total += c; rows.push([String(i + 1), o.name, o.phone, o.sector, o.district, o.pickupLocation ?? "", String(c), o.product]); });
+  rows.push([], ["TOTAL CHICKS", "", "", "", "", "", String(total)]);
+  const blob = new Blob([rows.map((r) => r.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `${route.name.replace(/\s+/g, "-")}-${dateLabel}.csv`; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function printManifest(route: Route, dateLabel: string, orders: Order[]) {
+  const total = orders.reduce((s, o) => s + deliverChicks(o), 0);
+  const rows = orders.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.name)}</td><td>${esc(o.phone)}</td><td>${esc(o.sector)}</td><td>${esc(o.district)}</td><td style="text-align:right">${deliverChicks(o).toLocaleString()}</td><td class="sig"></td></tr>`).join("");
+  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(route.name)} — ${dateLabel}</title><style>
+    body{font-family:Arial,Helvetica,sans-serif;color:#20201c;padding:24px}h1{margin:0 0 2px;font-size:20px}.muted{color:#6e6656;font-size:13px}
+    .meta{margin:10px 0 16px;font-size:14px}.meta b{color:#20201c}table{width:100%;border-collapse:collapse;font-size:13px}
+    th,td{border:1px solid #d9d2c2;padding:6px 8px;text-align:left}th{background:#f6f3ea}.sig{width:120px}tfoot td{font-weight:bold;background:#faf7ef}@media print{button{display:none}}
+  </style></head><body>
+    <h1>${esc(COMPANY.name)} — Delivery Manifest</h1><div class="muted">${esc(COMPANY.address)}</div>
+    <div class="meta">Route: <b>${esc(route.name)}</b> &nbsp;·&nbsp; Driver: <b>${esc(route.driver)}</b> &nbsp;·&nbsp; Date: <b>${dateLabel}</b> &nbsp;·&nbsp; Stops: <b>${orders.length}</b></div>
+    <table><thead><tr><th>#</th><th>Customer</th><th>Phone</th><th>Sector</th><th>District</th><th style="text-align:right">Chicks</th><th>Received (sign)</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="7" style="text-align:center;color:#6e6656">No stops</td></tr>`}</tbody>
+    <tfoot><tr><td colspan="5">TOTAL CHICKS</td><td style="text-align:right">${total.toLocaleString()}</td><td></td></tr></tfoot></table>
+    <p class="muted" style="margin-top:20px">Driver signature: ____________________  Date: __________</p>
+    <button onclick="window.print()" style="margin-top:16px;padding:8px 14px">Print</button></body></html>`;
+  const w = window.open("", "_blank", "width=900,height=1000");
+  if (!w) return;
+  w.document.write(html); w.document.close(); w.focus();
+  setTimeout(() => w.print(), 300);
+}
+
+// ---------------------------------------------------------------------------
+
+export default function DayPlanPage() {
+  const params = useParams<{ date: string }>();
+  const activeDate = params.date;
+  const { user } = useAuth();
+  const { orders, routes, upsertRoute, setRoutes, upsertOrder, newId } = useData();
+  const { toast } = useToast();
+
+  const [rName, setRName] = useState("");
+  const [rDriver, setRDriver] = useState("");
+  const [rCap, setRCap] = useState("");
+  const [rErr, setRErr] = useState<string | null>(null);
+  const [allocFor, setAllocFor] = useState<Order | null>(null);
+
+  const role = user?.role;
+  const canEdit = !!role && CAN_EDIT.includes(role);
+  const scoped = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
+
+  const dayOrders = useMemo(
+    () => scoped.filter((o) => o.date === activeDate && o.confirmedOk && isActive(o) && !o.deliverOk),
+    [scoped, activeDate]
+  );
+  const routeIds = useMemo(() => new Set(routes.map((r) => r.id)), [routes]);
+  const ready = useMemo(() => dayOrders.filter((o) => !o.routeId || !routeIds.has(o.routeId)), [dayOrders, routeIds]);
+  const dayTotal = dayOrders.reduce((s, o) => s + deliverChicks(o), 0);
+  const routeOrders = (routeId: string) => dayOrders.filter((o) => o.routeId === routeId);
+  const dateLabel = formatDate(activeDate);
+
+  if (!user) return null;
+
+  function createRoute(e: React.FormEvent) {
+    e.preventDefault();
+    setRErr(null);
+    if (!rName.trim()) return setRErr("Enter a route name.");
+    if (!rDriver.trim()) return setRErr("Enter the delivery driver.");
+    const r: Route = { id: newId("route"), name: rName.trim(), driver: rDriver.trim(), capacity: Number(rCap) || undefined, by: user!.email, on: nowISO() };
+    upsertRoute(r);
+    toast(`Route ${r.name} created.`);
+    setRName(""); setRDriver(""); setRCap("");
+  }
+
+  function deleteRoute(route: Route) {
+    if (!confirm(`Delete route “${route.name}”? Its orders will be un-assigned.`)) return;
+    scoped.filter((o) => o.routeId === route.id).forEach((o) => upsertOrder({ ...o, routeId: undefined, deliveryChicks: undefined, pickupLocation: undefined }));
+    setRoutes(routes.filter((r) => r.id !== route.id));
+    toast(`Route ${route.name} deleted.`);
+  }
+
+  function allocate(o: Order, chicks: number, pickup: string, routeId: string) {
+    upsertOrder({ ...o, routeId, deliveryChicks: chicks, pickupLocation: pickup });
+    toast(`${o.name} allocated to ${routes.find((r) => r.id === routeId)?.name ?? "route"}.`);
+    setAllocFor(null);
+  }
+
+  function unallocate(o: Order) {
+    upsertOrder({ ...o, routeId: undefined, deliveryChicks: undefined, pickupLocation: undefined });
+    toast(`${o.name} removed from its route.`);
+  }
+
+  function markDelivered(o: Order) {
+    const routeName = routes.find((r) => r.id === o.routeId)?.name ?? "route";
+    upsertOrder(fulfillOrder(o, user!, `Delivered on ${routeName}`));
+    toast(`${o.name} marked delivered.`);
+  }
+
+  return (
+    <div className="space-y-5">
+      <Link href="/planning" className="text-sm text-gold-dark underline">← Back to calendar</Link>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="section-heading text-lg">Delivery plan — {dateLabel}</h1>
+          <p className="text-sm text-muted">{dayTotal.toLocaleString()} chicks · {dayOrders.length} order(s) to deliver</p>
+        </div>
+        <Pill tone={canEdit ? "gold" : "neutral"}>{canEdit ? "Full access" : "View only"}</Pill>
+      </div>
+
+      {/* Routes */}
+      <Card>
+        <CardHeader title={`Routes (${routes.length})`} />
+        {canEdit && (
+          <form onSubmit={createRoute} className="mb-4 flex flex-wrap items-end gap-3">
+            <Field label="Route name"><Input value={rName} onChange={(e) => setRName(e.target.value)} placeholder="e.g. Kigali East" /></Field>
+            <Field label="Delivery driver"><Input value={rDriver} onChange={(e) => setRDriver(e.target.value)} placeholder="Driver name" /></Field>
+            <Field label="Capacity (chicks, optional)"><Input type="number" value={rCap} onChange={(e) => setRCap(e.target.value)} placeholder="e.g. 5000" /></Field>
+            <Button type="submit">Add route</Button>
+            {rErr && <p className="w-full text-sm text-status-refunded">{rErr}</p>}
+          </form>
+        )}
+        {routes.length === 0 && <p className="text-sm text-muted">No routes yet.{canEdit ? " Create one above." : ""}</p>}
+      </Card>
+
+      {/* Ready to allocate */}
+      <Card>
+        <CardHeader title={`Ready to deliver — allocate to a route (${ready.length})`} />
+        <TableWrap>
+          <thead><tr><Th>Customer</Th><Th>Product</Th><Th>District</Th><Th>Sector</Th><Th className="text-right">Chicks</Th><Th>Action</Th></tr></thead>
+          <tbody>
+            {ready.length === 0 ? <EmptyRow colSpan={6} text="Nothing waiting to be allocated for this day." /> : ready.map((o) => (
+              <tr key={o.id}>
+                <Td className="font-medium">{o.name} <span className="text-xs text-muted">· {o.phone}</span></Td>
+                <Td>{o.product}</Td>
+                <Td>{o.district}</Td>
+                <Td>{o.sector}</Td>
+                <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
+                <Td>{canEdit ? <Button size="sm" onClick={() => setAllocFor(o)}>Allocate</Button> : <span className="text-xs text-muted">—</span>}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+      </Card>
+
+      {/* Route cards */}
+      {routes.map((route) => {
+        const list = routeOrders(route.id);
+        const total = list.reduce((s, o) => s + deliverChicks(o), 0);
+        const over = route.capacity ? total > route.capacity : false;
+        return (
+          <Card key={route.id}>
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <h3 className="card-title">{route.name}</h3>
+                <p className="text-sm text-muted">
+                  Driver: <strong className="text-ink">{route.driver}</strong> · {list.length} stop(s) · <strong className="text-ink">{total.toLocaleString()}</strong> chicks
+                  {route.capacity ? ` / ${route.capacity.toLocaleString()} capacity` : ""}
+                  {over && <span className="ml-2"><Pill tone="red">Over capacity</Pill></span>}
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="secondary" size="sm" onClick={() => printManifest(route, dateLabel, list)} disabled={list.length === 0}>Print manifest</Button>
+                <Button variant="ghost" size="sm" onClick={() => downloadCsv(route, dateLabel, list)} disabled={list.length === 0}>CSV</Button>
+                {canEdit && <Button variant="ghost" size="sm" onClick={() => deleteRoute(route)}>Delete</Button>}
+              </div>
+            </div>
+            <TableWrap>
+              <thead><tr><Th>Customer</Th><Th>Phone</Th><Th>Pickup</Th><Th>Sector</Th><Th className="text-right">Chicks</Th>{canEdit && <Th></Th>}</tr></thead>
+              <tbody>
+                {list.length === 0 ? <EmptyRow colSpan={canEdit ? 6 : 5} text="No stops on this route for this day." /> : list.map((o) => (
+                  <tr key={o.id}>
+                    <Td className="font-medium">{o.name}</Td>
+                    <Td>{o.phone}</Td>
+                    <Td>{o.pickupLocation ?? "—"}</Td>
+                    <Td>{o.sector}</Td>
+                    <Td className="text-right">{deliverChicks(o).toLocaleString()}</Td>
+                    {canEdit && (
+                      <Td>
+                        <div className="flex gap-1">
+                          <Button size="sm" onClick={() => markDelivered(o)}>Delivered</Button>
+                          <Button size="sm" variant="ghost" onClick={() => unallocate(o)}>Remove</Button>
+                        </div>
+                      </Td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </TableWrap>
+          </Card>
+        );
+      })}
+
+      {allocFor && (
+        <AllocateModal order={allocFor} routes={routes} onClose={() => setAllocFor(null)} onSave={(chicks, pickup, routeId) => allocate(allocFor, chicks, pickup, routeId)} />
+      )}
+    </div>
+  );
+}
+
+function AllocateModal({ order, routes, onClose, onSave }: {
+  order: Order; routes: Route[]; onClose: () => void; onSave: (chicks: number, pickup: string, routeId: string) => void;
+}) {
+  const [chicks, setChicks] = useState(String(toDeliver(order)));
+  const [pickup, setPickup] = useState("Hatchery");
+  const [routeId, setRouteId] = useState(routes[0]?.id ?? "");
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Modal open onClose={onClose} title={`Allocate — ${order.name}`}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button onClick={() => {
+          const n = Number(chicks) || 0;
+          if (routes.length === 0) return setErr("Create a route first.");
+          if (!routeId) return setErr("Choose a route.");
+          if (n <= 0) return setErr("Enter the chicks to deliver.");
+          if (!pickup.trim()) return setErr("Enter the pickup location.");
+          onSave(n, pickup.trim(), routeId);
+        }}>Allocate</Button>
+      </>}>
+      <div className="space-y-3 text-sm">
+        <p className="text-muted">{order.product} · {order.district} · to deliver {toDeliver(order).toLocaleString()} chicks</p>
+        <Field label="Chicks to deliver"><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
+        <Field label="Pickup location"><Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Where the chicks are picked up" /></Field>
+        <Field label="Route">
+          {routes.length === 0 ? <p className="text-status-refunded">No routes yet — create one on the page first.</p> : (
+            <Select value={routeId} onChange={(e) => setRouteId(e.target.value)} options={routes.map((r) => ({ value: r.id, label: `${r.name} — ${r.driver}` }))} />
+          )}
+        </Field>
+        {err && <p className="text-status-refunded">{err}</p>}
+      </div>
+    </Modal>
+  );
+}

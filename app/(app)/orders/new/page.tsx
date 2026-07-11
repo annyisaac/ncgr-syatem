@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 
 import type { Order, Payment, Product, Province } from "@/lib/types";
+import { availableFor } from "@/lib/types";
 import {
   DISTRICTS_BY_PROVINCE,
   PROVINCES,
@@ -20,12 +21,12 @@ import {
   zoneOfDistrict,
   zoneProvinces,
 } from "@/lib/config";
-import { nowISO, todayISO } from "@/lib/format";
+import { nowISO, normalizePhone, formatDate } from "@/lib/format";
 import { logLine } from "@/lib/orders";
 
 export default function NewOrderPage() {
   const { user } = useAuth();
-  const { dsrs, orders, upsertOrder, newId } = useData();
+  const { dsrs, orders, availability, placeOrder, newId } = useData();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -55,7 +56,7 @@ export default function NewOrderPage() {
   const [chicks, setChicks] = useState("");
   const [comp, setComp] = useState("0");
   const [price, setPrice] = useState("");
-  const [date, setDate] = useState(todayISO());
+  const [date, setDate] = useState("");
   const [payAmt, setPayAmt] = useState("");
   const [payRef, setPayRef] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -94,6 +95,27 @@ export default function NewOrderPage() {
     [selectedDsr]
   );
 
+  // Customer de-duplication: a phone number already in the system is an existing
+  // customer — the new order is added to them, not a new customer registration.
+  const existingCustomer = useMemo(() => {
+    const key = normalizePhone(phone);
+    if (key.length < 6) return null;
+    const theirs = orders.filter((o) => normalizePhone(o.phone) === key);
+    if (theirs.length === 0) return null;
+    const latest = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    return { name: latest.name, count: theirs.length };
+  }, [phone, orders]);
+
+  // Ordering availability: only Admin-opened dates are selectable; remaining
+  // chicks are visible to Admin & Zone Managers only.
+  const canSeeAvail = user?.role === "Admin" || user?.role === "Tetra Zone Manager";
+  const openDates = useMemo(
+    () => availability.slice().filter((a) => a.ross > 0 || a.tetra > 0).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    [availability]
+  );
+  const selAvail = availability.find((a) => a.id === date);
+  const remaining = selAvail && product ? availableFor(selAvail, product as Product, orders) : 0;
+
   const nChicks = Number(chicks) || 0;
   const nComp = Number(comp) || 0;
   const nPrice = Number(price) || 0;
@@ -108,7 +130,9 @@ export default function NewOrderPage() {
     setSector("");
   }
 
-  function submit(e: React.FormEvent) {
+  const [saving, setSaving] = useState(false);
+
+  async function submit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
 
@@ -125,6 +149,14 @@ export default function NewOrderPage() {
     if (nComp < 0) return setError("Compensated chicks cannot be negative.");
     if (nPrice <= 0) return setError("Enter a unit price.");
     if (!date) return setError("Choose a delivery date.");
+    if (selAvail) {
+      const left = availableFor(selAvail, product as Product, orders);
+      if (nChicks > left) {
+        return setError(canSeeAvail
+          ? `Only ${left.toLocaleString()} ${product} chicks left on ${formatDate(date)}.`
+          : `Not enough ${product} chicks available on ${formatDate(date)} for this order.`);
+      }
+    }
 
     const payAmount = Number(payAmt) || 0;
     if (payAmount > 0 && !payRef.trim())
@@ -161,7 +193,7 @@ export default function NewOrderPage() {
       sector: sector.trim(),
       dsr: selectedDsr?.name,
       dsrId: dsrId || undefined,
-      name: name.trim(),
+      name: (existingCustomer?.name ?? name).trim(),
       clientDistrict,
       clientSector: clientSector.trim(),
       phone: phone.trim(),
@@ -179,7 +211,18 @@ export default function NewOrderPage() {
       payments,
     };
 
-    upsertOrder(order);
+    setSaving(true);
+    const res = await placeOrder(order);
+    setSaving(false);
+    if (!res.ok) {
+      if (res.reason === "not_enough") {
+        return setError(canSeeAvail
+          ? `Only ${(res.left ?? 0).toLocaleString()} ${product} chicks left on ${formatDate(date)} — that just changed. Reduce the quantity or pick another day.`
+          : `Not enough ${product} chicks available on ${formatDate(date)}. Please pick another day or a smaller order.`);
+      }
+      if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
+      return setError("Could not place the order. Please check your connection and try again.");
+    }
     toast(`Order created for ${order.name}.`);
     router.push("/orders");
   }
@@ -309,6 +352,17 @@ export default function NewOrderPage() {
           <>
             <Card>
               <CardHeader title="Client & quantity" />
+              {existingCustomer && (
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#efdfae] bg-gold-bg px-3 py-2.5 text-sm">
+                  <span>
+                    <strong className="text-ink">Existing customer:</strong> {existingCustomer.name}{" "}
+                    <span className="text-muted">· {existingCustomer.count} order{existingCustomer.count > 1 ? "s" : ""}. This order is added to them.</span>
+                  </span>
+                  {name.trim() !== existingCustomer.name && (
+                    <Button variant="ghost" size="sm" onClick={() => setName(existingCustomer.name)}>Use “{existingCustomer.name}”</Button>
+                  )}
+                </div>
+              )}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Client name">
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
@@ -336,8 +390,20 @@ export default function NewOrderPage() {
                 <Field label="Unit price (RWF)">
                   <Input type="number" min={1} value={price} onChange={(e) => setPrice(e.target.value)} />
                 </Field>
-                <Field label="Delivery date">
-                  <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+                <Field label="Delivery date" hint={canSeeAvail && selAvail && product ? `${remaining.toLocaleString()} ${product} chicks left this day` : undefined}>
+                  {openDates.length === 0 ? (
+                    <p className="text-sm text-status-refunded">No ordering dates are open. Ask the Admin to open dates on the Availability page.</p>
+                  ) : (
+                    <Select
+                      value={date}
+                      placeholder="Select an open delivery date"
+                      options={openDates.map((a) => ({
+                        value: a.id,
+                        label: formatDate(a.date) + (canSeeAvail && product ? ` · ${availableFor(a, product as Product, orders).toLocaleString()} left` : ""),
+                      }))}
+                      onChange={(e) => setDate(e.target.value)}
+                    />
+                  )}
                 </Field>
               </div>
 
@@ -376,7 +442,7 @@ export default function NewOrderPage() {
           <Button variant="ghost" onClick={() => router.push("/orders")}>
             Cancel
           </Button>
-          <Button type="submit">Create order</Button>
+          <Button type="submit" disabled={saving}>{saving ? "Placing…" : "Create order"}</Button>
         </div>
       </form>
     </div>
