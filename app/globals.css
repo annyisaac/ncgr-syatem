@@ -71,9 +71,9 @@ body {
   --color-purple-bg: #251f36;
 }
 
-/* Scale the whole UI down proportionally (all rem-based sizes shrink with it). */
+/* Base size that scales the whole (rem-based) UI proportionally. */
 html {
-  font-size: 12.5px;
+  font-size: 15px;
 }
 
 body {
