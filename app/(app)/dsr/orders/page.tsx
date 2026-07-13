@@ -10,16 +10,8 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { formatRWF } from "@/lib/config";
 import { formatDate } from "@/lib/format";
-import { balance, paidAmount, toDeliver, type Order } from "@/lib/types";
-
-function track(o: Order): { label: string; tone: "green" | "gold" | "info" | "neutral" | "red" } {
-  if (o.status === "refunded") return { label: "Refunded", tone: "red" };
-  if (o.status === "rejected") return { label: "Rejected", tone: "red" };
-  if (o.deliverOk) return { label: "Delivered", tone: "green" };
-  if (o.routeId) return { label: "On the truck", tone: "info" };
-  if (o.confirmedOk) return { label: "Confirmed — awaiting delivery", tone: "gold" };
-  return { label: "Awaiting payment", tone: "neutral" };
-}
+import { balance, paidAmount, toDeliver } from "@/lib/types";
+import { orderStage } from "@/lib/orders";
 
 export default function DsrOrdersPage() {
   const { user } = useAuth();
@@ -74,7 +66,7 @@ export default function DsrOrdersPage() {
           </thead>
           <tbody>
             {shown.length === 0 ? <EmptyRow colSpan={8} text="No matching orders." /> : shown.map((o) => {
-              const t = track(o);
+              const t = orderStage(o);
               return (
                 <tr key={o.id} className="cursor-pointer hover:bg-gold-bg">
                   <Td>{formatDate(o.date)}</Td>

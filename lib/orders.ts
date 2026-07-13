@@ -66,6 +66,23 @@ export function isClosed(order: Order): boolean {
   return order.status === "refunded" || order.status === "rejected";
 }
 
+export type Stage = { label: string; tone: "green" | "gold" | "info" | "neutral" | "red" };
+
+/**
+ * The human-facing status shown in the DSR / tracking views. Once a payment is
+ * recorded the order moves off "Awaiting payment" (so a DSR sees the change
+ * immediately) — it then waits for a checker to verify before "Confirmed".
+ */
+export function orderStage(o: Order): Stage {
+  if (o.status === "refunded") return { label: "Refunded", tone: "red" };
+  if (o.status === "rejected") return { label: "Rejected", tone: "red" };
+  if (o.deliverOk) return { label: "Delivered", tone: "green" };
+  if (o.routeId) return { label: "On the truck", tone: "info" };
+  if (o.confirmedOk) return { label: "Confirmed — awaiting delivery", tone: "gold" };
+  if (o.payments.length > 0) return { label: "Payment recorded — awaiting verification", tone: "gold" };
+  return { label: "Awaiting payment", tone: "neutral" };
+}
+
 export function canAddPayment(order: Order): string | null {
   if (isClosed(order)) return `Order was ${order.status}.`;
   if (isFullyPaid(order) && allVerified(order))

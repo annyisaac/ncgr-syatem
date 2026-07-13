@@ -14,6 +14,7 @@ import { Field, Input } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import { balance, paidAmount, orderTotal, toDeliver } from "@/lib/types";
+import { orderStage } from "@/lib/orders";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { dsrAddPayment } from "@/lib/db";
@@ -68,9 +69,7 @@ export default function DsrOrderDetailPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="section-heading text-lg">{order.name}</h1>
-        <Pill tone={order.status === "fulfilled" ? "fulfilled" : order.status === "refunded" ? "refunded" : order.status === "rejected" ? "red" : "pending"}>
-          {order.status}
-        </Pill>
+        <Pill tone={orderStage(order).tone}>{orderStage(order).label}</Pill>
       </div>
 
       <Card>
