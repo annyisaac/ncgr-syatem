@@ -36,8 +36,11 @@ export default function DsrOrdersPage() {
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
     if (!s) return zoneOrders;
+    const digits = s.replace(/\D/g, "");
     return zoneOrders.filter((o) =>
-      o.name.toLowerCase().includes(s) || o.phone.replace(/\D/g, "").includes(s.replace(/\D/g, "")) || (o.dsr ?? "").toLowerCase().includes(s)
+      o.name.toLowerCase().includes(s) ||
+      (digits !== "" && o.phone.replace(/\D/g, "").includes(digits)) ||
+      (o.dsr ?? "").toLowerCase().includes(s)
     );
   }, [zoneOrders, q]);
 

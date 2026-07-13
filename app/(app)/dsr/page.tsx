@@ -43,8 +43,9 @@ export default function DsrHome() {
   const zoneChicks = zoneActive.reduce((s, o) => s + o.chicks, 0);
 
   const s = q.trim().toLowerCase();
+  const digits = s.replace(/\D/g, "");
   const results = s
-    ? zoneOrders.filter((o) => o.name.toLowerCase().includes(s) || o.phone.replace(/\D/g, "").includes(s.replace(/\D/g, ""))).slice(0, 8)
+    ? zoneOrders.filter((o) => o.name.toLowerCase().includes(s) || (digits !== "" && o.phone.replace(/\D/g, "").includes(digits))).slice(0, 8)
     : [];
 
   return (

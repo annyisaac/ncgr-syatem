@@ -25,7 +25,7 @@ import { getDeviceId, deviceLabel } from "@/lib/device";
  */
 export function DsrGate({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const { dsrs, upsertDSR } = useData();
+  const { dsrs, upsertDSR, loading } = useData();
   const { toast } = useToast();
 
   const [code, setCode] = useState("");
@@ -41,6 +41,11 @@ export function DsrGate({ children }: { children: ReactNode }) {
   );
 
   const trusted = !!myDsr?.deviceId && myDsr.deviceId === deviceId;
+
+  // Data still loading — don't flash "profile not found" before dsrs arrive.
+  if (loading && !myDsr) {
+    return <div className="flex min-h-screen items-center justify-center text-muted">Loading…</div>;
+  }
 
   // No DSR profile is linked to this login — nothing the DSR can do here.
   if (!myDsr) {
