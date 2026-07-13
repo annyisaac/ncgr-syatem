@@ -53,6 +53,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const nav = navForRole(user.role);
   const activeNav = activeHref(nav, pathname);
   const pageTitle = pathname === "/profile" ? "My Account" : (nav.find((i) => i.href === activeNav)?.label ?? "");
+  const isDeeper = !!activeNav && pathname !== activeNav && pathname.startsWith(activeNav + "/");
   const allowed = canAccess(user.role, pathname);
   // Shared attendant tablet: no side menu, and must identify the operator first.
   const isAttendant = user.role === "Hatchery Attendant";
@@ -219,7 +220,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         )}
 
-        <main className="mx-auto w-full max-w-[1280px] grow px-4 py-6 md:px-8">
+        <main className="mx-auto w-full max-w-[1440px] grow px-4 py-6 md:px-8">
+          {/* Breadcrumb trail on nested (detail) pages so it's easy to get back */}
+          {!isAttendant && isDeeper && (
+            <nav className="mb-4 flex items-center gap-1.5 text-[0.75rem] text-muted">
+              <Link href={homeHref} className="transition hover:text-ink">Home</Link>
+              <span className="text-line">/</span>
+              <Link href={activeNav} className="transition hover:text-ink">{pageTitle}</Link>
+              <span className="text-line">/</span>
+              <span className="font-semibold text-ink">Details</span>
+            </nav>
+          )}
           {needsOperator ? (
             <OperatorGate />
           ) : allowed ? (
@@ -230,7 +241,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </main>
 
         <footer className="border-t border-line bg-paper">
-          <div className="mx-auto flex max-w-[1280px] flex-col items-center justify-between gap-1 px-4 py-4 text-[0.72rem] text-muted sm:flex-row md:px-8">
+          <div className="mx-auto flex max-w-[1440px] flex-col items-center justify-between gap-1 px-4 py-4 text-[0.72rem] text-muted sm:flex-row md:px-8">
             <span>{COMPANY.name} — {COMPANY.address}</span>
             <span className="text-gold-dark">{COMPANY.tagline}</span>
           </div>
