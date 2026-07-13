@@ -76,7 +76,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={() => setDrawer(false)}
-          className="rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink lg:hidden"
+          className="rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink"
         >
           Close
         </button>
@@ -129,7 +129,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   const shell = (
-    <div className="min-h-screen lg:flex">
+    <div className="min-h-screen">
       {/* Attendant tablet: company logo as a faint body-wide background */}
       {isAttendant && (
         <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center">
@@ -144,15 +144,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Persistent desktop sidebar (every role except the shared attendant tablet) */}
-      {!isAttendant && (
-        <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-line bg-paper lg:flex">
-          {sidebar}
-        </aside>
-      )}
-
-      {/* Right column: top bar + main + footer */}
-      <div className="flex min-h-screen flex-1 flex-col">
+      {/* Top bar + main + footer (the menu opens on demand via the Menu button) */}
+      <div className="flex min-h-screen flex-col">
         {/* Top bar */}
         <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-paper/90 px-4 backdrop-blur md:px-6">
           <div className="flex items-center gap-3">
@@ -167,14 +160,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setDrawer((v) => !v)}
-                className="rounded-md border border-line px-3 py-2 text-[0.85rem] font-semibold text-ink transition hover:border-ink lg:hidden"
+                className="flex items-center gap-2 rounded-md border border-line px-3 py-2 text-[0.85rem] font-semibold text-ink transition hover:border-ink"
                 aria-expanded={drawer}
               >
+                <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3 5h14M3 10h14M3 15h14" /></svg>
                 Menu
               </button>
             )}
-            {/* Logo in the bar on mobile (and always for the attendant); on desktop it lives in the sidebar */}
-            <Link href={homeHref} className={cn("flex items-center", !isAttendant && "lg:hidden")}>
+            <Link href={homeHref} className="flex items-center">
               <Image
                 src={COMPANY.logoPath}
                 alt={`${COMPANY.name} logo`}
@@ -209,9 +202,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Mobile slide-in drawer */}
+        {/* Slide-in menu (opens on demand from the Menu button) */}
         {drawer && !isAttendant && (
-          <div className="fixed inset-0 z-40 lg:hidden">
+          <div className="fixed inset-0 z-40">
             <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
             <aside className="absolute inset-y-0 left-0 w-64 border-r border-line bg-paper shadow-pop">
               {sidebar}
