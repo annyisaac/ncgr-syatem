@@ -17,7 +17,7 @@ import { balance, paidAmount, orderTotal, toDeliver } from "@/lib/types";
 import { orderStage } from "@/lib/orders";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime } from "@/lib/format";
-import { dsrAddPayment } from "@/lib/db";
+import { dsrAddPayment, dsrRequestEdit } from "@/lib/db";
 
 const num = (v: string) => Number(v) || 0;
 
@@ -34,6 +34,9 @@ export default function DsrOrderDetailPage() {
   const [ref, setRef] = useState("");
   const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [reason, setReason] = useState("");
+  const [reqBusy, setReqBusy] = useState(false);
+  const [reqErr, setReqErr] = useState<string | null>(null);
 
   if (!user) return null;
   if (!order) {
@@ -60,6 +63,19 @@ export default function DsrOrderDetailPage() {
     if (!res.ok) return setErr(res.error ?? "Could not record the payment.");
     setAmount(""); setRef("");
     toast("Payment recorded — awaiting verification.");
+    await reload();
+  }
+
+  async function requestEdit(e: React.FormEvent) {
+    e.preventDefault();
+    setReqErr(null);
+    if (!reason.trim()) return setReqErr("Say what you'd like changed.");
+    setReqBusy(true);
+    const res = await dsrRequestEdit(order!.id, reason.trim());
+    setReqBusy(false);
+    if (!res.ok) return setReqErr(res.error ?? "Could not send the request.");
+    setReason("");
+    toast("Edit request sent to your manager.");
     await reload();
   }
 
@@ -125,6 +141,35 @@ export default function DsrOrderDetailPage() {
           )
         ) : (
           <p className="mt-3 text-xs text-muted">Only the DSR who owns this order can add payments.</p>
+        )}
+      </Card>
+
+      {/* Request an edit (goes to the zone manager / admin) */}
+      <Card>
+        <CardHeader title="Request an edit" />
+        {order.request?.status === "open" ? (
+          <div className="rounded-xl border border-[#efdfae] bg-gold-bg px-3 py-2.5 text-sm">
+            <strong className="text-ink">{order.request.kind === "edit" ? "Edit" : order.request.kind} request pending</strong>
+            <span className="text-muted"> — awaiting your manager.</span>
+            <p className="mt-1 text-muted">“{order.request.reason}”</p>
+          </div>
+        ) : isMine ? (
+          <form onSubmit={requestEdit} className="space-y-3">
+            <p className="text-sm text-muted">Need something changed (quantity, delivery date, price…)? You can&apos;t edit a placed order directly — send a request with the reason and your zone manager will make the change.</p>
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+              rows={2}
+              placeholder="What should change, and why?"
+              className="w-full rounded-[9px] border border-line bg-field px-3.5 py-2.5 text-[0.9rem] text-ink focus:outline-none focus-visible:border-gold"
+            />
+            <div className="flex items-center gap-3">
+              <Button type="submit" disabled={reqBusy}>{reqBusy ? "Sending…" : "Request edit"}</Button>
+              {reqErr && <p className="text-sm text-status-refunded">{reqErr}</p>}
+            </div>
+          </form>
+        ) : (
+          <p className="text-sm text-muted">Only the DSR who owns this order can request an edit.</p>
         )}
       </Card>
 

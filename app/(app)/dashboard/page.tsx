@@ -34,7 +34,7 @@ import {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { orders, replaceAll, setOrders, users, dsrs, commissions, statements, routes, availability } = useData();
+  const { orders, replaceAll, setOrders, users, dsrs, commissions, statements, routes, availability, dsrVisits } = useData();
   const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
 
   const visible = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
@@ -82,7 +82,7 @@ export default function DashboardPage() {
       {user.role === "Admin" && (
         <AdminDashboard
           orders={scoped}
-          db={{ users, dsrs, orders, commissions, statements, routes, availability }}
+          db={{ users, dsrs, orders, commissions, statements, routes, availability, dsrVisits }}
           replaceAll={replaceAll}
           setOrders={setOrders}
         />

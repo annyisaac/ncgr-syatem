@@ -22,6 +22,7 @@ import type {
   CommissionRequest,
   Database,
   DSR,
+  DsrVisit,
   Order,
   Route,
   User,
@@ -36,6 +37,7 @@ import {
   saveAvailabilityOne,
   saveCommissions,
   saveCommissionOne,
+  saveDsrVisitOne,
   saveDSRs,
   saveDSROne,
   saveOrders,
@@ -90,6 +92,9 @@ interface DataContextValue {
   setAvailability: (a: Availability[]) => Promise<void>;
   upsertAvailability: (a: Availability) => Promise<void>;
 
+  dsrVisits: DsrVisit[];
+  upsertDsrVisit: (v: DsrVisit) => Promise<void>;
+
   /** Full replace (backup restore). */
   replaceAll: (db: Database) => Promise<void>;
 
@@ -106,6 +111,7 @@ const EMPTY: Database = {
   statements: [],
   routes: [],
   availability: [],
+  dsrVisits: [],
 };
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -215,6 +221,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
     statements: db.statements,
     routes: db.routes ?? [],
     availability: db.availability ?? [],
+    dsrVisits: db.dsrVisits ?? [],
 
     notifications,
     markNotifications: async (ids) => {
@@ -261,6 +268,9 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setAvailability: (a) => apply("availability", a, saveAvailability),
     upsertAvailability: (a) =>
       applyOne("availability", a, (x) => x.id === a.id, () => saveAvailabilityOne(a)),
+
+    upsertDsrVisit: (v) =>
+      applyOne("dsrVisits", v, (x) => x.id === v.id, () => saveDsrVisitOne(v)),
 
     replaceAll: async (next) => {
       setDb(next);

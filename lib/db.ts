@@ -21,6 +21,7 @@ import type {
   CommissionRequest,
   Database,
   DSR,
+  DsrVisit,
   Order,
   Route,
   User,
@@ -95,7 +96,7 @@ async function saveCollection<T>(
 // ---------------------------------------------------------------------------
 
 export async function getDatabase(): Promise<Database> {
-  const [users, dsrs, orders, commissions, statements, routes, availability] = await Promise.all([
+  const [users, dsrs, orders, commissions, statements, routes, availability, dsrVisits] = await Promise.all([
     fetchCollection<User>("users"),
     fetchCollection<DSR>("dsrs"),
     fetchCollection<Order>("orders"),
@@ -103,8 +104,9 @@ export async function getDatabase(): Promise<Database> {
     fetchCollection<BankStatement>("statements"),
     fetchCollection<Route>("routes"),
     fetchCollection<Availability>("availability"),
+    fetchCollection<DsrVisit>("dsr_visits"),
   ]);
-  return { users, dsrs, orders, commissions, statements, routes, availability };
+  return { users, dsrs, orders, commissions, statements, routes, availability, dsrVisits };
 }
 
 /** Replace everything (backup restore). */
@@ -117,6 +119,7 @@ export async function replaceDatabase(db: Database): Promise<void> {
     saveStatements(db.statements),
     saveRoutes(db.routes ?? []),
     saveAvailability(db.availability ?? []),
+    saveCollection("dsr_visits", "id", db.dsrVisits ?? [], (v) => v.id),
   ]);
 }
 
@@ -336,6 +339,28 @@ export async function dsrAddPayment(
   }
   return { ok: true, order: data as Order };
 }
+
+/** DSR requests an edit on their own order (reason required); goes to Admin approvals. */
+export async function dsrRequestEdit(
+  orderId: string,
+  reason: string
+): Promise<{ ok: boolean; order?: Order; error?: string }> {
+  if (!inBrowser()) return { ok: false };
+  const { data, error } = await getSupabase().rpc("dsr_request_edit", {
+    p_order_id: orderId,
+    p_reason: reason,
+  });
+  if (error) {
+    const m = error.message || "";
+    if (m.includes("NOT_YOUR_ORDER")) return { ok: false, error: "You can only request edits on your own orders." };
+    if (m.includes("NO_REASON")) return { ok: false, error: "Enter a reason for the edit." };
+    return { ok: false, error: "Could not send the request. Please try again." };
+  }
+  return { ok: true, order: data as Order };
+}
+
+/** DSR logs a farm visit (they own their own rows via RLS). */
+export const saveDsrVisitOne = (v: DsrVisit) => upsertOne("dsr_visits", "id", v.id, v);
 
 // ---------------------------------------------------------------------------
 // Notifications (in-app). Rows are written server-side by a trigger; the client

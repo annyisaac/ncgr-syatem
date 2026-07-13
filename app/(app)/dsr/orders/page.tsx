@@ -61,11 +61,11 @@ export default function DsrOrdersPage() {
           <thead>
             <tr>
               <Th>Delivery date</Th><Th>Client</Th><Th>DSR</Th><Th>Product</Th>
-              <Th className="text-right">Chicks</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Status</Th>
+              <Th className="text-right">Chicks</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Status</Th><Th></Th>
             </tr>
           </thead>
           <tbody>
-            {shown.length === 0 ? <EmptyRow colSpan={8} text="No matching orders." /> : shown.map((o) => {
+            {shown.length === 0 ? <EmptyRow colSpan={9} text="No matching orders." /> : shown.map((o) => {
               const t = orderStage(o);
               return (
                 <tr key={o.id} className="cursor-pointer hover:bg-gold-bg">
@@ -80,6 +80,11 @@ export default function DsrOrdersPage() {
                   <Td className="text-right">{formatRWF(paidAmount(o))}</Td>
                   <Td className={`text-right ${balance(o) > 0 ? "font-semibold text-red" : ""}`}>{formatRWF(balance(o))}</Td>
                   <Td><Pill tone={t.tone}>{t.label}</Pill></Td>
+                  <Td>
+                    <Link href={`/dsr/orders/${o.id}`} className="inline-block rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-ink transition hover:border-gold hover:bg-gold-bg">
+                      Manage
+                    </Link>
+                  </Td>
                 </tr>
               );
             })}

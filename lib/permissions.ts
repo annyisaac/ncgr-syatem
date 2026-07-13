@@ -126,6 +126,7 @@ const NAV: Record<Role, NavItem[]> = {
   DSR: [
     { label: "Home", href: "/dsr" },
     { label: "Orders", href: "/dsr/orders" },
+    { label: "Farm visits", href: "/dsr/visits" },
     { label: "Commission", href: "/dsr/commission" },
   ],
 

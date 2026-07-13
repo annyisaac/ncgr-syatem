@@ -258,11 +258,27 @@ export function availableFor(
  *  - "debt"          — deliver the order before it is fully paid
  */
 export interface OrderRequest {
-  kind: "refund" | "compensation" | "debt";
+  kind: "refund" | "compensation" | "debt" | "edit";
   reason: string;
   by: string;
   on: string; // ISO datetime
   status: "open" | "approved" | "rejected";
+}
+
+// ---------------------------------------------------------------------------
+// DSR farm visits (a DSR logs a visit to a customer's farm)
+// ---------------------------------------------------------------------------
+
+export interface DsrVisit {
+  id: string;
+  dsrId: string;
+  by: string; // DSR login email
+  farm: string; // customer / farm name
+  phone?: string;
+  date: string; // ISO date of the visit
+  purpose: string;
+  notes: string;
+  createdAt: string; // ISO datetime
 }
 
 // ---------------------------------------------------------------------------
@@ -318,6 +334,7 @@ export interface Database {
   statements: BankStatement[];
   routes: Route[];
   availability: Availability[];
+  dsrVisits: DsrVisit[];
 }
 
 // ---------------------------------------------------------------------------
