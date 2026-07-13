@@ -61,6 +61,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (!user) return null;
 
   const nav = navForRole(user.role);
+  const activeNav = activeHref(nav, pathname);
   const allowed = canAccess(user.role, pathname);
   // Shared attendant tablet: no side menu, and must identify the operator first.
   const isAttendant = user.role === "Hatchery Attendant";
@@ -98,7 +99,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {group.name}
             </p>
             {group.items.map((item) => (
-              <NavLink key={item.href} {...item} pathname={pathname} />
+              <NavLink key={item.href} href={item.href} label={item.label} active={item.href === activeNav} />
             ))}
           </div>
         ))}
@@ -295,22 +296,29 @@ function groupNav(nav: NavItem[]): { name: string; items: NavItem[] }[] {
   return groups;
 }
 
-function isActive(href: string, pathname: string): boolean {
-  if (href === "/dashboard" || href === "/orders/new") return pathname === href;
-  if (href === "/orders") return pathname === "/orders";
-  return pathname === href || pathname.startsWith(href + "/");
+/**
+ * The single active nav item = the one whose href is the LONGEST match for the
+ * current path (exact, or a `/`-boundary prefix). This way a parent like `/dsr`
+ * doesn't also light up when you're on the more specific `/dsr/orders`.
+ */
+function activeHref(nav: NavItem[], pathname: string): string {
+  let best = "";
+  for (const { href } of nav) {
+    const matches = pathname === href || pathname.startsWith(href + "/");
+    if (matches && href.length > best.length) best = href;
+  }
+  return best;
 }
 
 function NavLink({
   href,
   label,
-  pathname,
+  active,
 }: {
   href: string;
   label: string;
-  pathname: string;
+  active: boolean;
 }) {
-  const active = isActive(href, pathname);
   return (
     <Link
       href={href}
