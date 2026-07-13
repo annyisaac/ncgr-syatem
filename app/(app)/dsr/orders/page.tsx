@@ -25,8 +25,9 @@ export default function DsrOrdersPage() {
   const { dsrs, orders } = useData();
 
   const myDsr = useMemo(() => dsrs.find((d) => d.authEmail === user?.email), [dsrs, user]);
-  const myOrders = useMemo(
-    () => (myDsr ? orders.filter((o) => o.dsrId === myDsr.id).sort((a, b) => (a.date < b.date ? 1 : -1)) : []),
+  // Every order in the DSR's zone (RLS already scopes the data to their zone).
+  const zoneOrders = useMemo(
+    () => (myDsr ? orders.filter((o) => o.zone === myDsr.zone).sort((a, b) => (a.date < b.date ? 1 : -1)) : []),
     [orders, myDsr]
   );
 
@@ -35,23 +36,24 @@ export default function DsrOrdersPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">My Orders</h1>
+      <h1 className="section-heading text-lg">Orders in {myDsr.zone}</h1>
       <Card>
-        <CardHeader title={`${myOrders.length} order(s)`} />
+        <CardHeader title={`${zoneOrders.length} order(s) in your zone`} />
         <TableWrap>
           <thead>
             <tr>
-              <Th>Delivery date</Th><Th>Client</Th><Th>Product</Th>
+              <Th>Delivery date</Th><Th>Client</Th><Th>DSR</Th><Th>Product</Th>
               <Th className="text-right">Chicks</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Status</Th>
             </tr>
           </thead>
           <tbody>
-            {myOrders.length === 0 ? <EmptyRow colSpan={7} text="No orders yet. Create one from New order." /> : myOrders.map((o) => {
+            {zoneOrders.length === 0 ? <EmptyRow colSpan={8} text="No orders in your zone yet." /> : zoneOrders.map((o) => {
               const t = track(o);
               return (
                 <tr key={o.id}>
                   <Td>{formatDate(o.date)}</Td>
                   <Td className="font-medium">{o.name} <span className="text-xs text-muted">· {o.phone}</span></Td>
+                  <Td className="text-muted">{o.dsr ?? "—"}</Td>
                   <Td>{o.product}</Td>
                   <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
                   <Td className="text-right">{formatRWF(paidAmount(o))}</Td>

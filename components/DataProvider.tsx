@@ -16,6 +16,7 @@ import {
   type ReactNode,
 } from "react";
 import type {
+  AppNotification,
   Availability,
   BankStatement,
   CommissionRequest,
@@ -27,6 +28,8 @@ import type {
 } from "@/lib/types";
 import {
   getDatabase,
+  getNotifications,
+  markNotificationsRead,
   newId,
   replaceDatabase,
   saveAvailability,
@@ -45,6 +48,7 @@ import {
   saveUser,
   saveUsers,
 } from "@/lib/db";
+import { getSupabase } from "@/lib/supabase";
 import { useAuth } from "./AuthProvider";
 
 interface DataContextValue {
@@ -56,6 +60,11 @@ interface DataContextValue {
   statements: BankStatement[];
   routes: Route[];
   availability: Availability[];
+
+  /** In-app notifications for the signed-in user (live via Realtime). */
+  notifications: AppNotification[];
+  /** Mark some (or all, when omitted) of my notifications read. */
+  markNotifications: (ids?: string[]) => Promise<void>;
 
   reload: () => Promise<void>;
 
@@ -103,6 +112,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [db, setDb] = useState<Database>(EMPTY);
   const [loading, setLoading] = useState(true);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
   const load = useCallback(async () => {
     try {
@@ -113,6 +123,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const loadNotifications = useCallback(async () => {
+    try {
+      setNotifications(await getNotifications());
+    } catch (err) {
+      console.error("Failed to load notifications:", err);
+    }
+  }, []);
+
   // Data is only readable once authenticated — load when a user is present,
   // and clear it on sign-out.
   useEffect(() => {
@@ -120,6 +138,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDb(EMPTY);
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setNotifications([]);
       setLoading(false);
       return;
     }
@@ -128,10 +148,25 @@ export function DataProvider({ children }: { children: ReactNode }) {
       await load();
       if (active) setLoading(false);
     })();
+    void loadNotifications();
     return () => {
       active = false;
     };
-  }, [user, load]);
+  }, [user, load, loadNotifications]);
+
+  // Live notifications: reload the (RLS-scoped) list whenever a row changes.
+  useEffect(() => {
+    if (!user) return;
+    const channel = getSupabase()
+      .channel("notifications-live")
+      .on("postgres_changes", { event: "*", schema: "public", table: "notifications" }, () => {
+        void loadNotifications();
+      })
+      .subscribe();
+    return () => {
+      void getSupabase().removeChannel(channel);
+    };
+  }, [user, loadNotifications]);
 
   // Auth writes (device sign-ins) happen outside this provider — stay in sync.
   useEffect(() => {
@@ -180,6 +215,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
     statements: db.statements,
     routes: db.routes ?? [],
     availability: db.availability ?? [],
+
+    notifications,
+    markNotifications: async (ids) => {
+      // optimistic: flip read locally, then persist
+      setNotifications((prev) =>
+        prev.map((n) => (!ids || ids.includes(n.id) ? { ...n, read: true } : n))
+      );
+      await markNotificationsRead(ids);
+    },
 
     reload: load,
 

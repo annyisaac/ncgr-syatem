@@ -17,8 +17,8 @@ import { formatRWF } from "@/lib/config";
 import { formatDate, todayISO, nowISO } from "@/lib/format";
 import { balance, paidAmount, orderTotal } from "@/lib/types";
 import type { DSR, Order } from "@/lib/types";
-import { adminCreateUser } from "@/lib/adminApi";
-import { genDsrCode, dsrAuthEmail } from "@/lib/dsrAuth";
+import { adminCreateUser, adminSetPassword } from "@/lib/adminApi";
+import { genDsrCode } from "@/lib/dsrAuth";
 import { visibleOrders } from "@/lib/permissions";
 import {
   commissionByDSR,
@@ -40,6 +40,8 @@ export default function DSRDetailPage() {
   const [targetInput, setTargetInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [authErr, setAuthErr] = useState<string | null>(null);
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginPassword, setLoginPassword] = useState("");
 
   const dsr = dsrs.find((d) => d.id === id);
 
@@ -97,17 +99,33 @@ export default function DSRDetailPage() {
     toast(`Commission paid to ${dsr.name}.`);
   }
 
-  async function enableLogin() {
+  async function setupLogin(e: React.FormEvent) {
+    e.preventDefault();
     if (!dsr) return;
-    setAuthErr(null); setBusy(true);
+    const email = loginEmail.trim().toLowerCase();
+    const password = loginPassword;
+    setAuthErr(null);
+    if (!/.+@.+\..+/.test(email)) return setAuthErr("Enter a valid email address.");
+    if (password.length < 6) return setAuthErr("Password must be at least 6 characters.");
+    setBusy(true);
     try {
-      const code = genDsrCode(dsrs.map((d) => d.loginCode).filter(Boolean) as string[]);
-      const email = dsrAuthEmail(dsr.id);
-      await adminCreateUser(email, code, { name: dsr.name, email, role: "DSR", password: "", active: true, created: nowISO() });
+      const code = dsr.loginCode ?? genDsrCode(dsrs.map((d) => d.loginCode).filter(Boolean) as string[]);
+      // Create the account; if that email already has one, just (re)set its password.
+      try {
+        await adminCreateUser(email, password, { name: dsr.name, email, role: "DSR", password: "", active: true, created: nowISO() });
+      } catch (err) {
+        const m = err instanceof Error ? err.message.toLowerCase() : "";
+        if (m.includes("exist") || m.includes("registered") || m.includes("already")) {
+          await adminSetPassword(email, password);
+        } else {
+          throw err;
+        }
+      }
       await upsertDSR({ ...dsr, loginCode: code, authEmail: email, deviceId: undefined, deviceLabel: undefined });
-      toast(`Login enabled for ${dsr.name} — code ${code}.`);
-    } catch (e) {
-      setAuthErr(e instanceof Error ? e.message : "Could not enable login.");
+      setLoginEmail(""); setLoginPassword("");
+      toast(`Login set up for ${dsr.name} — code ${code}.`);
+    } catch (err) {
+      setAuthErr(err instanceof Error ? err.message : "Could not set up login.");
     } finally {
       setBusy(false);
     }
@@ -159,28 +177,42 @@ export default function DSRDetailPage() {
         onSave={(chicks) => { upsertDSR({ ...dsr, monthlyTarget: chicks }); toast(`Monthly target set to ${chicks.toLocaleString()} chicks.`); setTargetInput(""); }}
       />
 
-      {/* DSR portal access */}
+      {/* DSR portal login */}
       <Card>
-        <CardHeader title="Portal access (code login)" />
-        {dsr.loginCode ? (
+        <CardHeader title="Portal login" />
+        <p className="mb-3 text-sm text-muted">
+          The DSR signs in on the normal login page with the email &amp; password below,
+          then enters their code once to trust a new device.
+        </p>
+
+        {dsr.authEmail ? (
           <div className="space-y-2 text-sm">
-            <p>Sign-in code: <span className="rounded bg-cream px-2 py-0.5 font-mono text-base font-bold">{dsr.loginCode}</span></p>
-            <p className="flex items-center gap-2">Device:{" "}
+            <p>Login email: <span className="font-mono">{dsr.authEmail}</span></p>
+            <p>Zone-manager code: <span className="rounded bg-cream px-2 py-0.5 font-mono text-base font-bold">{dsr.loginCode}</span></p>
+            <p className="flex items-center gap-2">Trusted device:{" "}
               {dsr.deviceId
-                ? <Pill tone="fulfilled">Locked to {dsr.deviceLabel || "a device"}</Pill>
-                : <Pill tone="gold">Not used yet — binds on first sign-in</Pill>}
+                ? <Pill tone="fulfilled">{dsr.deviceLabel || "a device"}</Pill>
+                : <Pill tone="gold">None yet — set on first code entry</Pill>}
             </p>
             {canResetDevice && <Button variant="ghost" size="sm" onClick={resetDevice}>Reset device</Button>}
-            <p className="text-xs text-muted">The DSR signs in at <span className="font-mono">/dsr-login</span> with this code — it works on one device only.</p>
           </div>
-        ) : isAdmin ? (
-          <>
-            <p className="mb-2 text-sm text-muted">Give this DSR their own portal — a unique sign-in code, locked to one device.</p>
-            <Button onClick={enableLogin} disabled={busy}>{busy ? "Enabling…" : "Enable DSR login"}</Button>
-            {authErr && <p className="mt-2 text-sm text-status-refunded">{authErr}</p>}
-          </>
         ) : (
-          <p className="text-sm text-muted">No login yet — an Admin can enable it.</p>
+          <p className="text-sm text-muted">No login set up yet{isAdmin ? "." : " — an Admin can set it up."}</p>
+        )}
+
+        {isAdmin && (
+          <form onSubmit={setupLogin} className="mt-4 grid grid-cols-1 gap-3 border-t border-line pt-4 sm:grid-cols-2">
+            <Field label={dsr.authEmail ? "Change login email" : "Login email"}>
+              <Input type="email" value={loginEmail} onChange={(e) => setLoginEmail(e.target.value)} placeholder={dsr.authEmail || "dsr@example.com"} />
+            </Field>
+            <Field label={dsr.authEmail ? "Set new password" : "Initial password"} hint="At least 6 characters.">
+              <Input type="text" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Give this to the DSR" />
+            </Field>
+            <div className="sm:col-span-2">
+              <Button type="submit" disabled={busy}>{busy ? "Saving…" : dsr.authEmail ? "Update login" : "Set up login"}</Button>
+              {authErr && <p className="mt-2 text-sm text-status-refunded">{authErr}</p>}
+            </div>
+          </form>
         )}
       </Card>
 

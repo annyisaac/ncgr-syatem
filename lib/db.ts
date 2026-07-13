@@ -15,6 +15,7 @@
  */
 
 import type {
+  AppNotification,
   Availability,
   BankStatement,
   CommissionRequest,
@@ -299,7 +300,7 @@ export const saveOrderOne = (o: Order) => upsertOne("orders", "id", o.id, o);
 
 export type PlaceResult =
   | { ok: true }
-  | { ok: false; reason: "not_enough" | "date_closed" | "failed"; left?: number; message?: string };
+  | { ok: false; reason: "not_enough" | "date_closed" | "out_of_zone" | "failed"; left?: number; message?: string };
 
 export async function placeOrder(order: Order): Promise<PlaceResult> {
   if (!inBrowser()) return { ok: false, reason: "failed" };
@@ -309,9 +310,36 @@ export async function placeOrder(order: Order): Promise<PlaceResult> {
   const nm = m.match(/NOT_ENOUGH:(-?\d+)/);
   if (nm) return { ok: false, reason: "not_enough", left: Math.max(0, Number(nm[1])) };
   if (m.includes("DATE_CLOSED")) return { ok: false, reason: "date_closed" };
+  if (m.includes("OUT_OF_ZONE")) return { ok: false, reason: "out_of_zone" };
   return { ok: false, reason: "failed", message: m };
 }
 export const saveDSROne = (d: DSR) => upsertOne("dsrs", "id", d.id, d);
+
+// ---------------------------------------------------------------------------
+// Notifications (in-app). Rows are written server-side by a trigger; the client
+// only reads its own (RLS-scoped) and marks them read.
+// ---------------------------------------------------------------------------
+
+export async function getNotifications(): Promise<AppNotification[]> {
+  if (!inBrowser()) return [];
+  const { data, error } = await getSupabase()
+    .from("notifications")
+    .select("id, data")
+    .order("updated_at", { ascending: false })
+    .limit(50);
+  if (error) {
+    console.warn(`Could not load notifications: ${error.message}`);
+    return [];
+  }
+  return (data ?? []).map((r) => ({ ...(r.data as AppNotification), id: r.id as string }));
+}
+
+/** Mark specific notifications read, or all of the caller's when ids omitted. */
+export async function markNotificationsRead(ids?: string[]): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase().rpc("mark_notifications_read", { p_ids: ids ?? null });
+  if (error) console.warn(`Could not mark notifications read: ${error.message}`);
+}
 export const saveRouteOne = (r: Route) => upsertOne("routes", "id", r.id, r);
 export const saveAvailabilityOne = (a: Availability) => upsertOne("availability", "id", a.id, a);
 export const saveCommissionOne = (c: CommissionRequest) => upsertOne("commissions", "id", c.id, c);

@@ -9,6 +9,8 @@ import { useData } from "./DataProvider";
 import { useTheme } from "./ThemeProvider";
 import { useOperator } from "./OperatorProvider";
 import { OperatorGate } from "./OperatorGate";
+import { DsrGate } from "./DsrGate";
+import { NotificationBell } from "./NotificationBell";
 import { useToast } from "./ui/Toast";
 import { Avatar } from "./ui/Avatar";
 import { canAccess, navForRole, homeForRole } from "@/lib/permissions";
@@ -16,9 +18,8 @@ import { COMPANY } from "@/lib/config";
 import { cn } from "@/lib/cn";
 
 /**
- * Authenticated app shell with a left sidebar (collapses to a drawer on
- * mobile), an avatar user card that links to the profile page, and the auth
- * guard.
+ * Authenticated app shell: a persistent left sidebar on desktop that collapses
+ * to a slide-in drawer on mobile, a slim top bar, and the auth / role gates.
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
@@ -34,7 +35,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!loading && !user) router.replace("/login");
   }, [loading, user, router]);
 
-  // Close the menu when the route changes (adjust-state-during-render pattern).
+  // Close the drawer when the route changes (adjust-state-during-render pattern).
   const [prevPath, setPrevPath] = useState(pathname);
   if (prevPath !== pathname) {
     setPrevPath(pathname);
@@ -64,18 +65,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Shared attendant tablet: no side menu, and must identify the operator first.
   const isAttendant = user.role === "Hatchery Attendant";
   const needsOperator = isAttendant && !operator;
+  const isDsr = user.role === "DSR";
   const homeHref = homeForRole(user.role);
 
   const sidebar = (
     <div className="flex h-full flex-col">
       <div className="flex h-16 shrink-0 items-center justify-between px-4">
-        <Link href="/dashboard" className="flex items-center">
+        <Link href={homeHref} className="flex items-center">
           <Image
             src={COMPANY.logoPath}
             alt={`${COMPANY.name} logo`}
             width={150}
             height={48}
-            className="brand-logo h-12 w-auto object-contain"
+            className="brand-logo h-11 w-auto object-contain"
             priority
             unoptimized
           />
@@ -83,13 +85,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={() => setDrawer(false)}
-          className="rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink"
+          className="rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink lg:hidden"
         >
           Close
         </button>
       </div>
 
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-2">
+      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
+        <p className="px-3 pb-1.5 text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted/70">
+          Menu
+        </p>
         {nav.map((item) => (
           <NavLink key={item.href} {...item} pathname={pathname} />
         ))}
@@ -99,8 +104,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <Link
           href="/profile"
           className={cn(
-            "flex items-center gap-2.5 rounded-lg p-2 transition-colors hover:bg-grey-bg",
-            pathname === "/profile" && "bg-grey-bg"
+            "flex items-center gap-2.5 rounded-xl border border-transparent p-2 transition-colors hover:border-line hover:bg-grey-bg",
+            pathname === "/profile" && "border-line bg-grey-bg"
           )}
         >
           <Avatar user={user} size={36} />
@@ -132,7 +137,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full rounded-md border border-line px-2 py-1.5 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink"
+          className="w-full rounded-md border border-line px-2 py-1.5 text-[0.72rem] font-semibold text-muted transition hover:border-red/40 hover:text-red"
         >
           Log out
         </button>
@@ -141,7 +146,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="min-h-screen">
+    <div className="min-h-screen lg:flex">
       {/* Attendant tablet: company logo as a faint body-wide background */}
       {isAttendant && (
         <div aria-hidden className="pointer-events-none fixed inset-0 -z-10 flex items-center justify-center">
@@ -156,90 +161,111 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       )}
 
-      {/* Top bar (all screen sizes) — the menu stays hidden until opened */}
-      <div className="sticky top-0 z-30 flex h-20 items-center justify-between border-b border-line bg-paper px-4">
-        <div className="flex items-center gap-3">
-          {isAttendant ? (
-            <Link
-              href={homeHref}
-              className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
-            >
-              Home
-            </Link>
-          ) : (
-            <button
-              type="button"
-              onClick={() => setDrawer((v) => !v)}
-              className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
-              aria-expanded={drawer}
-            >
-              Menu
-            </button>
-          )}
-          <Link href={homeHref} className="flex items-center">
-            <Image
-              src={COMPANY.logoPath}
-              alt={`${COMPANY.name} logo`}
-              width={160}
-              height={56}
-              className="brand-logo h-14 w-auto object-contain"
-              unoptimized
-            />
-          </Link>
-        </div>
-        <div className="flex items-center gap-3">
-          {operator && (
-            <div className="flex items-center gap-2 rounded-full border border-gold/50 bg-gold-bg px-3 py-1.5">
-              <span className="text-[0.82rem] font-semibold text-gold-dark">{operator.name}</span>
-              <button
-                type="button"
-                onClick={clearOperator}
-                className="rounded-md border border-gold/50 px-2 py-0.5 text-[0.68rem] font-semibold text-gold-dark transition hover:bg-gold hover:text-[#231b04]"
-              >
-                Switch user
-              </button>
-            </div>
-          )}
-          <Link href="/profile" className="flex items-center gap-2">
-            <span className="hidden text-[0.9rem] font-semibold text-ink sm:inline">
-              {user.name}
-            </span>
-            <Avatar user={user} size={40} />
-          </Link>
-        </div>
-      </div>
-
-      {/* Slide-in menu (opens on demand, closes on navigation or backdrop) */}
-      {drawer && !isAttendant && (
-        <div className="fixed inset-0 z-40">
-          <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
-          <aside className="absolute inset-y-0 left-0 w-64 border-r border-line bg-paper shadow-pop">
-            {sidebar}
-          </aside>
-        </div>
+      {/* Persistent desktop sidebar (every role except the shared attendant tablet) */}
+      {!isAttendant && (
+        <aside className="sticky top-0 hidden h-screen w-[248px] shrink-0 flex-col border-r border-line bg-paper lg:flex">
+          {sidebar}
+        </aside>
       )}
 
-      {/* Main */}
-      <div className="flex min-h-screen flex-col">
-        <main className="mx-auto w-full max-w-[1200px] grow px-4 py-6 md:px-6">
+      {/* Right column: top bar + main + footer */}
+      <div className="flex min-h-screen flex-1 flex-col">
+        {/* Top bar */}
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-line bg-paper/90 px-4 backdrop-blur md:px-6">
+          <div className="flex items-center gap-3">
+            {isAttendant ? (
+              <Link
+                href={homeHref}
+                className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
+              >
+                Home
+              </Link>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setDrawer((v) => !v)}
+                className="rounded-md border border-line px-3 py-2 text-[0.85rem] font-semibold text-ink transition hover:border-ink lg:hidden"
+                aria-expanded={drawer}
+              >
+                Menu
+              </button>
+            )}
+            {/* Logo in the bar on mobile (and always for the attendant); on desktop it lives in the sidebar */}
+            <Link href={homeHref} className={cn("flex items-center", !isAttendant && "lg:hidden")}>
+              <Image
+                src={COMPANY.logoPath}
+                alt={`${COMPANY.name} logo`}
+                width={150}
+                height={52}
+                className="brand-logo h-12 w-auto object-contain"
+                unoptimized
+              />
+            </Link>
+          </div>
+          <div className="flex items-center gap-3">
+            {operator && (
+              <div className="flex items-center gap-2 rounded-full border border-gold/50 bg-gold-bg px-3 py-1.5">
+                <span className="text-[0.82rem] font-semibold text-gold-dark">{operator.name}</span>
+                <button
+                  type="button"
+                  onClick={clearOperator}
+                  className="rounded-md border border-gold/50 px-2 py-0.5 text-[0.68rem] font-semibold text-gold-dark transition hover:bg-gold hover:text-[#231b04]"
+                >
+                  Switch user
+                </button>
+              </div>
+            )}
+            {!isAttendant && <NotificationBell />}
+            <Link href="/profile" className="flex items-center gap-2.5 rounded-full py-1 pl-1 pr-1 transition hover:bg-grey-bg sm:pr-3">
+              <Avatar user={user} size={36} />
+              <span className="hidden text-left leading-tight sm:block">
+                <span className="block text-[0.82rem] font-semibold text-ink">{user.name}</span>
+                <span className="block text-[0.66rem] text-muted">{user.role}</span>
+              </span>
+            </Link>
+          </div>
+        </header>
+
+        {/* Mobile slide-in drawer */}
+        {drawer && !isAttendant && (
+          <div className="fixed inset-0 z-40 lg:hidden">
+            <div className="absolute inset-0 bg-black/40" onClick={() => setDrawer(false)} />
+            <aside className="absolute inset-y-0 left-0 w-64 border-r border-line bg-paper shadow-pop">
+              {sidebar}
+            </aside>
+          </div>
+        )}
+
+        <main className="mx-auto w-full max-w-[1280px] grow px-4 py-6 md:px-8">
           {needsOperator ? (
             <OperatorGate />
+          ) : isDsr ? (
+            <DsrGate>
+              {allowed ? children : <NotAuthorized role={user.role} />}
+            </DsrGate>
           ) : allowed ? (
             children
           ) : (
-            <div className="rounded-2xl border border-line bg-paper p-8 text-center text-muted shadow-card">
-              <p className="mb-2 font-bold text-ink">Not authorized</p>
-              <p className="text-sm">Your role ({user.role}) cannot open this page.</p>
-            </div>
+            <NotAuthorized role={user.role} />
           )}
         </main>
+
         <footer className="border-t border-line bg-paper">
-          <div className="mx-auto flex max-w-[1200px] flex-col items-center justify-between gap-1 px-4 py-4 text-[0.72rem] text-muted sm:flex-row md:px-6">
+          <div className="mx-auto flex max-w-[1280px] flex-col items-center justify-between gap-1 px-4 py-4 text-[0.72rem] text-muted sm:flex-row md:px-8">
             <span>{COMPANY.name} — {COMPANY.address}</span>
             <span className="text-gold-dark">{COMPANY.tagline}</span>
           </div>
         </footer>
       </div>
+    </div>
+  );
+}
+
+function NotAuthorized({ role }: { role: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-paper p-8 text-center text-muted shadow-card">
+      <p className="mb-2 font-bold text-ink">Not authorized</p>
+      <p className="text-sm">Your role ({role}) cannot open this page.</p>
     </div>
   );
 }
@@ -264,9 +290,9 @@ function NavLink({
     <Link
       href={href}
       className={cn(
-        "block rounded-lg px-3.5 py-2.5 text-[1.05rem] font-semibold transition-colors",
+        "block rounded-lg px-3.5 py-2 text-[0.92rem] font-semibold transition-colors",
         active
-          ? "bg-gold text-[#231b04]"
+          ? "bg-gold text-[#231b04] shadow-card"
           : "text-muted hover:bg-grey-bg hover:text-ink"
       )}
     >

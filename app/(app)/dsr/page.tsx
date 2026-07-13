@@ -7,11 +7,12 @@ import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Kpi } from "@/components/dashboard/Kpi";
+import { RecentActivity } from "@/components/RecentActivity";
 import { todayISO } from "@/lib/format";
 
 const TILES = [
   { href: "/dsr/order", label: "New order", hint: "Order chicks for a client" },
-  { href: "/dsr/orders", label: "My orders", hint: "Track status & delivery" },
+  { href: "/dsr/orders", label: "Zone orders", hint: "All orders in your zone" },
   { href: "/dsr/commission", label: "Commission", hint: "What you've earned" },
 ];
 
@@ -20,7 +21,10 @@ export default function DsrHome() {
   const { dsrs, orders } = useData();
 
   const myDsr = useMemo(() => dsrs.find((d) => d.authEmail === user?.email), [dsrs, user]);
+  // Personal orders (drive the DSR's own monthly target).
   const myOrders = useMemo(() => (myDsr ? orders.filter((o) => o.dsrId === myDsr.id) : []), [orders, myDsr]);
+  // Zone orders — the DSR sees everything in their zone (RLS already scopes to it).
+  const zoneOrders = useMemo(() => (myDsr ? orders.filter((o) => o.zone === myDsr.zone) : []), [orders, myDsr]);
 
   if (!user) return null;
   if (!myDsr) {
@@ -28,11 +32,12 @@ export default function DsrHome() {
   }
 
   const month = todayISO().slice(0, 7);
-  const active = myOrders.filter((o) => o.status !== "refunded" && o.status !== "rejected");
-  const monthChicks = active.filter((o) => o.date.slice(0, 7) === month).reduce((s, o) => s + o.chicks, 0);
+  const myActive = myOrders.filter((o) => o.status !== "refunded" && o.status !== "rejected");
+  const monthChicks = myActive.filter((o) => o.date.slice(0, 7) === month).reduce((s, o) => s + o.chicks, 0);
   const target = myDsr.monthlyTarget ?? 0;
   const pct = target > 0 ? Math.min(100, Math.round((monthChicks / target) * 100)) : 0;
-  const totalChicks = active.reduce((s, o) => s + o.chicks, 0);
+  const zoneActive = zoneOrders.filter((o) => o.status !== "refunded" && o.status !== "rejected");
+  const zoneChicks = zoneActive.reduce((s, o) => s + o.chicks, 0);
 
   return (
     <div className="space-y-6">
@@ -52,10 +57,10 @@ export default function DsrHome() {
       )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="My orders" value={String(active.length)} />
-        <Kpi label="Chicks (all)" value={totalChicks.toLocaleString()} />
-        <Kpi label="Chicks this month" value={monthChicks.toLocaleString()} />
-        <Kpi label="Zone" value={myDsr.zone} />
+        <Kpi label={`Orders in ${myDsr.zone}`} value={String(zoneActive.length)} icon="orders" />
+        <Kpi label="Zone chicks" value={zoneChicks.toLocaleString()} icon="chicks" />
+        <Kpi label="My chicks this month" value={monthChicks.toLocaleString()} tone="gold" icon="check" />
+        <Kpi label="My orders" value={String(myActive.length)} icon="orders" />
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -66,6 +71,8 @@ export default function DsrHome() {
           </Link>
         ))}
       </div>
+
+      <RecentActivity />
     </div>
   );
 }

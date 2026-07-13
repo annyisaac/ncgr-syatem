@@ -83,6 +83,19 @@ export function isHatcheryRole(role: Role): boolean {
   return HATCHERY_ROLES.includes(role);
 }
 
+/** An in-app notification (also mirrored to email in Tier 2). */
+export type NotificationType = "new_order" | "payment" | "reschedule" | "rejected";
+export interface AppNotification {
+  id: string;
+  recipient: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  orderId?: string;
+  read: boolean;
+  createdAt: string;
+}
+
 /** Hatchery roles allowed to see & allocate sales orders. */
 export const HATCHERY_ORDER_ROLES: Role[] = [
   "Hatchery Manager",

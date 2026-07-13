@@ -54,6 +54,12 @@ export default function DsrOrderPage() {
     return { name: latest.name, count: theirs.length };
   }, [phone, orders]);
 
+  // A DSR may only take clients located in their own zone.
+  const myZoneDistricts = useMemo(
+    () => ALL_DISTRICTS.filter((d) => zoneOfDistrict(d) === myDsr?.zone),
+    [myDsr]
+  );
+
   const nChicks = num(chicks);
   const nPrice = num(price);
   const extra2 = Math.round(nChicks * 0.02);
@@ -71,6 +77,8 @@ export default function DsrOrderPage() {
     if (!name.trim()) return setError("Enter the client name.");
     if (phone.trim().length < 6) return setError("Enter a valid phone number.");
     if (!district) return setError("Choose the client's district.");
+    if (zoneOfDistrict(district) !== myDsr!.zone)
+      return setError(`You can only take clients in your zone (${myDsr!.zone}). ${district} is outside it.`);
     if (!sector.trim()) return setError("Enter the client's sector.");
     if (nChicks <= 0) return setError("Chicks must be greater than zero.");
     if (nPrice <= 0) return setError("Enter a unit price.");
@@ -104,6 +112,7 @@ export default function DsrOrderPage() {
       if (res.reason === "not_enough")
         return setError(`Not enough ${product} chicks available on ${formatDate(date)} anymore. Please pick another day or a smaller order.`);
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
+      if (res.reason === "out_of_zone") return setError(`That client is outside your zone (${myDsr!.zone}). You can only take clients in your zone.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
     toast(`Order created for ${order.name}.`);
@@ -142,7 +151,7 @@ export default function DsrOrderPage() {
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Client name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" /></Field>
-            <Field label="District"><Select value={district} placeholder="Select district" options={ALL_DISTRICTS.map((d) => ({ value: d, label: d }))} onChange={(e) => setDistrict(e.target.value)} /></Field>
+            <Field label="District" hint={`Your zone (${myDsr.zone}) only`}><Select value={district} placeholder="Select district" options={myZoneDistricts.map((d) => ({ value: d, label: d }))} onChange={(e) => setDistrict(e.target.value)} /></Field>
             <Field label="Sector"><Input value={sector} onChange={(e) => setSector(e.target.value)} placeholder="Client's sector" /></Field>
             <Field label="Chicks ordered"><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
             <Field label="Unit price (RWF)"><Input type="number" min={1} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>

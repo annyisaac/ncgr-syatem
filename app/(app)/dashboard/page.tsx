@@ -15,6 +15,7 @@ import { DateRange, ALL_TIME, inRange, type DateRangeValue } from "@/components/
 import { Kpi } from "@/components/dashboard/Kpi";
 import { LineChartView, PieChartView } from "@/components/charts/Charts";
 import { GlobalSearch } from "@/components/sales/GlobalSearch";
+import { RecentActivity } from "@/components/RecentActivity";
 
 import type { Order } from "@/lib/types";
 import { PRODUCTS } from "@/lib/types";
@@ -71,6 +72,8 @@ export default function DashboardPage() {
       {user.role === "Admin" && (
         <ApprovalsCard users={users} orders={orders} commissions={commissions} />
       )}
+
+      <RecentActivity />
 
       <Card>
         <DateRange value={range} onChange={setRange} />
@@ -406,12 +409,12 @@ function AdminDashboard({
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <Kpi label="Orders" value={String(orders.length)} onClick={() => go("all")} />
-        <Kpi label="Pending" value={String(orders.filter((o) => o.status === "pending").length)} tone="gold" onClick={() => go("pending")} />
-        <Kpi label="Fulfilled" value={String(orders.filter((o) => o.status === "fulfilled").length)} tone="green" onClick={() => go("fulfilled")} />
-        <Kpi label="Chicks sold" value={chicksSold(orders).toLocaleString()} onClick={() => go("all")} />
-        <Kpi label="Collected (verified)" value={formatRWF(verifiedCollected(orders))} tone="green" onClick={() => go("collected")} />
-        <Kpi label="Outstanding" value={formatRWF(outstanding(orders))} tone="red" onClick={() => go("outstanding")} />
+        <Kpi label="Orders" value={String(orders.length)} icon="orders" onClick={() => go("all")} />
+        <Kpi label="Pending" value={String(orders.filter((o) => o.status === "pending").length)} tone="gold" icon="pending" onClick={() => go("pending")} />
+        <Kpi label="Fulfilled" value={String(orders.filter((o) => o.status === "fulfilled").length)} tone="green" icon="check" onClick={() => go("fulfilled")} />
+        <Kpi label="Chicks sold" value={chicksSold(orders).toLocaleString()} icon="chicks" onClick={() => go("all")} />
+        <Kpi label="Collected (verified)" value={formatRWF(verifiedCollected(orders))} tone="green" icon="money" onClick={() => go("collected")} />
+        <Kpi label="Outstanding" value={formatRWF(outstanding(orders))} tone="red" icon="alert" onClick={() => go("outstanding")} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -459,10 +462,10 @@ function ZoneDashboard({ orders, zone }: { orders: Order[]; zone?: string }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label={`Orders (${zone ?? "zone"})`} value={String(orders.length)} />
-        <Kpi label="Chicks sold" value={chicksSold(orders).toLocaleString()} />
-        <Kpi label="Collected (verified)" value={formatRWF(verifiedCollected(orders))} />
-        <Kpi label="Outstanding" value={formatRWF(outstanding(orders))} />
+        <Kpi label={`Orders (${zone ?? "zone"})`} value={String(orders.length)} icon="orders" />
+        <Kpi label="Chicks sold" value={chicksSold(orders).toLocaleString()} icon="chicks" />
+        <Kpi label="Collected (verified)" value={formatRWF(verifiedCollected(orders))} tone="green" icon="money" />
+        <Kpi label="Outstanding" value={formatRWF(outstanding(orders))} tone="red" icon="alert" />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -488,10 +491,10 @@ function RossDashboard({ orders }: { orders: Order[] }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Ross orders" value={String(orders.length)} />
-        <Kpi label="Chicks sold" value={chicksSold(orders).toLocaleString()} />
-        <Kpi label="Collected (verified)" value={formatRWF(verifiedCollected(orders))} />
-        <Kpi label="Outstanding" value={formatRWF(outstanding(orders))} />
+        <Kpi label="Ross orders" value={String(orders.length)} icon="orders" />
+        <Kpi label="Chicks sold" value={chicksSold(orders).toLocaleString()} icon="chicks" />
+        <Kpi label="Collected (verified)" value={formatRWF(verifiedCollected(orders))} tone="green" icon="money" />
+        <Kpi label="Outstanding" value={formatRWF(outstanding(orders))} tone="red" icon="alert" />
       </div>
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
@@ -533,10 +536,10 @@ function CheckerDashboard({ orders }: { orders: Order[] }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Confirmed orders" value={String(confirmed.length)} />
-        <Kpi label="Payments verified" value={String(verified.length)} />
-        <Kpi label="Payments unverified" value={String(unverified.length)} />
-        <Kpi label="Amount verified" value={formatRWF(verified.reduce((s, p) => s + p.amt, 0))} />
+        <Kpi label="Confirmed orders" value={String(confirmed.length)} icon="orders" />
+        <Kpi label="Payments verified" value={String(verified.length)} tone="green" icon="check" />
+        <Kpi label="Payments unverified" value={String(unverified.length)} tone="gold" icon="pending" />
+        <Kpi label="Amount verified" value={formatRWF(verified.reduce((s, p) => s + p.amt, 0))} tone="green" icon="money" />
       </div>
       <Card>
         <CardHeader title="Verification by delivery date" />
