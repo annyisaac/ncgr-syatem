@@ -52,6 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const nav = navForRole(user.role);
   const activeNav = activeHref(nav, pathname);
+  const pageTitle = pathname === "/profile" ? "My Account" : (nav.find((i) => i.href === activeNav)?.label ?? "");
   const allowed = canAccess(user.role, pathname);
   // Shared attendant tablet: no side menu, and must identify the operator first.
   const isAttendant = user.role === "Hatchery Attendant";
@@ -177,6 +178,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 unoptimized
               />
             </Link>
+            {!isAttendant && pageTitle && (
+              <div className="hidden items-center gap-3 sm:flex">
+                <span className="h-5 w-px bg-line" />
+                <span className="text-[0.98rem] font-semibold text-ink">{pageTitle}</span>
+              </div>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {operator && (
