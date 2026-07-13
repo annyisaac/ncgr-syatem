@@ -73,7 +73,7 @@ body {
 
 /* Base size that scales the whole (rem-based) UI proportionally. */
 html {
-  font-size: 15px;
+  font-size: 12px;
 }
 
 body {
