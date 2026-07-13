@@ -5,13 +5,10 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "./AuthProvider";
-import { useData } from "./DataProvider";
-import { useTheme } from "./ThemeProvider";
 import { useOperator } from "./OperatorProvider";
 import { OperatorGate } from "./OperatorGate";
 import { DsrGate } from "./DsrGate";
 import { NotificationBell } from "./NotificationBell";
-import { useToast } from "./ui/Toast";
 import { Avatar } from "./ui/Avatar";
 import { canAccess, navForRole, homeForRole } from "@/lib/permissions";
 import { COMPANY } from "@/lib/config";
@@ -23,10 +20,7 @@ import { cn } from "@/lib/cn";
  */
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
-  const { reload } = useData();
-  const { theme, toggle } = useTheme();
   const { operator, clearOperator } = useOperator();
-  const { toast } = useToast();
   const router = useRouter();
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
@@ -45,10 +39,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   async function handleLogout() {
     await logout();
     router.replace("/login");
-  }
-  async function handleRefresh() {
-    await reload();
-    toast("Data refreshed.", "info");
   }
 
   if (loading) {
@@ -123,27 +113,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </Link>
 
-        <div className="flex gap-2">
-          <button
-            type="button"
-            onClick={toggle}
-            className="flex-1 rounded-md border border-line px-2 py-1.5 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink"
-          >
-            {theme === "dark" ? "Light mode" : "Dark mode"}
-          </button>
-          <button
-            type="button"
-            onClick={handleRefresh}
-            className="flex-1 rounded-md border border-line px-2 py-1.5 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink"
-          >
-            Refresh
-          </button>
-        </div>
         <button
           type="button"
           onClick={handleLogout}
-          className="w-full rounded-md border border-line px-2 py-1.5 text-[0.72rem] font-semibold text-muted transition hover:border-red/40 hover:text-red"
+          className="flex w-full items-center justify-center gap-2 rounded-lg border border-line px-3 py-2.5 text-[0.8rem] font-semibold text-muted transition hover:border-red/40 hover:bg-red-bg hover:text-red"
         >
+          <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M12.5 14v1.5A1.5 1.5 0 0 1 11 17H5.5A1.5 1.5 0 0 1 4 15.5v-11A1.5 1.5 0 0 1 5.5 3H11a1.5 1.5 0 0 1 1.5 1.5V6" />
+            <path d="M9 10h8M14 7l3 3-3 3" />
+          </svg>
           Log out
         </button>
       </div>
