@@ -91,12 +91,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </button>
       </div>
 
-      <nav className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
-        <p className="px-3 pb-1.5 text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted/70">
-          Menu
-        </p>
-        {nav.map((item) => (
-          <NavLink key={item.href} {...item} pathname={pathname} />
+      <nav className="flex-1 space-y-3 overflow-y-auto px-3 py-3">
+        {groupNav(nav).map((group) => (
+          <div key={group.name} className="space-y-0.5">
+            <p className="px-3 pb-1 text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted/70">
+              {group.name}
+            </p>
+            {group.items.map((item) => (
+              <NavLink key={item.href} {...item} pathname={pathname} />
+            ))}
+          </div>
         ))}
       </nav>
 
@@ -268,6 +272,27 @@ function NotAuthorized({ role }: { role: string }) {
       <p className="text-sm">Your role ({role}) cannot open this page.</p>
     </div>
   );
+}
+
+type NavItem = { href: string; label: string };
+
+/** Split a role's flat nav into ordered sections so long menus stay scannable. */
+function groupNav(nav: NavItem[]): { name: string; items: NavItem[] }[] {
+  const sectionOf = (href: string) =>
+    href.startsWith("/hatchery") ? "Hatchery" : href === "/users" ? "Admin" : "Sales";
+  const groups: { name: string; items: NavItem[] }[] = [];
+  for (const item of nav) {
+    const name = sectionOf(item.href);
+    let g = groups.find((x) => x.name === name);
+    if (!g) {
+      g = { name, items: [] };
+      groups.push(g);
+    }
+    g.items.push(item);
+  }
+  // A single-section menu shouldn't shout its department — just call it "Menu".
+  if (groups.length === 1) groups[0].name = "Menu";
+  return groups;
 }
 
 function isActive(href: string, pathname: string): boolean {
