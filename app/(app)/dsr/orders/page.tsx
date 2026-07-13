@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
+import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
@@ -31,14 +32,36 @@ export default function DsrOrdersPage() {
     [orders, myDsr]
   );
 
+  const [q, setQ] = useState("");
+  const shown = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    if (!s) return zoneOrders;
+    return zoneOrders.filter((o) =>
+      o.name.toLowerCase().includes(s) || o.phone.replace(/\D/g, "").includes(s.replace(/\D/g, "")) || (o.dsr ?? "").toLowerCase().includes(s)
+    );
+  }, [zoneOrders, q]);
+
   if (!user) return null;
   if (!myDsr) return <Card><p className="text-sm text-muted">Your DSR profile could not be found.</p></Card>;
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Orders in {myDsr.zone}</h1>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h1 className="section-heading text-lg">Orders in {myDsr.zone}</h1>
+        <Link href="/dsr/order" className="rounded-[10px] bg-gold px-4 py-2.5 text-[0.82rem] font-bold text-[#231b04] transition hover:brightness-[1.05]">
+          + New order
+        </Link>
+      </div>
       <Card>
-        <CardHeader title={`${zoneOrders.length} order(s) in your zone`} />
+        <CardHeader title={`${shown.length} order(s) in your zone`} />
+        <div className="mb-3">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search by client name or phone…"
+            className="w-full rounded-[9px] border border-line bg-field px-3.5 py-2.5 text-[0.9rem] text-ink focus:outline-none focus-visible:border-gold"
+          />
+        </div>
         <TableWrap>
           <thead>
             <tr>
@@ -47,12 +70,15 @@ export default function DsrOrdersPage() {
             </tr>
           </thead>
           <tbody>
-            {zoneOrders.length === 0 ? <EmptyRow colSpan={8} text="No orders in your zone yet." /> : zoneOrders.map((o) => {
+            {shown.length === 0 ? <EmptyRow colSpan={8} text="No matching orders." /> : shown.map((o) => {
               const t = track(o);
               return (
-                <tr key={o.id}>
+                <tr key={o.id} className="cursor-pointer hover:bg-gold-bg">
                   <Td>{formatDate(o.date)}</Td>
-                  <Td className="font-medium">{o.name} <span className="text-xs text-muted">· {o.phone}</span></Td>
+                  <Td className="font-medium">
+                    <Link href={`/dsr/orders/${o.id}`} className="text-gold-dark underline underline-offset-2">{o.name}</Link>
+                    {" "}<span className="text-xs text-muted">· {o.phone}</span>
+                  </Td>
                   <Td className="text-muted">{o.dsr ?? "—"}</Td>
                   <Td>{o.product}</Td>
                   <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>

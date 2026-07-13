@@ -125,8 +125,7 @@ const NAV: Record<Role, NavItem[]> = {
   // ---- DSR portal (code + single-device login) ----
   DSR: [
     { label: "Home", href: "/dsr" },
-    { label: "New order", href: "/dsr/order" },
-    { label: "My orders", href: "/dsr/orders" },
+    { label: "Orders", href: "/dsr/orders" },
     { label: "Commission", href: "/dsr/commission" },
   ],
 

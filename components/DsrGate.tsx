@@ -45,11 +45,13 @@ export function DsrGate({ children }: { children: ReactNode }) {
   // No DSR profile is linked to this login — nothing the DSR can do here.
   if (!myDsr) {
     return (
-      <Card>
-        <p className="text-sm text-muted">
-          Your DSR profile could not be found. Ask your zone manager.
-        </p>
-      </Card>
+      <div className="flex min-h-screen items-center justify-center bg-cream px-4">
+        <Card className="max-w-md text-center">
+          <p className="text-sm text-muted">
+            Your DSR profile could not be found. Ask your zone manager.
+          </p>
+        </Card>
+      </div>
     );
   }
 
@@ -78,7 +80,7 @@ export function DsrGate({ children }: { children: ReactNode }) {
   }
 
   return (
-    <div className="flex min-h-[74vh] items-center justify-center px-4">
+    <div className="flex min-h-screen items-center justify-center bg-cream px-4">
       <div className="w-full max-w-md">
         <Card className="relative overflow-hidden text-center">
           {/* Company logo as a faint form background */}

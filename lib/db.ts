@@ -315,6 +315,28 @@ export async function placeOrder(order: Order): Promise<PlaceResult> {
 }
 export const saveDSROne = (d: DSR) => upsertOne("dsrs", "id", d.id, d);
 
+/** DSR records an (unverified) payment on their own order, via a guarded RPC. */
+export async function dsrAddPayment(
+  orderId: string,
+  amount: number,
+  ref: string
+): Promise<{ ok: boolean; order?: Order; error?: string }> {
+  if (!inBrowser()) return { ok: false };
+  const { data, error } = await getSupabase().rpc("dsr_add_payment", {
+    p_order_id: orderId,
+    p_amount: amount,
+    p_ref: ref,
+  });
+  if (error) {
+    const m = error.message || "";
+    if (m.includes("NOT_YOUR_ORDER")) return { ok: false, error: "You can only add payments to your own orders." };
+    if (m.includes("BAD_AMOUNT")) return { ok: false, error: "Enter a valid amount." };
+    if (m.includes("NO_ORDER")) return { ok: false, error: "That order no longer exists." };
+    return { ok: false, error: "Could not record the payment. Please try again." };
+  }
+  return { ok: true, order: data as Order };
+}
+
 // ---------------------------------------------------------------------------
 // Notifications (in-app). Rows are written server-side by a trigger; the client
 // only reads its own (RLS-scoped) and marks them read.

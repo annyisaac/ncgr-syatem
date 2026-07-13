@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -8,7 +8,9 @@ import { useData } from "@/components/DataProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Kpi } from "@/components/dashboard/Kpi";
 import { RecentActivity } from "@/components/RecentActivity";
-import { todayISO } from "@/lib/format";
+import { formatRWF } from "@/lib/config";
+import { balance, toDeliver } from "@/lib/types";
+import { formatDate, todayISO } from "@/lib/format";
 
 const TILES = [
   { href: "/dsr/order", label: "New order", hint: "Order chicks for a client" },
@@ -25,6 +27,7 @@ export default function DsrHome() {
   const myOrders = useMemo(() => (myDsr ? orders.filter((o) => o.dsrId === myDsr.id) : []), [orders, myDsr]);
   // Zone orders — the DSR sees everything in their zone (RLS already scopes to it).
   const zoneOrders = useMemo(() => (myDsr ? orders.filter((o) => o.zone === myDsr.zone) : []), [orders, myDsr]);
+  const [q, setQ] = useState("");
 
   if (!user) return null;
   if (!myDsr) {
@@ -39,9 +42,36 @@ export default function DsrHome() {
   const zoneActive = zoneOrders.filter((o) => o.status !== "refunded" && o.status !== "rejected");
   const zoneChicks = zoneActive.reduce((s, o) => s + o.chicks, 0);
 
+  const s = q.trim().toLowerCase();
+  const results = s
+    ? zoneOrders.filter((o) => o.name.toLowerCase().includes(s) || o.phone.replace(/\D/g, "").includes(s.replace(/\D/g, ""))).slice(0, 8)
+    : [];
+
   return (
     <div className="space-y-6">
       <h1 className="section-heading text-2xl">Hello, {myDsr.name}</h1>
+
+      {/* Search the zone's orders/customers */}
+      <Card>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search a customer by name or phone…"
+          className="w-full rounded-[10px] border border-line bg-field px-4 py-3 text-[0.95rem] text-ink focus:outline-none focus-visible:border-gold"
+        />
+        {s && (
+          <div className="mt-3 space-y-1.5">
+            {results.length === 0 ? (
+              <p className="text-sm text-muted">No matching customers in your zone.</p>
+            ) : results.map((o) => (
+              <Link key={o.id} href={`/dsr/orders/${o.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm transition hover:border-gold hover:bg-gold-bg">
+                <span><strong className="text-ink">{o.name}</strong> <span className="text-muted">· {o.phone} · {formatDate(o.date)}</span></span>
+                <span className="text-muted">{toDeliver(o).toLocaleString()} chicks · <span className={balance(o) > 0 ? "font-semibold text-red" : "text-green"}>{formatRWF(balance(o))}</span></span>
+              </Link>
+            ))}
+          </div>
+        )}
+      </Card>
 
       {target > 0 && (
         <Card>

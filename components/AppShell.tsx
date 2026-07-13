@@ -149,7 +149,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 
-  return (
+  const shell = (
     <div className="min-h-screen lg:flex">
       {/* Attendant tablet: company logo as a faint body-wide background */}
       {isAttendant && (
@@ -243,10 +243,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto w-full max-w-[1280px] grow px-4 py-6 md:px-8">
           {needsOperator ? (
             <OperatorGate />
-          ) : isDsr ? (
-            <DsrGate>
-              {allowed ? children : <NotAuthorized role={user.role} />}
-            </DsrGate>
           ) : allowed ? (
             children
           ) : (
@@ -263,6 +259,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+
+  // DSRs must confirm their zone code before ANYTHING loads — the gate fills the
+  // whole screen (no sidebar, top bar or bell) until this device is trusted.
+  return isDsr ? <DsrGate>{shell}</DsrGate> : shell;
 }
 
 function NotAuthorized({ role }: { role: string }) {
