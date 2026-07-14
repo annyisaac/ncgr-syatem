@@ -27,6 +27,7 @@ import {
 import { formatRWF } from "@/lib/config";
 import { formatDate, nowISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
+import { clientKey } from "@/lib/clients";
 import { ordersPDF } from "@/lib/reports";
 import {
   canAddPayment,
@@ -391,7 +392,12 @@ function OrdersInner() {
                     <Td>{formatDate(o.date)}</Td>
                     <Td>{o.product}</Td>
                     <Td>
-                      <div className="font-medium">{o.name}</div>
+                      <Link
+                        href={`/clients/${encodeURIComponent(clientKey(o))}`}
+                        className="font-medium text-gold-dark underline underline-offset-2 hover:text-gold"
+                      >
+                        {o.name}
+                      </Link>
                       <div className="text-xs text-ink/50">{o.phone}</div>
                     </Td>
                     <Td>

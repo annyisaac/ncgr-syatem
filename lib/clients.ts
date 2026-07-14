@@ -22,10 +22,12 @@ export interface ClientRecord {
   lastOrder: string; // most recent delivery date
 }
 
-function keyOf(o: Order): string {
+/** The url-safe client key for an order (normalized phone, else a name slug). */
+export function clientKey(o: Order): string {
   const p = normalizePhone(o.phone);
   return p || `name:${o.name.trim().toLowerCase()}`;
 }
+const keyOf = clientKey;
 
 const isClosed = (o: Order) => o.status === "refunded" || o.status === "rejected";
 
