@@ -103,6 +103,19 @@ export function canFulfill(order: Order): string | null {
   return null;
 }
 
+/**
+ * Allocation gate (delivery planning): an order may only be put on a route once
+ * its payments are all checker-verified — unless it has been approved to go out
+ * on debt.
+ */
+export function canAllocate(order: Order): string | null {
+  if (order.debtOk) return null; // cleared to deliver on debt
+  if (allVerified(order)) return null; // every payment checker-verified
+  if (order.payments.length === 0)
+    return "No verified payment yet — verify a payment first, or approve delivery on debt.";
+  return "Payments are not all checker-verified — or approve delivery on debt.";
+}
+
 /** Whether the Admin override "Approve debt" is meaningful for this order. */
 export function canApproveDebt(order: Order): string | null {
   if (order.deliverOk) return "Already delivered.";
@@ -124,6 +137,19 @@ export function canReject(order: Order): string | null {
 
 export function confirmOrder(order: Order, actor: User): Order {
   return withHistory({ ...order, confirmedOk: true }, actor, "Confirmed order");
+}
+
+/**
+ * Clear an order to be delivered on debt: it becomes confirmed and allocatable
+ * even though its payments aren't verified/fully paid. It still goes out through
+ * the normal route → driver-delivery flow (not fulfilled here).
+ */
+export function approveDebt(order: Order, actor: User, note?: string): Order {
+  return withHistory(
+    { ...order, confirmedOk: true, debtOk: true },
+    actor,
+    note ?? "Approved delivery on debt"
+  );
 }
 
 export function addPayment(order: Order, payment: Payment, actor: User): Order {

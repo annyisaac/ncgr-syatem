@@ -17,7 +17,7 @@ import { visibleOrders } from "@/lib/permissions";
 import { COMPANY } from "@/lib/config";
 import { ensureDriverLink } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
-import { fulfillOrder, rescheduleOrder, withHistory } from "@/lib/orders";
+import { canAllocate, fulfillOrder, rescheduleOrder, withHistory } from "@/lib/orders";
 import { toDeliver, type Order, type Route } from "@/lib/types";
 
 const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
@@ -120,6 +120,8 @@ export default function DayPlanPage() {
   }
 
   function allocate(o: Order, chicks: number, pickup: string, routeId: string) {
+    const block = canAllocate(o);
+    if (block) { setAllocFor(null); return toast(block, "info"); }
     upsertOrder({ ...o, routeId, deliveryChicks: chicks, pickupLocation: pickup });
     toast(`${o.name} allocated to ${routes.find((r) => r.id === routeId)?.name ?? "route"}.`);
     setAllocFor(null);
@@ -200,25 +202,33 @@ export default function DayPlanPage() {
         <TableWrap>
           <thead><tr><Th>Customer</Th><Th>Product</Th><Th>District</Th><Th>Sector</Th><Th className="text-right">Chicks</Th><Th>Action</Th></tr></thead>
           <tbody>
-            {ready.length === 0 ? <EmptyRow colSpan={6} text="Nothing waiting to be allocated for this day." /> : ready.map((o) => (
+            {ready.length === 0 ? <EmptyRow colSpan={6} text="Nothing waiting to be allocated for this day." /> : ready.map((o) => {
+              const allocBlock = canAllocate(o);
+              return (
               <tr key={o.id}>
-                <Td className="font-medium">{o.name} <span className="text-xs text-muted">· {o.phone}</span></Td>
+                <Td className="font-medium">
+                  {o.name} <span className="text-xs text-muted">· {o.phone}</span>
+                  {o.debtOk && <span className="ml-2 align-middle"><Pill tone="info">On debt</Pill></span>}
+                </Td>
                 <Td>{o.product}</Td>
                 <Td>{o.district}</Td>
                 <Td>{o.sector}</Td>
                 <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
                 <Td>
                   {canEdit ? (
-                    <div className="flex gap-1">
-                      <Button size="sm" onClick={() => setAllocFor(o)}>Allocate</Button>
-                      <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
+                    <div className="flex flex-col gap-1">
+                      <div className="flex gap-1">
+                        <Button size="sm" disabled={!!allocBlock} title={allocBlock ?? undefined} onClick={() => setAllocFor(o)}>Allocate</Button>
+                        <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
+                      </div>
+                      {allocBlock && <span className="text-[11px] text-status-refunded">Payment not verified — can’t allocate</span>}
                     </div>
                   ) : (
                     <span className="text-xs text-muted">—</span>
                   )}
                 </Td>
               </tr>
-            ))}
+            );})}
           </tbody>
         </TableWrap>
       </Card>

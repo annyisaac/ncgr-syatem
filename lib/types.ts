@@ -202,6 +202,8 @@ export interface Order {
   payments: Payment[];
   confirmedOk?: boolean; // order has been confirmed (>=1 payment)
   deliverOk?: boolean; // fulfilled/delivered
+  /** Approved to be delivered on debt — may be allocated without verified payment. */
+  debtOk?: boolean;
   /** Set when a driver marks the stop NOT delivered (order stays open for sales). */
   deliveryFail?: { reason: string; on: string; by: string };
   commReq?: boolean; // commission has been requested for this order

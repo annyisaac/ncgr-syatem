@@ -30,6 +30,7 @@ import { visibleOrders } from "@/lib/permissions";
 import { clientKey } from "@/lib/clients";
 import { ordersPDF } from "@/lib/reports";
 import {
+  approveDebt,
   canAddPayment,
   canApproveDebt,
   canConfirm,
@@ -153,8 +154,8 @@ function OrdersInner() {
   }
   function doApproveDebt(o: Order) {
     act(
-      fulfillOrder(o, user!, "Delivered — Debt approved"),
-      `Delivered with debt approved for ${o.name}.`
+      approveDebt(o, user!, "Approved delivery on debt"),
+      `${o.name} approved for delivery on debt — it can now be allocated.`
     );
   }
   function doReorder(o: Order, dir: -1 | 1) {
@@ -210,8 +211,8 @@ function OrdersInner() {
           onClick: () => doFulfill(o, "Delivered — override (payments unchecked)"),
         });
       }
-      if (isAdmin && canApproveDebt(o) === null) {
-        acts.push({ label: "Approve debt (deliver)", onClick: () => doApproveDebt(o) });
+      if (isAdmin && !o.debtOk && canApproveDebt(o) === null) {
+        acts.push({ label: "Approve delivery on debt", onClick: () => doApproveDebt(o) });
       }
     }
 
@@ -431,6 +432,7 @@ function OrdersInner() {
                               ? "Confirmed"
                               : o.status}
                         </Pill>
+                        {o.debtOk && !o.deliverOk && <Pill tone="info">On debt</Pill>}
                         {isDebtApproved(o) && <Pill tone="refunded">Debt approved</Pill>}
                         {o.request?.status === "open" && (
                           <Pill tone="info">Request: {o.request.kind}</Pill>
@@ -576,10 +578,10 @@ function OrdersInner() {
             if (req.kind === "refund") {
               act(refundOrder(o, `Approved refund — ${req.reason}`, user), "Refund approved.");
             } else if (req.kind === "debt") {
-              const delivered = fulfillOrder(o, user, "Delivered — Debt approved (requested)");
+              const cleared = approveDebt(o, user, "Approved delivery on debt (requested)");
               act(
-                { ...delivered, request: { ...req, status: "approved" } },
-                "Delivery on debt approved."
+                { ...cleared, request: { ...req, status: "approved" } },
+                "Delivery on debt approved — order can now be allocated."
               );
             } else {
               act(
@@ -868,9 +870,9 @@ function ApproveRequestModal({
           </Field>
         ) : isDebt ? (
           <p className="font-semibold text-gold-dark">
-            Approving will deliver this order now, before it is fully paid. The
-            outstanding balance stays recorded and it will be tagged
-            &ldquo;Debt approved&rdquo;.
+            Approving clears this order for delivery on debt: it can be allocated
+            to a route and sent out before it is fully paid. The outstanding
+            balance stays recorded and the driver delivers it like any other stop.
           </p>
         ) : (
           <p className="text-status-refunded">
