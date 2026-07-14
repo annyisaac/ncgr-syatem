@@ -8,7 +8,7 @@ import { useHatchery } from "@/components/HatcheryProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Select";
+import { Field, Input, Select } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
@@ -44,7 +44,7 @@ export default function CandlingPage() {
   const [mode, setMode] = useState<"c1" | "c2">("c1");
   const [sel, setSel] = useState<{ batchId: string; idx: number } | null>(null);
   const [cats, setCats] = useState<Record<string, string>>({});
-  const [assign, setAssign] = useState<Record<string, string>>({});
+  const [tRows, setTRows] = useState<{ machineCode: string; eggs: string }[]>([{ machineCode: "", eggs: "" }]);
   const [err, setErr] = useState<string | null>(null);
 
   const canAct = !!user && CAN_ACT.includes(user.role);
@@ -88,12 +88,19 @@ export default function CandlingPage() {
   const catDefs = phase === "c1" ? CANDLING_1_CATEGORIES : CANDLING_2_CATEGORIES;
   const catTotal = candlingTotal(Object.fromEntries(Object.entries(cats).map(([k, v]) => [k, Number(v) || 0])));
   const fertileC2 = selected ? flockFertileAfterC2(selected.flock) : 0;
-  const assignedTotal = Object.values(assign).reduce((s, v) => s + (Number(v) || 0), 0);
+  const assignedTotal = tRows.reduce((s, r) => s + (Number(r.eggs) || 0), 0);
+  // Hatcher free capacity, minus what other rows in this form already claim.
+  const hatcherFree = (machineCode: string, selfIndex: number) => {
+    const m = hatchers.find((x) => x.code === machineCode);
+    if (!m) return 0;
+    const other = tRows.reduce((s, r, i) => (i !== selfIndex && r.machineCode === machineCode ? s + (Number(r.eggs) || 0) : s), 0);
+    return machineFreeCapacity(m, batches, "transfers") - other;
+  };
 
   if (!user) return null;
 
-  function switchMode(m: "c1" | "c2") { setMode(m); setSel(null); setCats({}); setAssign({}); setErr(null); }
-  function selectFlock(batchId: string, idx: number) { setSel({ batchId, idx }); setCats({}); setAssign({}); setErr(null); }
+  function switchMode(m: "c1" | "c2") { setMode(m); setSel(null); setCats({}); setTRows([{ machineCode: "", eggs: "" }]); setErr(null); }
+  function selectFlock(batchId: string, idx: number) { setSel({ batchId, idx }); setCats({}); setTRows([{ machineCode: "", eggs: "" }]); setErr(null); }
 
   function saveCandling(stage: 1 | 2) {
     setErr(null);
@@ -121,14 +128,16 @@ export default function CandlingPage() {
     if (!selected || !sel) return;
     const flocks = batchFlocks(selected.batch).slice();
     const target = { ...flocks[sel.idx] };
-    const list: MachineAssignment[] = hatchers
-      .map((m) => ({ machineCode: m.code, eggs: Number(assign[m.code]) || 0 }))
-      .filter((a) => a.eggs > 0);
-    if (list.length === 0) return setErr("Assign eggs to at least one hatcher.");
+    const list: MachineAssignment[] = tRows
+      .map((r) => ({ machineCode: r.machineCode, eggs: Number(r.eggs) || 0 }))
+      .filter((a) => a.machineCode && a.eggs > 0);
+    if (list.length === 0) return setErr("Select a hatcher and enter the number of eggs.");
     if (assignedTotal > flockFertileAfterC2(target)) return setErr(`Only ${flockFertileAfterC2(target).toLocaleString()} fertile eggs to transfer for this flock.`);
-    for (const a of list) {
-      const m = hatchers.find((x) => x.code === a.machineCode)!;
-      if (a.eggs > machineFreeCapacity(m, batches, "transfers")) return setErr(`${a.machineCode} has no room for ${a.eggs.toLocaleString()}.`);
+    const perMachine = new Map<string, number>();
+    for (const a of list) perMachine.set(a.machineCode, (perMachine.get(a.machineCode) ?? 0) + a.eggs);
+    for (const [mc, eggs] of perMachine) {
+      const m = hatchers.find((x) => x.code === mc)!;
+      if (eggs > machineFreeCapacity(m, batches, "transfers")) return setErr(`${mc} has no room for ${eggs.toLocaleString()}.`);
     }
     target.transfers = list;
     flocks[sel.idx] = target;
@@ -136,7 +145,7 @@ export default function CandlingPage() {
     if (batchFlocks(nb).every(flockTransferDone)) nb = markStep(nb, "transfer", user!);
     upsertBatch(nb);
     toast(`Transferred ${assignedTotal.toLocaleString()} eggs for flock ${target.flockId}.`);
-    setSel(null); setAssign({});
+    setSel(null); setTRows([{ machineCode: "", eggs: "" }]);
   }
 
   return (
@@ -193,14 +202,24 @@ export default function CandlingPage() {
               <p className="text-sm text-status-refunded">No hatcher machines. Create one on the Machines page.</p>
             ) : (
               <>
-                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                  {hatchers.map((m) => (
-                    <Field key={m.code} label={`${m.code} (free ${machineFreeCapacity(m, batches, "transfers").toLocaleString()})`}>
-                      <Input type="number" min={0} value={assign[m.code] ?? ""} onChange={(e) => setAssign({ ...assign, [m.code]: e.target.value })} />
+                {tRows.map((row, i) => (
+                  <div key={i} className="grid grid-cols-[1.4fr_1fr_auto] items-end gap-2">
+                    <Field label="Hatcher">
+                      <Select value={row.machineCode}
+                        onChange={(e) => setTRows(tRows.map((r, j) => (j === i ? { ...r, machineCode: e.target.value } : r)))}
+                        placeholder="Select hatcher"
+                        options={hatchers.map((m) => ({ value: m.code, label: `${m.code} (free ${Math.max(0, hatcherFree(m.code, i)).toLocaleString()})` }))} />
                     </Field>
-                  ))}
+                    <Field label={row.machineCode ? `Eggs (≤ ${Math.max(0, hatcherFree(row.machineCode, i)).toLocaleString()})` : "Eggs"}>
+                      <Input type="number" min={0} value={row.eggs} onChange={(e) => setTRows(tRows.map((r, j) => (j === i ? { ...r, eggs: e.target.value } : r)))} />
+                    </Field>
+                    <Button size="sm" variant="ghost" onClick={() => setTRows(tRows.length === 1 ? tRows : tRows.filter((_, j) => j !== i))} disabled={tRows.length === 1}>Remove</Button>
+                  </div>
+                ))}
+                <div className="flex items-center justify-between">
+                  <Button size="sm" variant="ghost" onClick={() => setTRows([...tRows, { machineCode: "", eggs: "" }])}>+ Add hatcher</Button>
+                  <p className="text-sm">Total: <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()}</p>
                 </div>
-                <p className="text-sm">Total: <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()}</p>
               </>
             )}
             {err && <p className="text-sm text-status-refunded">{err}</p>}
