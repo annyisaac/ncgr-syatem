@@ -28,13 +28,16 @@ export default function DeliveryPlanningCalendar() {
   const today = todayISO();
 
   const countsByDate = useMemo(() => {
-    const m = new Map<string, { orders: number; chicks: number; routed: number }>();
+    const m = new Map<string, { orders: number; chicks: number; routed: number; delivered: number }>();
     for (const o of scoped) {
-      if (!(o.confirmedOk && isActive(o) && !o.deliverOk)) continue;
-      const g = m.get(o.date) ?? { orders: 0, chicks: 0, routed: 0 };
+      // Include delivered orders so a completed day stays visible on the calendar
+      // (you can still open it to reprint the manifest).
+      if (!(o.confirmedOk && isActive(o))) continue;
+      const g = m.get(o.date) ?? { orders: 0, chicks: 0, routed: 0, delivered: 0 };
       g.orders += 1;
       g.chicks += deliverChicks(o);
       if (o.routeId) g.routed += 1;
+      if (o.deliverOk) g.delivered += 1;
       m.set(o.date, g);
     }
     return m;
@@ -82,7 +85,18 @@ export default function DeliveryPlanningCalendar() {
                 const g = countsByDate.get(iso);
                 const has = !!g;
                 const allRouted = has && g!.routed === g!.orders;
+                const allDelivered = has && g!.delivered === g!.orders;
+                const someDelivered = has && g!.delivered > 0;
                 const isToday = iso === today;
+                const status = !has
+                  ? ""
+                  : allDelivered
+                    ? "all delivered ✓"
+                    : someDelivered
+                      ? `${g!.delivered}/${g!.orders} delivered`
+                      : allRouted
+                        ? "planned"
+                        : `${g!.orders - g!.routed} to plan`;
                 return (
                   <button
                     key={i}
@@ -90,18 +104,20 @@ export default function DeliveryPlanningCalendar() {
                     onClick={() => router.push(`/planning/${iso}`)}
                     className={cn(
                       "h-24 cursor-pointer rounded-[10px] border p-1.5 text-left transition hover:border-gold hover:shadow-[0_3px_12px_rgba(150,115,20,.22)]",
-                      has ? "border-gold bg-gold-bg" : "border-line bg-paper",
+                      !has && "border-line bg-paper",
+                      has && allDelivered && "border-green bg-green-bg",
+                      has && !allDelivered && "border-gold bg-gold-bg",
                       isToday && "outline outline-2 outline-ink"
                     )}
                   >
                     <div className="flex items-center justify-between">
                       <span className={cn("text-[0.85rem] font-bold", !has && "text-muted")}>{Number(iso.slice(8, 10))}</span>
-                      {has && <span className="rounded-full bg-onyx px-1.5 text-[10px] font-bold text-[#f3e9c9]">{g!.orders}</span>}
+                      {has && <span className={cn("rounded-full px-1.5 text-[10px] font-bold", allDelivered ? "bg-green text-white" : "bg-onyx text-[#f3e9c9]")}>{g!.orders}</span>}
                     </div>
                     {has && (
                       <div className="mt-1 space-y-0.5">
                         <div className="text-[10px] font-semibold leading-tight text-gold-dark">{g!.chicks.toLocaleString()} chicks</div>
-                        <div className="text-[9px] font-semibold leading-tight text-muted">{allRouted ? "planned" : `${g!.orders - g!.routed} to plan`}</div>
+                        <div className={cn("text-[9px] font-semibold leading-tight", allDelivered ? "text-green" : "text-muted")}>{status}</div>
                       </div>
                     )}
                   </button>
