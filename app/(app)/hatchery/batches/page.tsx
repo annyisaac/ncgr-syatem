@@ -81,7 +81,12 @@ export default function BatchesPage() {
 
   if (!user) return null;
 
-  function addRow() { setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "" }]); }
+  // New flock line (blank), vs another setter line for the last flock.
+  function addFlock() { setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "" }]); }
+  function addSetter() {
+    const last = rowsIn[rowsIn.length - 1];
+    setRowsIn([...rowsIn, { groupKey: last?.groupKey ?? "", machineCode: "", eggs: "" }]);
+  }
   function removeRow(i: number) { setRowsIn(rowsIn.length === 1 ? rowsIn : rowsIn.filter((_, j) => j !== i)); }
   function updateRow(i: number, patch: Partial<AssignRow>) { setRowsIn(rowsIn.map((r, j) => (j === i ? { ...r, ...patch } : r))); }
 
@@ -164,8 +169,11 @@ export default function BatchesPage() {
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-muted">Add a line per setter. A flock&apos;s eggs can be split across several setters — add lines for the same flock until all its eggs are set. All flocks must be the same product.</p>
-                <Button size="sm" variant="ghost" onClick={addRow}>+ Add setter line</Button>
+                <p className="text-sm text-muted">Add a flock, then add a setter line for it. A flock&apos;s eggs can be split across several setters — use “Add setter” until all its eggs are set. All flocks must be the same product.</p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="ghost" onClick={addFlock}>+ Add flock</Button>
+                  <Button size="sm" variant="ghost" onClick={addSetter}>+ Add setter</Button>
+                </div>
               </div>
               {rowsIn.map((row, i) => (
                 <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1.7fr_1.1fr_0.9fr_auto] sm:items-end">
