@@ -9,6 +9,7 @@ import {
   MAX_MACHINE_TEMP_F,
   PRODUCT_CODE,
   type Batch,
+  type BatchFlock,
   type Candling,
   type ChickInventory,
   type Machine,
@@ -107,6 +108,74 @@ export function removedInStage(batch: Batch, stage: 1 | 2): number {
 
 export function hasCandling(batch: Batch, stage: 1 | 2): boolean {
   return batch.candlings.some((c) => c.stage === stage);
+}
+
+// ---------------------------------------------------------------------------
+// Per-flock candling & transfer (a batch/product can hold many flocks)
+// ---------------------------------------------------------------------------
+
+/**
+ * The flocks in a batch. Legacy batches (set before multi-flock) have no
+ * `flocks[]`, so we synthesise a single flock from the batch's own fields —
+ * every reader keeps working.
+ */
+export function batchFlocks(b: Batch): BatchFlock[] {
+  if (b.flocks && b.flocks.length) return b.flocks;
+  return [
+    {
+      flockId: b.flockId,
+      farm: b.farm,
+      ageOfFlock: 0,
+      receptionIds: b.receptionIds,
+      eggsSet: b.eggsSet,
+      candlings: b.candlings,
+      transfers: b.transfers,
+    },
+  ];
+}
+
+export function flockRemoved(f: BatchFlock, stage: 1 | 2): number {
+  return f.candlings.filter((c) => c.stage === stage).reduce((s, c) => s + c.totalRemoved, 0);
+}
+export function flockHasCandling(f: BatchFlock, stage: 1 | 2): boolean {
+  return f.candlings.some((c) => c.stage === stage);
+}
+export function flockFertileAfterC1(f: BatchFlock): number {
+  return f.eggsSet - flockRemoved(f, 1);
+}
+export function flockFertileAfterC2(f: BatchFlock): number {
+  return flockFertileAfterC1(f) - flockRemoved(f, 2);
+}
+export function flockTransferred(f: BatchFlock): number {
+  return f.transfers.reduce((s, a) => s + a.eggs, 0);
+}
+/** A flock is "done" with transfer once its fertile eggs are all assigned. */
+export function flockTransferDone(f: BatchFlock): boolean {
+  return flockFertileAfterC2(f) <= 0 || flockTransferred(f) >= flockFertileAfterC2(f);
+}
+
+/** Every flock in the batch has been candled at this stage. */
+export function batchAllCandled(b: Batch, stage: 1 | 2): boolean {
+  return batchFlocks(b).every((f) => flockHasCandling(f, stage));
+}
+/** Every flock's fertile eggs have been transferred. */
+export function batchAllTransferred(b: Batch): boolean {
+  return batchFlocks(b).every(flockTransferDone);
+}
+
+/**
+ * Recompute the batch-level totals (eggsSet, candlings, transfers) from its
+ * flocks, so batch-level readers (hatch, KPIs, machine capacity) stay correct.
+ * Only touches batches that actually use `flocks[]`.
+ */
+export function recomputeBatchAggregates(b: Batch): Batch {
+  if (!b.flocks || !b.flocks.length) return b;
+  return {
+    ...b,
+    eggsSet: b.flocks.reduce((s, f) => s + f.eggsSet, 0),
+    candlings: b.flocks.flatMap((f) => f.candlings),
+    transfers: b.flocks.flatMap((f) => f.transfers),
+  };
 }
 
 /** Unhatched = eggs set − candling1 − candling2 − hatched. */

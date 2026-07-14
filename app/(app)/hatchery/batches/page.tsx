@@ -13,21 +13,21 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import { nowISO } from "@/lib/format";
-import type { Batch, MachineAssignment, Reception } from "@/lib/hatchery/types";
+import type { Batch, BatchFlock, MachineAssignment, Reception } from "@/lib/hatchery/types";
 import { batchCode, machineFreeCapacity, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
 interface Group { key: string; farm: string; flockId: string; product: Reception["productType"]; recs: Reception[]; eggs: number; date: string; }
-interface SetterRow { machineCode: string; eggs: string; }
+/** One assignment line: a flock's eggs going into a setter machine. */
+interface AssignRow { groupKey: string; machineCode: string; eggs: string; }
 
 export default function BatchesPage() {
   const { user } = useAuth();
   const { receptions, machines, batches, upsertBatch, upsertReception, newId } = useHatchery();
   const { toast } = useToast();
 
-  const [group, setGroup] = useState<Group | null>(null);
-  const [rowsIn, setRowsIn] = useState<SetterRow[]>([{ machineCode: "", eggs: "" }]);
+  const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
   const [err, setErr] = useState<string | null>(null);
 
   const canSet = !!user && CAN_SET.includes(user.role);
@@ -52,46 +52,74 @@ export default function BatchesPage() {
 
   const rows = useMemo(() => batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [batches]);
   const assignedTotal = rowsIn.reduce((s, r) => s + (Number(r.eggs) || 0), 0);
+  const flockCount = new Set(rowsIn.filter((r) => r.groupKey && (Number(r.eggs) || 0) > 0).map((r) => r.groupKey)).size;
 
-  // Free capacity for a machine, minus what other rows in this form already claim.
+  // Setter free capacity, minus what other rows in this form already claim.
   const rowFree = (machineCode: string, selfIndex: number) => {
     const m = setters.find((x) => x.code === machineCode);
     if (!m) return 0;
     const claimedElsewhere = rowsIn.reduce((s, r, i) => (i !== selfIndex && r.machineCode === machineCode ? s + (Number(r.eggs) || 0) : s), 0);
     return machineFreeCapacity(m, batches, "setters") - claimedElsewhere;
   };
+  // A flock's settable eggs, minus what other rows already claim for it.
+  const groupFree = (groupKey: string, selfIndex: number) => {
+    const g = groups.find((x) => x.key === groupKey);
+    if (!g) return 0;
+    const claimedElsewhere = rowsIn.reduce((s, r, i) => (i !== selfIndex && r.groupKey === groupKey ? s + (Number(r.eggs) || 0) : s), 0);
+    return g.eggs - claimedElsewhere;
+  };
 
   if (!user) return null;
 
-  function addRow() { setRowsIn([...rowsIn, { machineCode: "", eggs: "" }]); }
+  function addRow() { setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "" }]); }
   function removeRow(i: number) { setRowsIn(rowsIn.length === 1 ? rowsIn : rowsIn.filter((_, j) => j !== i)); }
-  function updateRow(i: number, patch: Partial<SetterRow>) { setRowsIn(rowsIn.map((r, j) => (j === i ? { ...r, ...patch } : r))); }
+  function updateRow(i: number, patch: Partial<AssignRow>) { setRowsIn(rowsIn.map((r, j) => (j === i ? { ...r, ...patch } : r))); }
 
   function createBatch() {
     setErr(null);
-    if (!group) return;
-    const setterList: MachineAssignment[] = rowsIn
-      .map((r) => ({ machineCode: r.machineCode, eggs: Number(r.eggs) || 0 }))
-      .filter((a) => a.machineCode && a.eggs > 0);
-    if (setterList.length === 0) return setErr("Add at least one setter with eggs.");
-    if (assignedTotal > group.eggs) return setErr(`Only ${group.eggs.toLocaleString()} settable eggs available in this group.`);
-    // Sum per machine and check capacity.
+    const valid = rowsIn
+      .map((r) => ({ groupKey: r.groupKey, machineCode: r.machineCode, eggs: Number(r.eggs) || 0 }))
+      .filter((r) => r.groupKey && r.machineCode && r.eggs > 0);
+    if (valid.length === 0) return setErr("Add at least one flock with a setter and eggs.");
+
+    const usedGroups = [...new Set(valid.map((r) => r.groupKey))].map((k) => groups.find((g) => g.key === k)!);
+    if ([...new Set(usedGroups.map((g) => g.product))].length > 1) return setErr("All flocks in one batch must be the same product.");
+
+    for (const g of usedGroups) {
+      const used = valid.filter((r) => r.groupKey === g.key).reduce((s, r) => s + r.eggs, 0);
+      if (used > g.eggs) return setErr(`Flock ${g.flockId} (${g.farm}): only ${g.eggs.toLocaleString()} settable.`);
+    }
     const perMachine = new Map<string, number>();
-    for (const a of setterList) perMachine.set(a.machineCode, (perMachine.get(a.machineCode) ?? 0) + a.eggs);
+    for (const r of valid) perMachine.set(r.machineCode, (perMachine.get(r.machineCode) ?? 0) + r.eggs);
     for (const [mc, eggs] of perMachine) {
       const m = setters.find((x) => x.code === mc)!;
       if (eggs > machineFreeCapacity(m, batches, "setters")) return setErr(`${mc} does not have room for ${eggs.toLocaleString()} eggs.`);
     }
+
+    const flocks: BatchFlock[] = usedGroups.map((g) => ({
+      flockId: g.flockId,
+      farm: g.farm,
+      ageOfFlock: g.recs[0]?.ageOfFlock ?? 0,
+      receptionIds: g.recs.map((r) => r.id),
+      eggsSet: valid.filter((r) => r.groupKey === g.key).reduce((s, r) => s + r.eggs, 0),
+      candlings: [],
+      transfers: [],
+    }));
+    const setterList: MachineAssignment[] = valid.map((r) => ({ machineCode: r.machineCode, eggs: r.eggs }));
+    const product = usedGroups[0].product;
+    const date = usedGroups.map((g) => g.date).sort()[0];
+    const total = flocks.reduce((s, f) => s + f.eggsSet, 0);
     const on = nowISO();
     const id = newId("batch");
     let batch: Batch = {
       id,
-      batchNo: batchCode(group.date, group.product),
-      productType: group.product,
-      farm: group.farm,
-      flockId: group.flockId,
-      receptionIds: group.recs.map((r) => r.id),
-      eggsSet: assignedTotal,
+      batchNo: batchCode(date, product),
+      productType: product,
+      farm: flocks.length === 1 ? flocks[0].farm : "Multiple flocks",
+      flockId: flocks.length === 1 ? flocks[0].flockId : `${flocks.length} flocks`,
+      receptionIds: flocks.flatMap((f) => f.receptionIds),
+      eggsSet: total,
+      flocks,
       setters: setterList,
       transfers: [],
       candlings: [],
@@ -100,16 +128,16 @@ export default function BatchesPage() {
       currentStep: "setting",
       status: "active",
       steps: {},
-      history: [`${on} — Batch set: ${assignedTotal} eggs (by ${user!.name})`],
+      history: [`${on} — Batch set: ${total.toLocaleString()} eggs across ${flocks.length} flock(s) (by ${user!.name})`],
       by: user!.email,
       createdAt: on,
     };
     batch = markStep(batch, "reception", user!);
     batch = markStep(batch, "setting", user!);
     upsertBatch(batch);
-    group.recs.forEach((r) => upsertReception({ ...r, batchId: id }));
-    toast(`Batch ${batch.batchNo} set with ${assignedTotal.toLocaleString()} eggs.`);
-    setGroup(null); setRowsIn([{ machineCode: "", eggs: "" }]);
+    usedGroups.forEach((g) => g.recs.forEach((r) => upsertReception({ ...r, batchId: id })));
+    toast(`Batch ${batch.batchNo} set — ${total.toLocaleString()} eggs, ${flocks.length} flock(s).`);
+    setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]);
   }
 
   return (
@@ -121,53 +149,37 @@ export default function BatchesPage() {
           <CardHeader title="Set a new batch" />
           {groups.length === 0 ? (
             <p className="text-sm text-muted">No receptions ready to set. Mark receptions “ready to set” on the Egg Reception or Store Room page first.</p>
+          ) : setters.length === 0 ? (
+            <p className="text-sm text-status-refunded">No setter machines. Create one on the Machines page first.</p>
           ) : (
-            <div className="space-y-4">
-              <Field label="Flock reception (same farm + flock is one batch)">
-                <Select
-                  value={group?.key ?? ""}
-                  onChange={(e) => { setGroup(groups.find((g) => g.key === e.target.value) ?? null); setRowsIn([{ machineCode: "", eggs: "" }]); setErr(null); }}
-                  placeholder="Select reception group"
-                  options={groups.map((g) => ({ value: g.key, label: `${g.farm} · Flock ${g.flockId} · ${g.product} · ${g.eggs.toLocaleString()} settable (${g.recs.length} reception${g.recs.length > 1 ? "s" : ""})` }))}
-                />
-              </Field>
-
-              {group && (
-                <>
-                  <p className="text-sm text-muted">
-                    Batch code will be <strong className="text-ink">{batchCode(group.date, group.product)}</strong>.
-                    Assign eggs to setter machine(s):
-                  </p>
-                  {setters.length === 0 ? (
-                    <p className="text-sm text-status-refunded">No setter machines. Create one on the Machines page first.</p>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold text-ink">Setters</p>
-                        <Button size="sm" variant="ghost" onClick={addRow}>+ Add setter</Button>
-                      </div>
-                      {rowsIn.map((row, i) => (
-                        <div key={i} className="grid grid-cols-[1.4fr_1fr_auto] items-end gap-2">
-                          <Field label="Setter">
-                            <Select value={row.machineCode} onChange={(e) => updateRow(i, { machineCode: e.target.value })}
-                              placeholder="Select setter"
-                              options={setters.map((m) => ({ value: m.code, label: `${m.code} (free ${machineFreeCapacity(m, batches, "setters").toLocaleString()})` }))} />
-                          </Field>
-                          <Field label={row.machineCode ? `Eggs (free ${rowFree(row.machineCode, i).toLocaleString()})` : "Eggs set"}>
-                            <Input type="number" min={0} value={row.eggs} onChange={(e) => updateRow(i, { eggs: e.target.value })} />
-                          </Field>
-                          <Button size="sm" variant="ghost" onClick={() => removeRow(i)} disabled={rowsIn.length === 1}>Remove</Button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm">Total to set: <strong>{assignedTotal.toLocaleString()}</strong> / {group.eggs.toLocaleString()} settable</p>
-                    <Button onClick={createBatch} disabled={setters.length === 0}>Create batch</Button>
-                  </div>
-                  {err && <p className="text-sm text-status-refunded">{err}</p>}
-                </>
-              )}
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm text-muted">Add each flock going into this batch and the setter it goes to. All flocks must be the same product.</p>
+                <Button size="sm" variant="ghost" onClick={addRow}>+ Add flock</Button>
+              </div>
+              {rowsIn.map((row, i) => (
+                <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1.7fr_1.1fr_0.9fr_auto] sm:items-end">
+                  <Field label="Flock (farm · flock)">
+                    <Select value={row.groupKey} onChange={(e) => updateRow(i, { groupKey: e.target.value })}
+                      placeholder="Select flock"
+                      options={groups.map((g) => ({ value: g.key, label: `${g.farm} · Flock ${g.flockId} · ${g.product} · ${g.eggs.toLocaleString()} settable` }))} />
+                  </Field>
+                  <Field label="Setter">
+                    <Select value={row.machineCode} onChange={(e) => updateRow(i, { machineCode: e.target.value })}
+                      placeholder="Select setter"
+                      options={setters.map((m) => ({ value: m.code, label: `${m.code} (free ${machineFreeCapacity(m, batches, "setters").toLocaleString()})` }))} />
+                  </Field>
+                  <Field label={row.groupKey && row.machineCode ? `Eggs (≤ ${Math.max(0, Math.min(groupFree(row.groupKey, i), rowFree(row.machineCode, i))).toLocaleString()})` : "Eggs"}>
+                    <Input type="number" min={0} value={row.eggs} onChange={(e) => updateRow(i, { eggs: e.target.value })} />
+                  </Field>
+                  <Button size="sm" variant="ghost" onClick={() => removeRow(i)} disabled={rowsIn.length === 1}>Remove</Button>
+                </div>
+              ))}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+                <p className="text-sm">Total to set: <strong>{assignedTotal.toLocaleString()}</strong> egg(s) · <strong>{flockCount}</strong> flock(s)</p>
+                <Button onClick={createBatch}>Create batch</Button>
+              </div>
+              {err && <p className="text-sm text-status-refunded">{err}</p>}
             </div>
           )}
         </Card>
@@ -184,7 +196,7 @@ export default function BatchesPage() {
               <tr key={b.id}>
                 <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
                 <Td>{b.productType}</Td>
-                <Td>{b.farm} · {b.flockId}</Td>
+                <Td>{b.flocks && b.flocks.length > 1 ? `${b.flocks.length} flocks` : `${b.farm} · ${b.flockId}`}</Td>
                 <Td>{stepLabel(b.currentStep)}</Td>
                 <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
                 <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>

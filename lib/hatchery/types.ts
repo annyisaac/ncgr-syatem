@@ -182,6 +182,21 @@ export interface Candling {
   on: string;
 }
 
+/**
+ * One flock inside a batch. A batch (the product) can hold several flocks;
+ * candling and transfer are done flock-by-flock, while vaccination/hatch/
+ * counting stay at the batch (product) level.
+ */
+export interface BatchFlock {
+  flockId: string;
+  farm: string;
+  ageOfFlock: number; // weeks
+  receptionIds: string[];
+  eggsSet: number; // eggs from this flock set in the batch
+  candlings: Candling[]; // stage 1 & 2 for this flock
+  transfers: MachineAssignment[]; // this flock's fertile eggs to hatcher(s)
+}
+
 // ---------------------------------------------------------------------------
 // Batch
 // ---------------------------------------------------------------------------
@@ -195,10 +210,11 @@ export interface Batch {
   farm: string;
   flockId: string;
   receptionIds: string[]; // combined daily receptions
-  eggsSet: number; // total eggs set
+  eggsSet: number; // total eggs set (sum across flocks)
+  flocks?: BatchFlock[]; // per-flock breakdown (multi-flock batches)
   setters: MachineAssignment[];
-  transfers: MachineAssignment[];
-  candlings: Candling[];
+  transfers: MachineAssignment[]; // batch-level total (recomputed from flocks)
+  candlings: Candling[]; // batch-level total (recomputed from flocks)
   hatchedCount: number;
   culls: number;
   unhatchedCount: number;

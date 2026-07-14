@@ -10,7 +10,7 @@ import { Pill } from "@/components/ui/Pill";
 import { cn } from "@/lib/cn";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { LIFECYCLE_STEPS } from "@/lib/hatchery/types";
-import { removedInStage, fertilityPct, hatchabilityPct } from "@/lib/hatchery/lifecycle";
+import { removedInStage, fertilityPct, hatchabilityPct, flockRemoved, flockFertileAfterC2, flockTransferred } from "@/lib/hatchery/lifecycle";
 
 export default function BatchDetailPage() {
   const params = useParams<{ id: string }>();
@@ -70,6 +70,22 @@ export default function BatchDetailPage() {
           </div>
         </Card>
       </div>
+
+      {batch.flocks && batch.flocks.length > 0 && (
+        <Card>
+          <CardHeader title={`Flocks in this batch (${batch.flocks.length})`} />
+          <div className="space-y-2 text-sm">
+            {batch.flocks.map((f) => (
+              <div key={f.flockId + f.farm} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2">
+                <span className="font-medium">{f.farm} · flock {f.flockId}</span>
+                <span className="text-xs text-muted">
+                  set {f.eggsSet.toLocaleString()} · C1 −{flockRemoved(f, 1).toLocaleString()} · C2 −{flockRemoved(f, 2).toLocaleString()} · fertile {flockFertileAfterC2(f).toLocaleString()} · transferred {flockTransferred(f).toLocaleString()}
+                </span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       <Card>
         <CardHeader title="Candling" />
