@@ -66,7 +66,13 @@ export default function CandlingPage() {
     }
     return { rowsC1: c1, rowsC2: c2 };
   }, [batches]);
-  const rows = mode === "c1" ? rowsC1 : rowsC2;
+  // Flocks still to act on stay at the top; already-candled ones drop to the
+  // bottom (kept in the list). Stable, so newest-batch order holds within each.
+  const rows = useMemo(() => {
+    const base = mode === "c1" ? rowsC1 : rowsC2;
+    const needs = (r: FlockRow) => (mode === "c1" ? !flockHasCandling(r.flock, 1) : !flockTransferDone(r.flock));
+    return base.slice().sort((a, b) => Number(needs(b)) - Number(needs(a)));
+  }, [mode, rowsC1, rowsC2]);
   const pendingC1 = rowsC1.filter((r) => !flockHasCandling(r.flock, 1)).length;
   const pendingC2 = rowsC2.filter((r) => !flockHasCandling(r.flock, 2)).length;
   const catCols = mode === "c1" ? CANDLING_1_CATEGORIES : CANDLING_2_CATEGORIES;
