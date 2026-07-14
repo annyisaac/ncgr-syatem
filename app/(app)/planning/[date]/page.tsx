@@ -14,11 +14,12 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { visibleOrders } from "@/lib/permissions";
-import { COMPANY } from "@/lib/config";
+import { COMPANY, formatRWF } from "@/lib/config";
 import { ensureDriverLink } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
 import { canAllocate, fulfillOrder, rescheduleOrder, withHistory } from "@/lib/orders";
-import { toDeliver, type Order, type Route } from "@/lib/types";
+import { deliveryPaymentPDF } from "@/lib/reports";
+import { balance, paidAmount, toDeliver, type Order, type Route } from "@/lib/types";
 
 const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
 const deliverChicks = (o: Order) => o.deliveryChicks ?? toDeliver(o);
@@ -104,6 +105,8 @@ export default function DayPlanPage() {
   );
   const dayTotal = dayOrders.reduce((s, o) => s + deliverChicks(o), 0);
   const deliveredCount = dayOrders.filter((o) => o.deliverOk).length;
+  const advancePaid = dayOrders.reduce((s, o) => s + paidAmount(o), 0);
+  const toCollect = dayOrders.reduce((s, o) => s + Math.max(0, balance(o)), 0);
   const routeOrders = (routeId: string) => dayOrders.filter((o) => o.routeId === routeId);
   const dateLabel = formatDate(activeDate);
 
@@ -191,6 +194,30 @@ export default function DayPlanPage() {
         </div>
         <Pill tone={canEdit ? "gold" : "neutral"}>{canEdit ? "Full access" : "View only"}</Pill>
       </div>
+
+      {/* Collections — the day's money view (folded in from the old Deliveries page) */}
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardHeader title="Collections for this day" />
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() =>
+              dayOrders.length
+                ? deliveryPaymentPDF(dayOrders.slice().sort((a, b) => a.plan - b.plan), dateLabel)
+                : toast("No orders to export for this day.", "info")
+            }
+          >
+            Download payment sheet (PDF)
+          </Button>
+        </div>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="Chicks to deliver" value={dayTotal.toLocaleString()} />
+          <Stat label="Orders" value={String(dayOrders.length)} />
+          <Stat label="Advance paid" value={formatRWF(advancePaid)} tone="green" />
+          <Stat label="Balance to collect" value={formatRWF(toCollect)} tone="red" />
+        </div>
+      </Card>
 
       {/* Routes */}
       <Card>
@@ -358,6 +385,16 @@ function RescheduleModal({ order, routeName, onClose, onSave }: {
         {err && <p className="text-status-refunded">{err}</p>}
       </div>
     </Modal>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: string; tone?: "green" | "red" }) {
+  const color = tone === "green" ? "text-green" : tone === "red" ? "text-red" : "text-ink";
+  return (
+    <div className="rounded-xl border border-line bg-cream/40 p-3">
+      <p className="text-xs text-muted">{label}</p>
+      <p className={`text-lg font-bold ${color}`}>{value}</p>
+    </div>
   );
 }
 

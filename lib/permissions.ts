@@ -79,10 +79,8 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Availability", href: "/availability" },
     { label: "Commission", href: "/commission" },
     { label: "Verification", href: "/verification" },
-    { label: "Deliveries", href: "/deliveries" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
-    { label: "New Order", href: "/orders/new" },
     ...H_ALL,
   ],
   "Tetra Zone Manager": [
@@ -91,8 +89,6 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Clients", href: "/clients" },
     { label: "Availability", href: "/availability" },
     { label: "Commission", href: "/commission" },
-    { label: "New Order", href: "/orders/new" },
-    { label: "Deliveries", href: "/deliveries" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Zone Orders", href: "/orders" },
   ],
@@ -100,8 +96,6 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/dashboard" },
     { label: "Clients", href: "/clients" },
     { label: "Commission", href: "/commission" },
-    { label: "New Order", href: "/orders/new" },
-    { label: "Deliveries", href: "/deliveries" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
   ],
@@ -109,7 +103,6 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/dashboard" },
     { label: "Clients", href: "/clients" },
     { label: "Verification", href: "/verification" },
-    { label: "Deliveries", href: "/deliveries" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
   ],
@@ -117,7 +110,6 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/dashboard" },
     { label: "Clients", href: "/clients" },
     { label: "Verification", href: "/verification" },
-    { label: "Deliveries", href: "/deliveries" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
   ],
@@ -173,7 +165,7 @@ export function navForRole(role: Role): NavItem[] {
 /** Whether a role is allowed to reach a given route (prefix match). */
 export function canAccess(role: Role, pathname: string): boolean {
   const items = navForRole(role);
-  // /orders/new is its own item; /orders/[id] falls under /orders.
+  // /orders/new and /orders/[id] both fall under the /orders nav item.
   // Everyone can reach their own profile.
   if (pathname === "/profile" || pathname.startsWith("/profile/")) return true;
   return items.some(
