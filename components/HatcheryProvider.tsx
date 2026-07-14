@@ -11,6 +11,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type ReactNode,
 } from "react";
@@ -218,9 +219,15 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     });
   }
 
+  // Expose batches newest-first everywhere (by creation, descending).
+  const sortedBatches = useMemo(
+    () => batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)),
+    [batches]
+  );
+
   const value: HatcheryContextValue = {
     loading,
-    receptions, storeReadings, fumigations, machines, operators, batches, readings,
+    receptions, storeReadings, fumigations, machines, operators, batches: sortedBatches, readings,
     counts, boxLogs, supplies, vaccinations, biosecurity, maintenance,
     inventory, allocations, dispatches, farmVisits, vaccineRequests,
     reload: load,
