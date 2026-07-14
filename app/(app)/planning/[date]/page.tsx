@@ -23,6 +23,7 @@ import { toDeliver, type Order, type Route } from "@/lib/types";
 const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
 const deliverChicks = (o: Order) => o.deliveryChicks ?? toDeliver(o);
 const isActive = (o: Order) => o.status !== "refunded" && o.status !== "rejected";
+const stopStatus = (o: Order) => (o.deliverOk ? "Delivered" : o.deliveryFail ? "Not delivered" : "Pending");
 
 // ---- reports --------------------------------------------------------------
 
@@ -32,10 +33,10 @@ function esc(s: string) { return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&a
 function downloadCsv(route: Route, dateLabel: string, orders: Order[]) {
   const rows: string[][] = [
     ["Delivery report"], ["Route", route.name], ["Driver", route.driver], ["Date", dateLabel], [],
-    ["#", "Customer", "Phone", "Sector", "District", "Pickup", "Chicks", "Product"],
+    ["#", "Customer", "Phone", "Sector", "District", "Pickup", "Chicks", "Product", "Status"],
   ];
   let total = 0;
-  orders.forEach((o, i) => { const c = deliverChicks(o); total += c; rows.push([String(i + 1), o.name, o.phone, o.sector, o.district, o.pickupLocation ?? "", String(c), o.product]); });
+  orders.forEach((o, i) => { const c = deliverChicks(o); total += c; rows.push([String(i + 1), o.name, o.phone, o.sector, o.district, o.pickupLocation ?? "", String(c), o.product, stopStatus(o)]); });
   rows.push([], ["TOTAL CHICKS", "", "", "", "", "", String(total)]);
   const blob = new Blob([rows.map((r) => r.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -46,7 +47,7 @@ function downloadCsv(route: Route, dateLabel: string, orders: Order[]) {
 
 function printManifest(route: Route, dateLabel: string, orders: Order[]) {
   const total = orders.reduce((s, o) => s + deliverChicks(o), 0);
-  const rows = orders.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.name)}</td><td>${esc(o.phone)}</td><td>${esc(o.sector)}</td><td>${esc(o.district)}</td><td style="text-align:right">${deliverChicks(o).toLocaleString()}</td><td class="sig"></td></tr>`).join("");
+  const rows = orders.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.name)}</td><td>${esc(o.phone)}</td><td>${esc(o.sector)}</td><td>${esc(o.district)}</td><td style="text-align:right">${deliverChicks(o).toLocaleString()}</td><td>${esc(stopStatus(o))}</td><td class="sig"></td></tr>`).join("");
   const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(route.name)} — ${dateLabel}</title><style>
     body{font-family:Arial,Helvetica,sans-serif;color:#20201c;padding:24px}h1{margin:0 0 2px;font-size:20px}.muted{color:#6e6656;font-size:13px}
     .meta{margin:10px 0 16px;font-size:14px}.meta b{color:#20201c}table{width:100%;border-collapse:collapse;font-size:13px}
@@ -54,9 +55,9 @@ function printManifest(route: Route, dateLabel: string, orders: Order[]) {
   </style></head><body>
     <h1>${esc(COMPANY.name)} — Delivery Manifest</h1><div class="muted">${esc(COMPANY.address)}</div>
     <div class="meta">Route: <b>${esc(route.name)}</b> &nbsp;·&nbsp; Driver: <b>${esc(route.driver)}</b> &nbsp;·&nbsp; Date: <b>${dateLabel}</b> &nbsp;·&nbsp; Stops: <b>${orders.length}</b></div>
-    <table><thead><tr><th>#</th><th>Customer</th><th>Phone</th><th>Sector</th><th>District</th><th style="text-align:right">Chicks</th><th>Received (sign)</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="7" style="text-align:center;color:#6e6656">No stops</td></tr>`}</tbody>
-    <tfoot><tr><td colspan="5">TOTAL CHICKS</td><td style="text-align:right">${total.toLocaleString()}</td><td></td></tr></tfoot></table>
+    <table><thead><tr><th>#</th><th>Customer</th><th>Phone</th><th>Sector</th><th>District</th><th style="text-align:right">Chicks</th><th>Status</th><th>Received (sign)</th></tr></thead>
+    <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#6e6656">No stops</td></tr>`}</tbody>
+    <tfoot><tr><td colspan="5">TOTAL CHICKS</td><td style="text-align:right">${total.toLocaleString()}</td><td></td><td></td></tr></tfoot></table>
     <p class="muted" style="margin-top:20px">Driver signature: ____________________  Date: __________</p>
     <button onclick="window.print()" style="margin-top:16px;padding:8px 14px">Print</button></body></html>`;
   const w = window.open("", "_blank", "width=900,height=1000");
@@ -86,16 +87,23 @@ export default function DayPlanPage() {
   const canEdit = !!role && CAN_EDIT.includes(role);
   const scoped = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
+  // Keep delivered orders on the day's plan (marked delivered) so the manifest
+  // can be reprinted any time — they no longer drop off once delivered.
   const dayOrders = useMemo(
     () =>
       scoped
-        .filter((o) => o.date === activeDate && o.confirmedOk && isActive(o) && !o.deliverOk)
+        .filter((o) => o.date === activeDate && o.confirmedOk && isActive(o))
         .sort((a, b) => a.plan - b.plan), // rescheduled-in orders carry a lower plan → shown first
     [scoped, activeDate]
   );
   const routeIds = useMemo(() => new Set(routes.map((r) => r.id)), [routes]);
-  const ready = useMemo(() => dayOrders.filter((o) => !o.routeId || !routeIds.has(o.routeId)), [dayOrders, routeIds]);
+  // "Ready to allocate" excludes already-delivered stops.
+  const ready = useMemo(
+    () => dayOrders.filter((o) => !o.deliverOk && (!o.routeId || !routeIds.has(o.routeId))),
+    [dayOrders, routeIds]
+  );
   const dayTotal = dayOrders.reduce((s, o) => s + deliverChicks(o), 0);
+  const deliveredCount = dayOrders.filter((o) => o.deliverOk).length;
   const routeOrders = (routeId: string) => dayOrders.filter((o) => o.routeId === routeId);
   const dateLabel = formatDate(activeDate);
 
@@ -176,7 +184,10 @@ export default function DayPlanPage() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h1 className="section-heading text-lg">Delivery plan — {dateLabel}</h1>
-          <p className="text-sm text-muted">{dayTotal.toLocaleString()} chicks · {dayOrders.length} order(s) to deliver</p>
+          <p className="text-sm text-muted">
+            {dayTotal.toLocaleString()} chicks · {dayOrders.length} stop(s)
+            {deliveredCount > 0 && <span className="text-green"> · {deliveredCount} delivered</span>}
+          </p>
         </div>
         <Pill tone={canEdit ? "gold" : "neutral"}>{canEdit ? "Full access" : "View only"}</Pill>
       </div>
@@ -238,6 +249,7 @@ export default function DayPlanPage() {
         const list = routeOrders(route.id);
         const total = list.reduce((s, o) => s + deliverChicks(o), 0);
         const over = route.capacity ? total > route.capacity : false;
+        const delivered = list.filter((o) => o.deliverOk).length;
         return (
           <Card key={route.id}>
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
@@ -246,6 +258,7 @@ export default function DayPlanPage() {
                 <p className="text-sm text-muted">
                   Driver: <strong className="text-ink">{route.driver}</strong> · {list.length} stop(s) · <strong className="text-ink">{total.toLocaleString()}</strong> chicks
                   {route.capacity ? ` / ${route.capacity.toLocaleString()} capacity` : ""}
+                  {delivered > 0 && <span className="text-green"> · {delivered}/{list.length} delivered</span>}
                   {over && <span className="ml-2"><Pill tone="red">Over capacity</Pill></span>}
                 </p>
               </div>
@@ -267,13 +280,16 @@ export default function DayPlanPage() {
               <thead><tr><Th>Customer</Th><Th>Phone</Th><Th>Pickup</Th><Th>Sector</Th><Th className="text-right">Chicks</Th>{canEdit && <Th></Th>}</tr></thead>
               <tbody>
                 {list.length === 0 ? <EmptyRow colSpan={canEdit ? 6 : 5} text="No stops on this route for this day." /> : list.map((o) => (
-                  <tr key={o.id}>
+                  <tr key={o.id} className={o.deliverOk ? "bg-green-bg" : undefined}>
                     <Td className="font-medium">
                       {o.name}
-                      {o.deliveryFail && (
+                      {o.deliverOk && (
+                        <span className="ml-2 align-middle"><Pill tone="green">Delivered ✓</Pill></span>
+                      )}
+                      {o.deliveryFail && !o.deliverOk && (
                         <span className="ml-2 align-middle"><Pill tone="red">Not delivered</Pill></span>
                       )}
-                      {o.deliveryFail && <div className="text-xs font-normal text-muted">{o.deliveryFail.reason}</div>}
+                      {o.deliveryFail && !o.deliverOk && <div className="text-xs font-normal text-muted">{o.deliveryFail.reason}</div>}
                     </Td>
                     <Td>{o.phone}</Td>
                     <Td>{o.pickupLocation ?? "—"}</Td>
@@ -281,11 +297,15 @@ export default function DayPlanPage() {
                     <Td className="text-right">{deliverChicks(o).toLocaleString()}</Td>
                     {canEdit && (
                       <Td>
-                        <div className="flex gap-1">
-                          <Button size="sm" onClick={() => markDelivered(o)}>Delivered</Button>
-                          <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
-                          <Button size="sm" variant="ghost" onClick={() => unallocate(o)}>Remove</Button>
-                        </div>
+                        {o.deliverOk ? (
+                          <span className="text-xs font-medium text-green">Delivered</span>
+                        ) : (
+                          <div className="flex gap-1">
+                            <Button size="sm" onClick={() => markDelivered(o)}>Delivered</Button>
+                            <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
+                            <Button size="sm" variant="ghost" onClick={() => unallocate(o)}>Remove</Button>
+                          </div>
+                        )}
                       </Td>
                     )}
                   </tr>
