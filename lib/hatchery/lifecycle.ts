@@ -209,13 +209,21 @@ export function isMachineOverTemp(...temps: number[]): boolean {
   return temps.some((t) => t > MAX_MACHINE_TEMP_F);
 }
 
-/** Eggs already assigned to a machine across all batches (for a given field). */
+/**
+ * Eggs currently occupying a machine across all batches. The eggs move on and
+ * free the machine: a **setter** is emptied once its batch has transferred to a
+ * hatcher, a **hatcher** once its batch has hatched — so machines become
+ * available again for the next batch.
+ */
 export function eggsInMachine(
   batches: Batch[],
   machineCode: string,
   field: "setters" | "transfers"
 ): number {
   return batches.reduce((sum, b) => {
+    if (field === "setters" && b.steps["transfer"]) return sum; // eggs left the setter
+    if (field === "transfers" && (b.steps["hatching"] || b.hatchedCount > 0)) return sum; // eggs hatched out
+    if (b.status === "delivered" || b.status === "dispatched") return sum; // batch is done
     const list: MachineAssignment[] = b[field] ?? [];
     return sum + list.filter((a) => a.machineCode === machineCode).reduce((s, a) => s + a.eggs, 0);
   }, 0);
