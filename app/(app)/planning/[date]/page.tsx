@@ -15,8 +15,9 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { visibleOrders } from "@/lib/permissions";
 import { COMPANY } from "@/lib/config";
+import { ensureDriverLink } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
-import { fulfillOrder } from "@/lib/orders";
+import { fulfillOrder, rescheduleOrder, withHistory } from "@/lib/orders";
 import { toDeliver, type Order, type Route } from "@/lib/types";
 
 const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
@@ -78,13 +79,18 @@ export default function DayPlanPage() {
   const [rCap, setRCap] = useState("");
   const [rErr, setRErr] = useState<string | null>(null);
   const [allocFor, setAllocFor] = useState<Order | null>(null);
+  const [rescheduleFor, setRescheduleFor] = useState<Order | null>(null);
+  const [driverLinks, setDriverLinks] = useState<Record<string, string>>({});
 
   const role = user?.role;
   const canEdit = !!role && CAN_EDIT.includes(role);
   const scoped = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
   const dayOrders = useMemo(
-    () => scoped.filter((o) => o.date === activeDate && o.confirmedOk && isActive(o) && !o.deliverOk),
+    () =>
+      scoped
+        .filter((o) => o.date === activeDate && o.confirmedOk && isActive(o) && !o.deliverOk)
+        .sort((a, b) => a.plan - b.plan), // rescheduled-in orders carry a lower plan → shown first
     [scoped, activeDate]
   );
   const routeIds = useMemo(() => new Set(routes.map((r) => r.id)), [routes]);
@@ -130,6 +136,38 @@ export default function DayPlanPage() {
     toast(`${o.name} marked delivered.`);
   }
 
+  async function makeDriverLink(driver: string) {
+    if (!driver.trim()) return toast("This route has no driver name.", "info");
+    try {
+      const token = await ensureDriverLink(driver.trim(), user!.email);
+      const url = `${window.location.origin}/deliver/${token}`;
+      setDriverLinks((m) => ({ ...m, [driver]: url }));
+      try {
+        await navigator.clipboard.writeText(url);
+        toast(`Driver link copied — send it to ${driver}.`);
+      } catch {
+        toast(`Driver link ready for ${driver}.`);
+      }
+    } catch {
+      toast("Could not create the driver link.", "info");
+    }
+  }
+
+  function reschedule(o: Order, newDate: string) {
+    // Move to the new day (placed first there). If it was already on a route,
+    // pull it off — the truck for the old day no longer carries it.
+    const wasOn = o.routeId ? routes.find((r) => r.id === o.routeId)?.name : undefined;
+    let next = rescheduleOrder(o, newDate, user!, orders);
+    if (wasOn) next = withHistory(next, user!, `Removed from route ${wasOn} (rescheduled)`);
+    upsertOrder({ ...next, routeId: undefined, deliveryChicks: undefined, pickupLocation: undefined });
+    toast(
+      wasOn
+        ? `${o.name} rescheduled to ${formatDate(newDate)} — taken off ${wasOn}, placed first for that day.`
+        : `${o.name} rescheduled to ${formatDate(newDate)} — placed first for that day.`
+    );
+    setRescheduleFor(null);
+  }
+
   return (
     <div className="space-y-5">
       <Link href="/planning" className="text-sm text-gold-dark underline">← Back to calendar</Link>
@@ -169,7 +207,16 @@ export default function DayPlanPage() {
                 <Td>{o.district}</Td>
                 <Td>{o.sector}</Td>
                 <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
-                <Td>{canEdit ? <Button size="sm" onClick={() => setAllocFor(o)}>Allocate</Button> : <span className="text-xs text-muted">—</span>}</Td>
+                <Td>
+                  {canEdit ? (
+                    <div className="flex gap-1">
+                      <Button size="sm" onClick={() => setAllocFor(o)}>Allocate</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-muted">—</span>
+                  )}
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -195,15 +242,29 @@ export default function DayPlanPage() {
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" size="sm" onClick={() => printManifest(route, dateLabel, list)} disabled={list.length === 0}>Print manifest</Button>
                 <Button variant="ghost" size="sm" onClick={() => downloadCsv(route, dateLabel, list)} disabled={list.length === 0}>CSV</Button>
+                {canEdit && <Button variant="ghost" size="sm" onClick={() => makeDriverLink(route.driver)}>Driver link</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => deleteRoute(route)}>Delete</Button>}
               </div>
             </div>
+            {driverLinks[route.driver] && (
+              <div className="mb-3 flex items-center gap-2 rounded-xl border border-[#efdfae] bg-gold-bg px-3 py-2 text-xs">
+                <span className="shrink-0 font-semibold text-ink">Driver link for {route.driver}:</span>
+                <input readOnly value={driverLinks[route.driver]} onFocus={(e) => e.currentTarget.select()} className="min-w-0 grow bg-transparent text-gold-dark outline-none" />
+                <button type="button" onClick={() => makeDriverLink(route.driver)} className="shrink-0 font-semibold text-gold-dark underline">Copy</button>
+              </div>
+            )}
             <TableWrap>
               <thead><tr><Th>Customer</Th><Th>Phone</Th><Th>Pickup</Th><Th>Sector</Th><Th className="text-right">Chicks</Th>{canEdit && <Th></Th>}</tr></thead>
               <tbody>
                 {list.length === 0 ? <EmptyRow colSpan={canEdit ? 6 : 5} text="No stops on this route for this day." /> : list.map((o) => (
                   <tr key={o.id}>
-                    <Td className="font-medium">{o.name}</Td>
+                    <Td className="font-medium">
+                      {o.name}
+                      {o.deliveryFail && (
+                        <span className="ml-2 align-middle"><Pill tone="red">Not delivered</Pill></span>
+                      )}
+                      {o.deliveryFail && <div className="text-xs font-normal text-muted">{o.deliveryFail.reason}</div>}
+                    </Td>
                     <Td>{o.phone}</Td>
                     <Td>{o.pickupLocation ?? "—"}</Td>
                     <Td>{o.sector}</Td>
@@ -212,6 +273,7 @@ export default function DayPlanPage() {
                       <Td>
                         <div className="flex gap-1">
                           <Button size="sm" onClick={() => markDelivered(o)}>Delivered</Button>
+                          <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
                           <Button size="sm" variant="ghost" onClick={() => unallocate(o)}>Remove</Button>
                         </div>
                       </Td>
@@ -227,7 +289,45 @@ export default function DayPlanPage() {
       {allocFor && (
         <AllocateModal order={allocFor} routes={routes} onClose={() => setAllocFor(null)} onSave={(chicks, pickup, routeId) => allocate(allocFor, chicks, pickup, routeId)} />
       )}
+
+      {rescheduleFor && (
+        <RescheduleModal
+          order={rescheduleFor}
+          routeName={rescheduleFor.routeId ? routes.find((r) => r.id === rescheduleFor.routeId)?.name : undefined}
+          onClose={() => setRescheduleFor(null)}
+          onSave={(date) => reschedule(rescheduleFor, date)}
+        />
+      )}
     </div>
+  );
+}
+
+function RescheduleModal({ order, routeName, onClose, onSave }: {
+  order: Order; routeName?: string; onClose: () => void; onSave: (date: string) => void;
+}) {
+  const [date, setDate] = useState(order.date);
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Modal open onClose={onClose} title={`Reschedule — ${order.name}`}
+      footer={<>
+        <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button onClick={() => {
+          if (!date) return setErr("Choose a new delivery date.");
+          if (date === order.date) return setErr("Pick a different date.");
+          onSave(date);
+        }}>Save new date</Button>
+      </>}>
+      <div className="space-y-3 text-sm">
+        <p className="text-muted">Currently {formatDate(order.date)}. The order will be placed <strong className="text-ink">first</strong> in the new day&apos;s delivery plan.</p>
+        {routeName && (
+          <div className="rounded-xl border border-[#efdfae] bg-gold-bg px-3 py-2.5 text-ink">
+            This order is on route <strong>{routeName}</strong>. Rescheduling will <strong>take it off that route</strong> — you&apos;ll re-allocate it on the new day.
+          </div>
+        )}
+        <Field label="New delivery date"><Input type="date" value={date} onChange={(e) => { setDate(e.target.value); setErr(null); }} /></Field>
+        {err && <p className="text-status-refunded">{err}</p>}
+      </div>
+    </Modal>
   );
 }
 

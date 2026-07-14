@@ -146,15 +146,35 @@ export function fulfillOrder(
   );
 }
 
+/**
+ * Reschedule an order to a new delivery date. When the full order list is
+ * passed, the order is placed FIRST in the new date's delivery plan (it gets a
+ * plan index below every active order already on that date) — so a rescheduled
+ * customer jumps to the front of the day they were moved to.
+ */
 export function rescheduleOrder(
   order: Order,
   newDate: string,
-  actor: User
+  actor: User,
+  orders?: Order[]
 ): Order {
+  let plan = order.plan;
+  if (orders) {
+    const plansOnDate = orders
+      .filter(
+        (o) =>
+          o.id !== order.id &&
+          o.date === newDate &&
+          o.status !== "refunded" &&
+          o.status !== "rejected"
+      )
+      .map((o) => o.plan);
+    plan = (plansOnDate.length ? Math.min(...plansOnDate) : 0) - 1;
+  }
   return withHistory(
-    { ...order, date: newDate, created: newDate },
+    { ...order, date: newDate, created: newDate, plan },
     actor,
-    `Rescheduled delivery to ${newDate}`
+    `Rescheduled delivery to ${newDate} — placed first`
   );
 }
 

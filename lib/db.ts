@@ -20,6 +20,7 @@ import type {
   BankStatement,
   CommissionRequest,
   Database,
+  DeliveryLink,
   DSR,
   DsrVisit,
   Order,
@@ -387,6 +388,80 @@ export async function markNotificationsRead(ids?: string[]): Promise<void> {
   const { error } = await getSupabase().rpc("mark_notifications_read", { p_ids: ids ?? null });
   if (error) console.warn(`Could not mark notifications read: ${error.message}`);
 }
+// ---------------------------------------------------------------------------
+// Driver delivery links (public, token-gated)
+//
+// A salesperson generates one standing link per driver. The driver opens
+// /deliver/{token} with no login and marks stops via SECURITY DEFINER RPCs —
+// the anon role never reads the tables directly.
+// ---------------------------------------------------------------------------
+
+function randomToken(): string {
+  const rnd = (globalThis.crypto?.randomUUID?.() ?? `${Math.random()}${Math.random()}`).replace(/-/g, "");
+  return `dl_${rnd.slice(0, 24)}`;
+}
+
+/** Return an existing active link for the driver, or create one. Yields the token. */
+export async function ensureDriverLink(driver: string, by: string): Promise<string> {
+  if (!inBrowser()) throw new Error("Not in browser");
+  const sb = getSupabase();
+  const { data: rows, error } = await sb.from("delivery_links").select("id, data");
+  if (!error && rows) {
+    const found = rows.find((r) => {
+      const d = r.data as DeliveryLink;
+      return d.active && d.driver === driver;
+    });
+    if (found) return found.id as string;
+  }
+  const token = randomToken();
+  const link: DeliveryLink = { id: token, token, driver, by, createdAt: new Date().toISOString(), active: true };
+  await upsertOne("delivery_links", "id", token, link);
+  return token;
+}
+
+export interface DriverStop {
+  id: string;
+  name: string;
+  phone: string;
+  product: string;
+  sector: string;
+  district: string;
+  date: string;
+  plan: number;
+  routeName: string;
+  pickup: string | null;
+  chicks: number;
+  failReason: string | null;
+}
+
+/** Public: fetch a driver's outstanding stops for a token. */
+export async function getDriverManifest(
+  token: string
+): Promise<{ ok: boolean; driver?: string; stops?: DriverStop[]; error?: string }> {
+  if (!inBrowser()) return { ok: false, error: "Not in browser" };
+  const { data, error } = await getSupabase().rpc("driver_manifest", { p_token: token });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; driver?: string; stops?: DriverStop[]; error?: string };
+}
+
+/** Public: driver marks a stop delivered or (with a reason) not delivered. */
+export async function driverDeliver(
+  token: string,
+  orderId: string,
+  delivered: boolean,
+  reason: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!inBrowser()) return { ok: false, error: "Not in browser" };
+  const { data, error } = await getSupabase().rpc("driver_deliver", {
+    p_token: token,
+    p_order_id: orderId,
+    p_delivered: delivered,
+    p_reason: reason,
+  });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; error?: string };
+}
+
 export const saveRouteOne = (r: Route) => upsertOne("routes", "id", r.id, r);
 export const saveAvailabilityOne = (a: Availability) => upsertOne("availability", "id", a.id, a);
 export const saveCommissionOne = (c: CommissionRequest) => upsertOne("commissions", "id", c.id, c);

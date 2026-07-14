@@ -42,6 +42,7 @@ import {
   refundOrder,
   rejectOrder,
   reorderPlan,
+  rescheduleOrder,
   withHistory,
 } from "@/lib/orders";
 
@@ -475,8 +476,8 @@ function OrdersInner() {
           onClose={() => setModal(null)}
           onSave={(date) => {
             act(
-              withHistory({ ...modal.order, date, created: date }, user, `Rescheduled to ${date}`),
-              "Order rescheduled."
+              rescheduleOrder(modal.order, date, user, orders),
+              "Order rescheduled — placed first for that day."
             );
             setModal(null);
           }}

@@ -202,6 +202,8 @@ export interface Order {
   payments: Payment[];
   confirmedOk?: boolean; // order has been confirmed (>=1 payment)
   deliverOk?: boolean; // fulfilled/delivered
+  /** Set when a driver marks the stop NOT delivered (order stays open for sales). */
+  deliveryFail?: { reason: string; on: string; by: string };
   commReq?: boolean; // commission has been requested for this order
   commPaid?: boolean; // commission paid for this order
   request?: OrderRequest; // pending refund/compensation request
@@ -209,6 +211,20 @@ export interface Order {
   routeId?: string; // assigned delivery route
   deliveryChicks?: number; // chicks allocated for delivery
   pickupLocation?: string; // where the chicks are picked up
+}
+
+/**
+ * A standing, unguessable public link a salesperson generates for a driver.
+ * The driver opens /deliver/{token} (no login) to mark their stops delivered.
+ * `id` is the token itself.
+ */
+export interface DeliveryLink {
+  id: string; // the token (== URL segment)
+  token: string; // same value, kept for readability
+  driver: string; // route driver name this link belongs to
+  by: string; // salesperson who created it
+  createdAt: string; // ISO datetime
+  active: boolean;
 }
 
 // ---------------------------------------------------------------------------
