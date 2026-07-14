@@ -13,9 +13,12 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO } from "@/lib/format";
 import type { Batch } from "@/lib/hatchery/types";
-import { removedInStage, unhatchedFrom, saleableFrom, markStep, hatchabilityPct } from "@/lib/hatchery/lifecycle";
+import { saleableFrom, markStep } from "@/lib/hatchery/lifecycle";
 
 const CAN_ACT = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
+
+/** Eggs physically in the hatcher(s) for a batch = the total transferred. */
+const eggsInHatcher = (b: Batch) => b.transfers.reduce((s, a) => s + a.eggs, 0);
 
 export default function HatchPage() {
   const { user } = useAuth();
@@ -37,10 +40,10 @@ export default function HatchPage() {
   );
   const batch = ready.find((b) => b.id === batchId) ?? null;
 
-  const fertile = batch ? batch.eggsSet - removedInStage(batch, 1) - removedInStage(batch, 2) : 0;
+  const inHatcher = batch ? eggsInHatcher(batch) : 0;
   const hatchedN = Number(hatched) || 0;
   const cullsN = Number(culls) || 0;
-  const unhatched = batch ? unhatchedFrom(batch, hatchedN) : 0;
+  const unhatched = Math.max(0, inHatcher - hatchedN);
   const saleable = saleableFrom(hatchedN, cullsN);
 
   if (!user) return null;
@@ -49,7 +52,7 @@ export default function HatchPage() {
     setErr(null);
     if (!batch) return;
     if (hatchedN <= 0) return setErr("Enter the number of hatched chicks.");
-    if (hatchedN > fertile) return setErr(`Hatched cannot exceed the ${fertile.toLocaleString()} fertile eggs transferred.`);
+    if (hatchedN > inHatcher) return setErr(`Hatched cannot exceed the ${inHatcher.toLocaleString()} eggs in the hatcher.`);
     if (cullsN > hatchedN) return setErr("Culls cannot exceed hatched chicks.");
     let nb: Batch = {
       ...batch,
@@ -80,7 +83,7 @@ export default function HatchPage() {
                   <button key={b.id} onClick={() => { setBatchId(b.id); setHatched(""); setCulls(""); setErr(null); }}
                     className={`rounded-lg border px-3 py-2 text-sm ${batchId === b.id ? "border-gold bg-gold-bg" : "border-line"}`}>
                     <span className="font-medium">{b.batchNo}</span>
-                    <span className="ml-2 text-xs text-muted">{(b.eggsSet - removedInStage(b, 1) - removedInStage(b, 2)).toLocaleString()} fertile</span>
+                    <span className="ml-2 text-xs text-muted">{eggsInHatcher(b).toLocaleString()} in hatcher</span>
                   </button>
                 ))}
               </div>
@@ -88,7 +91,7 @@ export default function HatchPage() {
               {batch && (
                 <div className="space-y-3 rounded-lg border border-line p-4">
                   <p className="text-sm text-muted">
-                    Eggs set {batch.eggsSet.toLocaleString()} − candling I {removedInStage(batch, 1).toLocaleString()} − candling II {removedInStage(batch, 2).toLocaleString()} = <strong className="text-ink">{fertile.toLocaleString()}</strong> fertile in hatcher.
+                    <strong className="text-ink">{inHatcher.toLocaleString()}</strong> eggs in the hatcher(s) for this batch.
                   </p>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Field label="Hatched chicks"><Input type="number" min={0} value={hatched} onChange={(e) => setHatched(e.target.value)} /></Field>
@@ -97,7 +100,7 @@ export default function HatchPage() {
                   <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
                     <Calc label="Unhatched (auto)" value={unhatched.toLocaleString()} />
                     <Calc label="Saleable" value={saleable.toLocaleString()} strong />
-                    <Calc label="Hatchability" value={fertile > 0 ? `${((hatchedN / fertile) * 100).toFixed(0)}%` : "—"} />
+                    <Calc label="Hatchability" value={inHatcher > 0 ? `${((hatchedN / inHatcher) * 100).toFixed(0)}%` : "—"} />
                   </div>
                   {err && <p className="text-sm text-status-refunded">{err}</p>}
                   <div className="flex justify-end"><Button onClick={record}>Save hatch result</Button></div>
@@ -111,18 +114,18 @@ export default function HatchPage() {
       <Card>
         <CardHeader title={`${hatchedRows.length} hatched batch(es)`} />
         <TableWrap>
-          <thead><tr><Th>Batch</Th><Th>Product</Th><Th className="text-right">Fertile</Th><Th className="text-right">Hatched</Th><Th className="text-right">Culls</Th><Th className="text-right">Unhatched</Th><Th className="text-right">Saleable</Th><Th className="text-right">Hatch %</Th></tr></thead>
+          <thead><tr><Th>Batch</Th><Th>Product</Th><Th className="text-right">In hatcher</Th><Th className="text-right">Hatched</Th><Th className="text-right">Culls</Th><Th className="text-right">Unhatched</Th><Th className="text-right">Saleable</Th><Th className="text-right">Hatch %</Th></tr></thead>
           <tbody>
             {hatchedRows.length === 0 ? <EmptyRow colSpan={8} text="No hatched batches yet." /> : hatchedRows.map((b) => (
               <tr key={b.id}>
                 <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
                 <Td>{b.productType}</Td>
-                <Td className="text-right">{(b.eggsSet - removedInStage(b, 1) - removedInStage(b, 2)).toLocaleString()}</Td>
+                <Td className="text-right">{eggsInHatcher(b).toLocaleString()}</Td>
                 <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>
                 <Td className="text-right">{b.culls.toLocaleString()}</Td>
                 <Td className="text-right">{b.unhatchedCount.toLocaleString()}</Td>
                 <Td className="text-right font-medium">{b.saleableCount.toLocaleString()}</Td>
-                <Td className="text-right">{hatchabilityPct(b).toFixed(0)}%</Td>
+                <Td className="text-right">{eggsInHatcher(b) > 0 ? ((b.hatchedCount / eggsInHatcher(b)) * 100).toFixed(0) : 0}%</Td>
               </tr>
             ))}
           </tbody>
