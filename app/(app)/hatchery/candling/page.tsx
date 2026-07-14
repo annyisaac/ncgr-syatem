@@ -148,6 +148,49 @@ export default function CandlingPage() {
         <Button variant={mode === "c2" ? "primary" : "ghost"} onClick={() => switchMode("c2")}>Candling II ({pendingC2} to candle)</Button>
       </div>
 
+      {selected && canAct && (phase === "c1" || phase === "c2") && (
+        <Card>
+          <CardHeader title={`Candling ${phase === "c1" ? 1 : 2} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`} />
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+            {catDefs.map((c) => (
+              <Field key={c.key} label={c.label}>
+                <Input type="number" min={0} value={cats[c.key] ?? ""} onChange={(e) => setCats({ ...cats, [c.key]: e.target.value })} />
+              </Field>
+            ))}
+          </div>
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm">Total removed: <strong>{catTotal.toLocaleString()}</strong></p>
+            <Button onClick={() => saveCandling(phase === "c1" ? 1 : 2)}>Save candling {phase === "c1" ? 1 : 2}</Button>
+          </div>
+          {err && <p className="mt-2 text-sm text-status-refunded">{err}</p>}
+        </Card>
+      )}
+
+      {selected && canAct && phase === "transfer" && (
+        <Card>
+          <CardHeader title={`Transfer flock ${selected.flock.flockId} — ${selected.batch.batchNo}`} />
+          <p className="mb-3 text-sm text-muted">Candling done for this flock. Transfer its {fertileC2.toLocaleString()} fertile eggs to hatcher machine(s).</p>
+          {hatchers.length === 0 ? (
+            <p className="text-sm text-status-refunded">No hatcher machines. Create one on the Machines page.</p>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+                {hatchers.map((m) => (
+                  <Field key={m.code} label={`${m.code} (free ${machineFreeCapacity(m, batches, "transfers").toLocaleString()})`}>
+                    <Input type="number" min={0} value={assign[m.code] ?? ""} onChange={(e) => setAssign({ ...assign, [m.code]: e.target.value })} />
+                  </Field>
+                ))}
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-sm">Total: <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()}</p>
+                <Button onClick={saveTransfer}>Transfer flock</Button>
+              </div>
+            </>
+          )}
+          {err && <p className="mt-2 text-sm text-status-refunded">{err}</p>}
+        </Card>
+      )}
+
       <Card>
         <CardHeader title={mode === "c1" ? `Candling I — flocks (${rowsC1.length})` : `Candling II — flocks (${rowsC2.length})`} />
         <p className="mb-2 text-xs text-muted">Percentages are each category removed ÷ eggs set. Candled flocks stay listed with their result.</p>
@@ -205,49 +248,6 @@ export default function CandlingPage() {
           </tbody>
         </TableWrap>
       </Card>
-
-      {selected && canAct && (phase === "c1" || phase === "c2") && (
-        <Card>
-          <CardHeader title={`Candling ${phase === "c1" ? 1 : 2} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`} />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {catDefs.map((c) => (
-              <Field key={c.key} label={c.label}>
-                <Input type="number" min={0} value={cats[c.key] ?? ""} onChange={(e) => setCats({ ...cats, [c.key]: e.target.value })} />
-              </Field>
-            ))}
-          </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm">Total removed: <strong>{catTotal.toLocaleString()}</strong></p>
-            <Button onClick={() => saveCandling(phase === "c1" ? 1 : 2)}>Save candling {phase === "c1" ? 1 : 2}</Button>
-          </div>
-          {err && <p className="mt-2 text-sm text-status-refunded">{err}</p>}
-        </Card>
-      )}
-
-      {selected && canAct && phase === "transfer" && (
-        <Card>
-          <CardHeader title={`Transfer flock ${selected.flock.flockId} — ${selected.batch.batchNo}`} />
-          <p className="mb-3 text-sm text-muted">Candling done for this flock. Transfer its {fertileC2.toLocaleString()} fertile eggs to hatcher machine(s).</p>
-          {hatchers.length === 0 ? (
-            <p className="text-sm text-status-refunded">No hatcher machines. Create one on the Machines page.</p>
-          ) : (
-            <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {hatchers.map((m) => (
-                  <Field key={m.code} label={`${m.code} (free ${machineFreeCapacity(m, batches, "transfers").toLocaleString()})`}>
-                    <Input type="number" min={0} value={assign[m.code] ?? ""} onChange={(e) => setAssign({ ...assign, [m.code]: e.target.value })} />
-                  </Field>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm">Total: <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()}</p>
-                <Button onClick={saveTransfer}>Transfer flock</Button>
-              </div>
-            </>
-          )}
-          {err && <p className="mt-2 text-sm text-status-refunded">{err}</p>}
-        </Card>
-      )}
     </div>
   );
 }
