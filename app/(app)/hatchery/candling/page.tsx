@@ -216,9 +216,18 @@ export default function CandlingPage() {
                     <Button size="sm" variant="ghost" onClick={() => setTRows(tRows.length === 1 ? tRows : tRows.filter((_, j) => j !== i))} disabled={tRows.length === 1}>Remove</Button>
                   </div>
                 ))}
-                <div className="flex items-center justify-between">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <Button size="sm" variant="ghost" onClick={() => setTRows([...tRows, { machineCode: "", eggs: "" }])}>+ Add hatcher</Button>
-                  <p className="text-sm">Total: <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()}</p>
+                  <p className="text-sm">
+                    Assigned <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()} fertile ·{" "}
+                    {assignedTotal > fertileC2 ? (
+                      <span className="font-semibold text-status-refunded">over by {(assignedTotal - fertileC2).toLocaleString()}</span>
+                    ) : assignedTotal === fertileC2 ? (
+                      <span className="font-semibold text-green">all transferred ✓</span>
+                    ) : (
+                      <span className="font-semibold text-ink">{(fertileC2 - assignedTotal).toLocaleString()} left to transfer</span>
+                    )}
+                  </p>
                 </div>
               </>
             )}
