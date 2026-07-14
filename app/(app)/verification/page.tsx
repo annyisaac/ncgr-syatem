@@ -57,6 +57,17 @@ export default function VerificationPage() {
     [myOrders]
   );
 
+  // Every payment on confirmed orders — unverified first — so the checker sees
+  // both what's left to check and what an admin/checker has already verified.
+  const payRows = useMemo(
+    () =>
+      myOrders
+        .filter((o) => o.payments.length > 0)
+        .flatMap((o) => o.payments.map((p, i) => ({ o, p, i })))
+        .sort((a, b) => Number(!!a.p.verified) - Number(!!b.p.verified) || (a.o.date < b.o.date ? -1 : 1)),
+    [myOrders]
+  );
+
   if (!user) return null;
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -147,10 +158,11 @@ export default function VerificationPage() {
     <div className="space-y-6">
       <h1 className="section-heading text-lg">Payment Verification</h1>
 
-      {/* Statements (Admin only) */}
-      {isAdmin ? (
-        <Card>
-          <CardHeader title="Bank statements" />
+      {/* Statements — Admin uploads; checkers can see the list to verify against. */}
+      <Card>
+        <CardHeader title="Bank statements" />
+        {isAdmin ? (
+          <>
           <p className="mb-3 text-sm text-ink/60">
             Upload one or more bank statements (Excel/CSV). Clients may pay via
             different banks — all statements are searched together.
@@ -191,47 +203,47 @@ export default function VerificationPage() {
               </div>
             </div>
           )}
+          </>
+        ) : (
+          <p className="mb-1 text-sm text-ink/60">
+            Bank statements are uploaded by the Admin — they&apos;re listed below
+            so you can verify payments against them.
+          </p>
+        )}
 
-          <div className="mt-4">
-            <TableWrap>
-              <thead>
-                <tr>
-                  <Th>File</Th>
-                  <Th className="text-right">Rows</Th>
-                  <Th>Uploaded</Th>
-                  <Th>Action</Th>
-                </tr>
-              </thead>
-              <tbody>
-                {statements.length === 0 ? (
-                  <EmptyRow colSpan={4} text="No statements uploaded." />
-                ) : (
-                  statements.map((s) => (
-                    <tr key={s.id}>
-                      <Td>{s.fileName}</Td>
-                      <Td className="text-right">{s.rows.length}</Td>
-                      <Td>{formatDateTime(s.uploadedOn)}</Td>
+        <div className="mt-4">
+          <TableWrap>
+            <thead>
+              <tr>
+                <Th>File</Th>
+                <Th className="text-right">Rows</Th>
+                <Th>Uploaded</Th>
+                {isAdmin && <Th>Action</Th>}
+              </tr>
+            </thead>
+            <tbody>
+              {statements.length === 0 ? (
+                <EmptyRow colSpan={isAdmin ? 4 : 3} text="No statements uploaded yet." />
+              ) : (
+                statements.map((s) => (
+                  <tr key={s.id}>
+                    <Td>{s.fileName}</Td>
+                    <Td className="text-right">{s.rows.length}</Td>
+                    <Td>{formatDateTime(s.uploadedOn)}</Td>
+                    {isAdmin && (
                       <Td>
                         <Button size="sm" variant="ghost" onClick={() => removeStatement(s.id)}>
                           Remove
                         </Button>
                       </Td>
-                    </tr>
-                  ))
-                )}
-              </tbody>
-            </TableWrap>
-          </div>
-        </Card>
-      ) : (
-        <Card>
-          <p className="text-sm text-ink/60">
-            Bank statements are uploaded by the Admin. Use manual verification
-            below to verify payments you have confirmed (cash allowed — write
-            CASH as the reference).
-          </p>
-        </Card>
-      )}
+                    )}
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </TableWrap>
+        </div>
+      </Card>
 
       {/* Automatic check */}
       <Card>
@@ -281,12 +293,13 @@ export default function VerificationPage() {
         )}
       </Card>
 
-      {/* Manual check */}
+      {/* Payments — awaiting + already checked */}
       <Card>
-        <CardHeader title="Manual verification" />
+        <CardHeader title={`Payments (${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`} />
         <p className="mb-3 text-sm text-ink/60">
-          Manual check ignores the statements. Type the reference you verified
-          (cash allowed — write CASH) and a required comment.
+          Unverified payments are checked against the statements by the automatic
+          check, or verify manually (cash allowed — write CASH). Payments already
+          checked show who verified them.
         </p>
         <TableWrap>
           <thead>
@@ -301,33 +314,40 @@ export default function VerificationPage() {
             </tr>
           </thead>
           <tbody>
-            {pending.length === 0 ? (
-              <EmptyRow colSpan={7} text="No payments awaiting verification." />
+            {payRows.length === 0 ? (
+              <EmptyRow colSpan={7} text="No payments recorded on confirmed orders yet." />
             ) : (
-              pending.flatMap((o) =>
-                o.payments.map((p, i) =>
-                  p.verified ? null : (
-                    <tr key={`${o.id}-${i}`}>
-                      <Td>{o.name}</Td>
-                      <Td>{o.product}</Td>
-                      <Td>{o.date}</Td>
-                      <Td className="text-right">{formatRWF(p.amt)}</Td>
-                      <Td>
-                        {p.ref}
-                        {p.flag && (
-                          <div className="text-xs text-status-refunded">{p.flag}</div>
-                        )}
-                      </Td>
-                      <Td><Pill tone="pending">Unverified</Pill></Td>
-                      <Td>
-                        <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
-                          Verify manually
-                        </Button>
-                      </Td>
-                    </tr>
-                  )
-                )
-              )
+              payRows.map(({ o, p, i }) => (
+                <tr key={`${o.id}-${i}`} className={p.verified ? "bg-green-bg" : undefined}>
+                  <Td>{o.name}</Td>
+                  <Td>{o.product}</Td>
+                  <Td>{o.date}</Td>
+                  <Td className="text-right">{formatRWF(p.amt)}</Td>
+                  <Td>
+                    {p.ref}
+                    {p.flag && <div className="text-xs text-status-refunded">{p.flag}</div>}
+                  </Td>
+                  <Td>
+                    {p.verified ? (
+                      <div>
+                        <Pill tone="fulfilled">Checked ✓</Pill>
+                        <div className="text-xs text-muted">by {p.verifiedBy ?? "—"}{p.verifiedOn ? ` · ${formatDateTime(p.verifiedOn)}` : ""}</div>
+                      </div>
+                    ) : (
+                      <Pill tone="pending">Unverified</Pill>
+                    )}
+                  </Td>
+                  <Td>
+                    {p.verified ? (
+                      <span className="text-xs text-muted">—</span>
+                    ) : (
+                      <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
+                        Verify manually
+                      </Button>
+                    )}
+                  </Td>
+                </tr>
+              ))
             )}
           </tbody>
         </TableWrap>

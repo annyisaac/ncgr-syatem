@@ -85,8 +85,8 @@ export function orderStage(o: Order): Stage {
 
 export function canAddPayment(order: Order): string | null {
   if (isClosed(order)) return `Order was ${order.status}.`;
-  if (isFullyPaid(order) && allVerified(order))
-    return "Order is fully paid and fully checked.";
+  // No more payments once the balance reaches zero (fully paid), verified or not.
+  if (isFullyPaid(order)) return "Order is fully paid — balance is zero.";
   return null;
 }
 
