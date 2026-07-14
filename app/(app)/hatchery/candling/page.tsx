@@ -127,7 +127,7 @@ export default function CandlingPage() {
       nb = markStep(nb, stage === 1 ? "candling-1" : "candling-2", user!);
     }
     upsertBatch(nb);
-    toast(`Candling ${stage} recorded for flock ${target.flockId} — ${total.toLocaleString()} removed.`);
+    toast(`Candling ${stage === 1 ? "I" : "II"} recorded for flock ${target.flockId} — ${total.toLocaleString()} removed.`);
     setSel(null); setCats({});
   }
 
@@ -170,11 +170,11 @@ export default function CandlingPage() {
         <Modal
           open
           onClose={() => setSel(null)}
-          title={`Candling ${phase === "c1" ? 1 : 2} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`}
+          title={`Candling ${phase === "c1" ? "I" : "II"} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`}
           footer={
             <>
               <Button variant="ghost" onClick={() => setSel(null)}>Cancel</Button>
-              <Button onClick={() => saveCandling(phase === "c1" ? 1 : 2)}>Save candling {phase === "c1" ? 1 : 2}</Button>
+              <Button onClick={() => saveCandling(phase === "c1" ? 1 : 2)}>Save candling {phase === "c1" ? "I" : "II"}</Button>
             </>
           }
         >

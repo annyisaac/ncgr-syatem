@@ -88,7 +88,7 @@ export default function HatchPage() {
               {batch && (
                 <div className="space-y-3 rounded-lg border border-line p-4">
                   <p className="text-sm text-muted">
-                    Eggs set {batch.eggsSet.toLocaleString()} − candling 1 {removedInStage(batch, 1).toLocaleString()} − candling 2 {removedInStage(batch, 2).toLocaleString()} = <strong className="text-ink">{fertile.toLocaleString()}</strong> fertile in hatcher.
+                    Eggs set {batch.eggsSet.toLocaleString()} − candling I {removedInStage(batch, 1).toLocaleString()} − candling II {removedInStage(batch, 2).toLocaleString()} = <strong className="text-ink">{fertile.toLocaleString()}</strong> fertile in hatcher.
                   </p>
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <Field label="Hatched chicks"><Input type="number" min={0} value={hatched} onChange={(e) => setHatched(e.target.value)} /></Field>

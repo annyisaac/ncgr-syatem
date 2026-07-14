@@ -93,13 +93,13 @@ export default function BatchDetailPage() {
           <div className="space-y-2 text-sm">
             {batch.candlings.map((c, i) => (
               <div key={i} className="rounded-md border border-line px-3 py-2">
-                <div className="flex justify-between"><strong>Candling {c.stage}</strong><span className="text-muted">{formatDate(c.date)} · {c.by}</span></div>
+                <div className="flex justify-between"><strong>Candling {c.stage === 1 ? "I" : "II"}</strong><span className="text-muted">{formatDate(c.date)} · {c.by}</span></div>
                 <div className="mt-1 text-xs text-muted">
                   {Object.entries(c.categories).filter(([, n]) => n > 0).map(([k, n]) => `${k}: ${n}`).join(" · ") || "none"} — total removed {c.totalRemoved}
                 </div>
               </div>
             ))}
-            <p className="text-xs text-muted">Removed: candling 1 = {removedInStage(batch, 1)}, candling 2 = {removedInStage(batch, 2)}.</p>
+            <p className="text-xs text-muted">Removed: candling I = {removedInStage(batch, 1)}, candling II = {removedInStage(batch, 2)}.</p>
           </div>
         )}
       </Card>
