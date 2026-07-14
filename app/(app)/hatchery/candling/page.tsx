@@ -58,7 +58,9 @@ export default function CandlingPage() {
     // Newest batch first, oldest last.
     const ordered = batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     for (const b of ordered) {
-      if (!(b.steps["setting"] && !b.steps["transfer"] && b.status === "active")) continue;
+      // Keep flocks on the candling page through candling AND transfer — they
+      // only drop off once the batch has hatched (moved past candling).
+      if (!(b.steps["setting"] && !b.steps["hatching"] && b.status === "active")) continue;
       batchFlocks(b).forEach((f, idx) => {
         c1.push({ batch: b, flock: f, idx });
         if (flockHasCandling(f, 1)) c2.push({ batch: b, flock: f, idx });
