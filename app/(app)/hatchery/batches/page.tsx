@@ -177,7 +177,7 @@ export default function BatchesPage() {
                   <Field label="Setter">
                     <Select value={row.machineCode} onChange={(e) => updateRow(i, { machineCode: e.target.value })}
                       placeholder="Select setter"
-                      options={setters.map((m) => ({ value: m.code, label: `${m.code} (free ${machineFreeCapacity(m, batches, "setters").toLocaleString()})` }))} />
+                      options={setters.map((m) => ({ value: m.code, label: `${m.code} (free ${Math.max(0, rowFree(m.code, i)).toLocaleString()})` }))} />
                   </Field>
                   <Field label={row.groupKey && row.machineCode ? `Eggs (≤ ${Math.max(0, Math.min(groupFree(row.groupKey, i), rowFree(row.machineCode, i))).toLocaleString()})` : "Eggs"}>
                     <Input type="number" min={0} value={row.eggs} onChange={(e) => updateRow(i, { eggs: e.target.value })} />
