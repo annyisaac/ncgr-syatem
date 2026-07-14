@@ -54,6 +54,16 @@ export default function BatchesPage() {
   const assignedTotal = rowsIn.reduce((s, r) => s + (Number(r.eggs) || 0), 0);
   const flockCount = new Set(rowsIn.filter((r) => r.groupKey && (Number(r.eggs) || 0) > 0).map((r) => r.groupKey)).size;
 
+  // Per-flock: how many eggs assigned (across setters) vs settable.
+  const flockSummary = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of rowsIn) if (r.groupKey) m.set(r.groupKey, (m.get(r.groupKey) ?? 0) + (Number(r.eggs) || 0));
+    return [...m.entries()].map(([key, assigned]) => {
+      const g = groups.find((x) => x.key === key);
+      return { key, label: g ? `${g.farm} · Flock ${g.flockId}` : key, assigned, settable: g?.eggs ?? 0 };
+    });
+  }, [rowsIn, groups]);
+
   // Setter free capacity, minus what other rows in this form already claim.
   const rowFree = (machineCode: string, selfIndex: number) => {
     const m = setters.find((x) => x.code === machineCode);
@@ -154,8 +164,8 @@ export default function BatchesPage() {
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-muted">Add each flock going into this batch and the setter it goes to. All flocks must be the same product.</p>
-                <Button size="sm" variant="ghost" onClick={addRow}>+ Add flock</Button>
+                <p className="text-sm text-muted">Add a line per setter. A flock&apos;s eggs can be split across several setters — add lines for the same flock until all its eggs are set. All flocks must be the same product.</p>
+                <Button size="sm" variant="ghost" onClick={addRow}>+ Add setter line</Button>
               </div>
               {rowsIn.map((row, i) => (
                 <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1.7fr_1.1fr_0.9fr_auto] sm:items-end">
@@ -175,6 +185,18 @@ export default function BatchesPage() {
                   <Button size="sm" variant="ghost" onClick={() => removeRow(i)} disabled={rowsIn.length === 1}>Remove</Button>
                 </div>
               ))}
+              {flockSummary.length > 0 && (
+                <div className="space-y-1 rounded-lg border border-line bg-cream/40 p-2.5 text-xs">
+                  {flockSummary.map((s) => (
+                    <div key={s.key} className="flex items-center justify-between gap-2">
+                      <span className="text-muted">{s.label}</span>
+                      <span className={s.assigned > s.settable ? "font-semibold text-status-refunded" : s.assigned === s.settable ? "font-semibold text-green" : "text-muted"}>
+                        {s.assigned.toLocaleString()} / {s.settable.toLocaleString()} set{s.assigned > s.settable ? " · over!" : s.assigned === s.settable ? " · full ✓" : ""}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
               <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
                 <p className="text-sm">Total to set: <strong>{assignedTotal.toLocaleString()}</strong> egg(s) · <strong>{flockCount}</strong> flock(s)</p>
                 <Button onClick={createBatch}>Create batch</Button>
