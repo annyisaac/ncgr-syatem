@@ -9,6 +9,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Select";
+import { Modal } from "@/components/ui/Modal";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { todayISO, nowISO } from "@/lib/format";
@@ -149,46 +150,62 @@ export default function CandlingPage() {
       </div>
 
       {selected && canAct && (phase === "c1" || phase === "c2") && (
-        <Card>
-          <CardHeader title={`Candling ${phase === "c1" ? 1 : 2} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`} />
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            {catDefs.map((c) => (
-              <Field key={c.key} label={c.label}>
-                <Input type="number" min={0} value={cats[c.key] ?? ""} onChange={(e) => setCats({ ...cats, [c.key]: e.target.value })} />
-              </Field>
-            ))}
+        <Modal
+          open
+          onClose={() => setSel(null)}
+          title={`Candling ${phase === "c1" ? 1 : 2} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setSel(null)}>Cancel</Button>
+              <Button onClick={() => saveCandling(phase === "c1" ? 1 : 2)}>Save candling {phase === "c1" ? 1 : 2}</Button>
+            </>
+          }
+        >
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+              {catDefs.map((c) => (
+                <Field key={c.key} label={c.label}>
+                  <Input type="number" min={0} value={cats[c.key] ?? ""} onChange={(e) => setCats({ ...cats, [c.key]: e.target.value })} />
+                </Field>
+              ))}
+            </div>
+            <p className="text-sm">Total removed: <strong>{catTotal.toLocaleString()}</strong> · fertile so far {(selected.flock.eggsSet - (Object.values(cats).reduce((s, v) => s + (Number(v) || 0), 0))).toLocaleString()}</p>
+            {err && <p className="text-sm text-status-refunded">{err}</p>}
           </div>
-          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-            <p className="text-sm">Total removed: <strong>{catTotal.toLocaleString()}</strong></p>
-            <Button onClick={() => saveCandling(phase === "c1" ? 1 : 2)}>Save candling {phase === "c1" ? 1 : 2}</Button>
-          </div>
-          {err && <p className="mt-2 text-sm text-status-refunded">{err}</p>}
-        </Card>
+        </Modal>
       )}
 
       {selected && canAct && phase === "transfer" && (
-        <Card>
-          <CardHeader title={`Transfer flock ${selected.flock.flockId} — ${selected.batch.batchNo}`} />
-          <p className="mb-3 text-sm text-muted">Candling done for this flock. Transfer its {fertileC2.toLocaleString()} fertile eggs to hatcher machine(s).</p>
-          {hatchers.length === 0 ? (
-            <p className="text-sm text-status-refunded">No hatcher machines. Create one on the Machines page.</p>
-          ) : (
+        <Modal
+          open
+          onClose={() => setSel(null)}
+          title={`Transfer flock ${selected.flock.flockId} — ${selected.batch.batchNo}`}
+          footer={
             <>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-                {hatchers.map((m) => (
-                  <Field key={m.code} label={`${m.code} (free ${machineFreeCapacity(m, batches, "transfers").toLocaleString()})`}>
-                    <Input type="number" min={0} value={assign[m.code] ?? ""} onChange={(e) => setAssign({ ...assign, [m.code]: e.target.value })} />
-                  </Field>
-                ))}
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm">Total: <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()}</p>
-                <Button onClick={saveTransfer}>Transfer flock</Button>
-              </div>
+              <Button variant="ghost" onClick={() => setSel(null)}>Cancel</Button>
+              {hatchers.length > 0 && <Button onClick={saveTransfer}>Transfer flock</Button>}
             </>
-          )}
-          {err && <p className="mt-2 text-sm text-status-refunded">{err}</p>}
-        </Card>
+          }
+        >
+          <div className="space-y-3">
+            <p className="text-sm text-muted">Candling done for this flock. Transfer its {fertileC2.toLocaleString()} fertile eggs to hatcher machine(s).</p>
+            {hatchers.length === 0 ? (
+              <p className="text-sm text-status-refunded">No hatcher machines. Create one on the Machines page.</p>
+            ) : (
+              <>
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                  {hatchers.map((m) => (
+                    <Field key={m.code} label={`${m.code} (free ${machineFreeCapacity(m, batches, "transfers").toLocaleString()})`}>
+                      <Input type="number" min={0} value={assign[m.code] ?? ""} onChange={(e) => setAssign({ ...assign, [m.code]: e.target.value })} />
+                    </Field>
+                  ))}
+                </div>
+                <p className="text-sm">Total: <strong>{assignedTotal.toLocaleString()}</strong> / {fertileC2.toLocaleString()}</p>
+              </>
+            )}
+            {err && <p className="text-sm text-status-refunded">{err}</p>}
+          </div>
+        </Modal>
       )}
 
       <Card>
