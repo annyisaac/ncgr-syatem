@@ -54,7 +54,9 @@ export default function CandlingPage() {
   const { rowsC1, rowsC2 } = useMemo(() => {
     const c1: FlockRow[] = [];
     const c2: FlockRow[] = [];
-    for (const b of batches) {
+    // Newest batch first, oldest last.
+    const ordered = batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+    for (const b of ordered) {
       if (!(b.steps["setting"] && !b.steps["transfer"] && b.status === "active")) continue;
       batchFlocks(b).forEach((f, idx) => {
         c1.push({ batch: b, flock: f, idx });
