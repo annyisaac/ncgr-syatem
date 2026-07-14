@@ -19,8 +19,10 @@ import { batchCode, machineFreeCapacity, markStep, stepLabel, settableEggs } fro
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
 interface Group { key: string; farm: string; flockId: string; product: Reception["productType"]; recs: Reception[]; eggs: number; date: string; }
-/** One assignment line: a flock's eggs going into a setter machine. */
-interface AssignRow { groupKey: string; machineCode: string; eggs: string; }
+/** One assignment line: a flock's eggs going into a setter machine.
+ *  `setterOnly` lines have no flock picker — they inherit the flock of the
+ *  nearest preceding flock line. */
+interface AssignRow { groupKey: string; machineCode: string; eggs: string; setterOnly?: boolean; }
 
 export default function BatchesPage() {
   const { user } = useAuth();
@@ -51,18 +53,25 @@ export default function BatchesPage() {
   }, [receptions]);
 
   const rows = useMemo(() => batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [batches]);
+  // Resolve each line's flock: setter-only lines inherit the nearest preceding
+  // flock line, so changing a flock cascades to its setter lines.
+  const resolved = useMemo(() => {
+    const eff = (i: number) => { for (let j = i; j >= 0; j--) if (!rowsIn[j].setterOnly) return rowsIn[j].groupKey; return ""; };
+    return rowsIn.map((r, i) => ({ ...r, groupKey: r.setterOnly ? eff(i) : r.groupKey }));
+  }, [rowsIn]);
+
   const assignedTotal = rowsIn.reduce((s, r) => s + (Number(r.eggs) || 0), 0);
-  const flockCount = new Set(rowsIn.filter((r) => r.groupKey && (Number(r.eggs) || 0) > 0).map((r) => r.groupKey)).size;
+  const flockCount = new Set(resolved.filter((r) => r.groupKey && (Number(r.eggs) || 0) > 0).map((r) => r.groupKey)).size;
 
   // Per-flock: how many eggs assigned (across setters) vs settable.
   const flockSummary = useMemo(() => {
     const m = new Map<string, number>();
-    for (const r of rowsIn) if (r.groupKey) m.set(r.groupKey, (m.get(r.groupKey) ?? 0) + (Number(r.eggs) || 0));
+    for (const r of resolved) if (r.groupKey) m.set(r.groupKey, (m.get(r.groupKey) ?? 0) + (Number(r.eggs) || 0));
     return [...m.entries()].map(([key, assigned]) => {
       const g = groups.find((x) => x.key === key);
       return { key, label: g ? `${g.farm} · Flock ${g.flockId}` : key, assigned, settable: g?.eggs ?? 0 };
     });
-  }, [rowsIn, groups]);
+  }, [resolved, groups]);
 
   // Setter free capacity, minus what other rows in this form already claim.
   const rowFree = (machineCode: string, selfIndex: number) => {
@@ -75,7 +84,7 @@ export default function BatchesPage() {
   const groupFree = (groupKey: string, selfIndex: number) => {
     const g = groups.find((x) => x.key === groupKey);
     if (!g) return 0;
-    const claimedElsewhere = rowsIn.reduce((s, r, i) => (i !== selfIndex && r.groupKey === groupKey ? s + (Number(r.eggs) || 0) : s), 0);
+    const claimedElsewhere = resolved.reduce((s, r, i) => (i !== selfIndex && r.groupKey === groupKey ? s + (Number(r.eggs) || 0) : s), 0);
     return g.eggs - claimedElsewhere;
   };
 
@@ -84,15 +93,14 @@ export default function BatchesPage() {
   // New flock line (blank), vs another setter line for the last flock.
   function addFlock() { setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "" }]); }
   function addSetter() {
-    const last = rowsIn[rowsIn.length - 1];
-    setRowsIn([...rowsIn, { groupKey: last?.groupKey ?? "", machineCode: "", eggs: "" }]);
+    setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "", setterOnly: true }]);
   }
   function removeRow(i: number) { setRowsIn(rowsIn.length === 1 ? rowsIn : rowsIn.filter((_, j) => j !== i)); }
   function updateRow(i: number, patch: Partial<AssignRow>) { setRowsIn(rowsIn.map((r, j) => (j === i ? { ...r, ...patch } : r))); }
 
   function createBatch() {
     setErr(null);
-    const valid = rowsIn
+    const valid = resolved
       .map((r) => ({ groupKey: r.groupKey, machineCode: r.machineCode, eggs: Number(r.eggs) || 0 }))
       .filter((r) => r.groupKey && r.machineCode && r.eggs > 0);
     if (valid.length === 0) return setErr("Add at least one flock with a setter and eggs.");
@@ -175,24 +183,36 @@ export default function BatchesPage() {
                   <Button size="sm" variant="ghost" onClick={addSetter}>+ Add setter</Button>
                 </div>
               </div>
-              {rowsIn.map((row, i) => (
+              {rowsIn.map((row, i) => {
+                const eff = resolved[i].groupKey;
+                const g = groups.find((x) => x.key === eff);
+                return (
                 <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1.7fr_1.1fr_0.9fr_auto] sm:items-end">
-                  <Field label="Flock (farm · flock)">
-                    <Select value={row.groupKey} onChange={(e) => updateRow(i, { groupKey: e.target.value })}
-                      placeholder="Select flock"
-                      options={groups.map((g) => ({ value: g.key, label: `${g.farm} · Flock ${g.flockId} · ${g.product} · ${g.eggs.toLocaleString()} settable` }))} />
-                  </Field>
+                  {row.setterOnly ? (
+                    <Field label="Flock">
+                      <div className="truncate rounded-[9px] border border-line bg-cream/40 px-3.5 py-2.5 text-sm text-muted">
+                        ↳ {g ? `${g.farm} · Flock ${g.flockId}` : "same flock"}
+                      </div>
+                    </Field>
+                  ) : (
+                    <Field label="Flock (farm · flock)">
+                      <Select value={row.groupKey} onChange={(e) => updateRow(i, { groupKey: e.target.value })}
+                        placeholder="Select flock"
+                        options={groups.map((gg) => ({ value: gg.key, label: `${gg.farm} · Flock ${gg.flockId} · ${gg.product} · ${gg.eggs.toLocaleString()} settable` }))} />
+                    </Field>
+                  )}
                   <Field label="Setter">
                     <Select value={row.machineCode} onChange={(e) => updateRow(i, { machineCode: e.target.value })}
                       placeholder="Select setter"
                       options={setters.map((m) => ({ value: m.code, label: `${m.code} (free ${Math.max(0, rowFree(m.code, i)).toLocaleString()})` }))} />
                   </Field>
-                  <Field label={row.groupKey && row.machineCode ? `Eggs (≤ ${Math.max(0, Math.min(groupFree(row.groupKey, i), rowFree(row.machineCode, i))).toLocaleString()})` : "Eggs"}>
+                  <Field label={eff && row.machineCode ? `Eggs (≤ ${Math.max(0, Math.min(groupFree(eff, i), rowFree(row.machineCode, i))).toLocaleString()})` : "Eggs"}>
                     <Input type="number" min={0} value={row.eggs} onChange={(e) => updateRow(i, { eggs: e.target.value })} />
                   </Field>
                   <Button size="sm" variant="ghost" onClick={() => removeRow(i)} disabled={rowsIn.length === 1}>Remove</Button>
                 </div>
-              ))}
+                );
+              })}
               {flockSummary.length > 0 && (
                 <div className="space-y-1 rounded-lg border border-line bg-cream/40 p-2.5 text-xs">
                   {flockSummary.map((s) => (
