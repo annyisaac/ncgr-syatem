@@ -26,6 +26,15 @@ const CAN_ACT = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Op
 
 interface FlockRow { batch: Batch; flock: BatchFlock; idx: number; }
 
+/** Sum a flock's removal categories for a candling stage. */
+function catCounts(f: BatchFlock, stage: 1 | 2): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const c of f.candlings) if (c.stage === stage) {
+    for (const [k, v] of Object.entries(c.categories)) out[k] = (out[k] ?? 0) + (Number(v) || 0);
+  }
+  return out;
+}
+
 export default function CandlingPage() {
   const { user } = useAuth();
   const { batches, machines, upsertBatch } = useHatchery();
@@ -40,20 +49,24 @@ export default function CandlingPage() {
   const canAct = !!user && CAN_ACT.includes(user.role);
   const hatchers = machines.filter((m) => m.type === "hatcher" && m.active);
 
-  // Every flock that still needs work, split by stage. Each row = one flock.
+  // Flocks in the candling phase. Candling I shows every flock (candled + to
+  // candle); Candling II shows those that have had candling 1. Each row = one flock.
   const { rowsC1, rowsC2 } = useMemo(() => {
     const c1: FlockRow[] = [];
     const c2: FlockRow[] = [];
     for (const b of batches) {
       if (!(b.steps["setting"] && !b.steps["transfer"] && b.status === "active")) continue;
       batchFlocks(b).forEach((f, idx) => {
-        if (!flockHasCandling(f, 1)) c1.push({ batch: b, flock: f, idx });
-        else if (!flockTransferDone(f)) c2.push({ batch: b, flock: f, idx });
+        c1.push({ batch: b, flock: f, idx });
+        if (flockHasCandling(f, 1)) c2.push({ batch: b, flock: f, idx });
       });
     }
     return { rowsC1: c1, rowsC2: c2 };
   }, [batches]);
   const rows = mode === "c1" ? rowsC1 : rowsC2;
+  const pendingC1 = rowsC1.filter((r) => !flockHasCandling(r.flock, 1)).length;
+  const pendingC2 = rowsC2.filter((r) => !flockHasCandling(r.flock, 2)).length;
+  const catCols = mode === "c1" ? CANDLING_1_CATEGORIES : CANDLING_2_CATEGORIES;
 
   const selected = useMemo(() => {
     if (!sel) return null;
@@ -129,46 +142,57 @@ export default function CandlingPage() {
       <p className="-mt-2 text-sm text-muted">Candling is done flock by flock. Each row is one flock inside its batch.</p>
 
       <div className="flex flex-wrap gap-2">
-        <Button variant={mode === "c1" ? "primary" : "ghost"} onClick={() => switchMode("c1")}>Candling I ({rowsC1.length})</Button>
-        <Button variant={mode === "c2" ? "primary" : "ghost"} onClick={() => switchMode("c2")}>Candling II ({rowsC2.length})</Button>
+        <Button variant={mode === "c1" ? "primary" : "ghost"} onClick={() => switchMode("c1")}>Candling I ({pendingC1} to candle)</Button>
+        <Button variant={mode === "c2" ? "primary" : "ghost"} onClick={() => switchMode("c2")}>Candling II ({pendingC2} to candle)</Button>
       </div>
 
       <Card>
-        <CardHeader title={mode === "c1" ? `Flocks to candle — Candling I (${rowsC1.length})` : `Flocks for Candling II / transfer (${rowsC2.length})`} />
+        <CardHeader title={mode === "c1" ? `Candling I — flocks (${rowsC1.length})` : `Candling II — flocks (${rowsC2.length})`} />
+        <p className="mb-2 text-xs text-muted">Percentages are each category removed ÷ eggs set. Candled flocks stay listed with their result.</p>
         <TableWrap>
           <thead>
             <tr>
               <Th>Batch</Th>
               <Th>Flock</Th>
               <Th className="text-right">Eggs set</Th>
-              <Th className="text-right">{mode === "c1" ? "Fertile" : "Fertile (after C1)"}</Th>
-              <Th>Status</Th>
+              {catCols.map((c) => <Th key={c.key} className="text-right">{c.label}</Th>)}
+              <Th className="text-right">Fertile</Th>
               <Th>Actions</Th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={6} text={mode === "c1" ? "No flocks awaiting Candling I." : "No flocks awaiting Candling II."} />
+              <EmptyRow colSpan={5 + catCols.length} text={mode === "c1" ? "No flocks in candling." : "No flocks have had Candling I yet."} />
             ) : (
               rows.map(({ batch, flock, idx }) => {
+                const stage: 1 | 2 = mode === "c1" ? 1 : 2;
                 const isSel = sel?.batchId === batch.id && sel?.idx === idx;
-                const fertile = mode === "c1" ? flock.eggsSet : flockFertileAfterC1(flock);
+                const candled = flockHasCandling(flock, stage);
+                const counts = catCounts(flock, stage);
+                const fertile = mode === "c1" ? flockFertileAfterC1(flock) : flockFertileAfterC2(flock);
+                const needsAction = mode === "c1" ? !flockHasCandling(flock, 1) : !flockTransferDone(flock);
                 const actionLabel = mode === "c1" ? "Candle I" : flockHasCandling(flock, 2) ? "Transfer" : "Candle II";
                 return (
-                  <tr key={`${batch.id}-${idx}`} className={isSel ? "bg-gold-bg" : undefined}>
+                  <tr key={`${batch.id}-${idx}`} className={isSel ? "bg-gold-bg" : candled ? "bg-green-bg" : undefined}>
                     <Td className="font-medium">{batch.batchNo}</Td>
                     <Td>{flock.farm} · {flock.flockId}</Td>
                     <Td className="text-right">{flock.eggsSet.toLocaleString()}</Td>
+                    {catCols.map((c) => {
+                      const pct = candled && flock.eggsSet ? ((counts[c.key] ?? 0) / flock.eggsSet) * 100 : null;
+                      return (
+                        <Td key={c.key} className="text-right">
+                          {pct === null ? <span className="text-muted">—</span> : `${pct.toFixed(1)}%`}
+                        </Td>
+                      );
+                    })}
                     <Td className="text-right">{fertile.toLocaleString()}</Td>
                     <Td>
-                      <div className="flex flex-wrap gap-1">
-                        <Pill tone={flockHasCandling(flock, 1) ? "green" : "gold"}>C1 {flockHasCandling(flock, 1) ? "✓" : "pending"}</Pill>
-                        {mode === "c2" && <Pill tone={flockHasCandling(flock, 2) ? "green" : "gold"}>C2 {flockHasCandling(flock, 2) ? "✓" : "pending"}</Pill>}
-                      </div>
-                    </Td>
-                    <Td>
-                      <div className="flex gap-1">
-                        {canAct && <Button size="sm" onClick={() => selectFlock(batch.id, idx)}>{actionLabel}</Button>}
+                      <div className="flex items-center gap-1">
+                        {canAct && needsAction ? (
+                          <Button size="sm" onClick={() => selectFlock(batch.id, idx)}>{actionLabel}</Button>
+                        ) : (
+                          <Pill tone="green">{mode === "c1" ? "C1 ✓" : flockHasCandling(flock, 2) ? "Transferred" : "C2 ✓"}</Pill>
+                        )}
                         <Link href={`/hatchery/batches/${batch.id}`} className="inline-flex items-center rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-ink transition hover:border-gold hover:bg-gold-bg">View</Link>
                       </div>
                     </Td>
