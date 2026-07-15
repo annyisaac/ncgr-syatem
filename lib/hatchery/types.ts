@@ -250,6 +250,7 @@ export interface ChickCount {
   verified?: boolean; // Production Technician verified the count
   verifiedBy?: string;
   verifiedOn?: string;
+  vaxCulls?: number; // culls removed during vaccination → final saleable = total − vaxCulls
 }
 
 /** Daily boxes assembled from bought unassembled stock. */
