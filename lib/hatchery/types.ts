@@ -233,14 +233,23 @@ export interface Batch {
 // Counting & boxes
 // ---------------------------------------------------------------------------
 
-/** Box-by-box counting session for a batch (attendant tallies each box). */
+/**
+ * A Hatchery Attendant's box-by-box count of one FLOCK's hatched chicks.
+ * They count saleable chicks per box, then the total culls. A Production
+ * Technician verifies it before it becomes the flock's hatch result.
+ */
 export interface ChickCount {
   id: string;
   batchId: string;
-  boxes: number[]; // chicks counted in each box
-  total: number;
+  flockId?: string; // which flock in the batch (per-flock counting)
+  boxes: number[]; // saleable chicks counted in each box
+  total: number; // saleable total (sum of boxes)
+  culls?: number; // culls counted (total)
   by: string;
   on: string;
+  verified?: boolean; // Production Technician verified the count
+  verifiedBy?: string;
+  verifiedOn?: string;
 }
 
 /** Daily boxes assembled from bought unassembled stock. */
