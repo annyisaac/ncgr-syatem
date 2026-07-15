@@ -72,6 +72,25 @@ export default function HatchPage() {
   const pendingCounts = useMemo(() => counts.filter((c) => !c.verified).sort((a, b) => (a.on < b.on ? 1 : -1)), [counts]);
   const batchNo = (id: string) => batches.find((b) => b.id === id)?.batchNo ?? id;
 
+  // Per-flock verified results, for monitoring each flock's performance.
+  const flockResults = useMemo(() => {
+    const out: { id: string; batchNo: string; farm: string; flockId: string; inH: number; hatched: number; culls: number; saleable: number; hatchability: number; on: string }[] = [];
+    for (const c of counts.filter((x) => x.verified)) {
+      const b = batches.find((x) => x.id === c.batchId);
+      if (!b) continue;
+      const f = batchFlocks(b).find((x) => x.flockId === c.flockId);
+      const inH = f ? flockTransferred(f) : 0;
+      const culls = (c.culls ?? 0) + (c.vaxCulls ?? 0);
+      const hatched = c.total + (c.culls ?? 0);
+      out.push({
+        id: c.id, batchNo: b.batchNo, farm: f?.farm ?? "", flockId: c.flockId ?? "—",
+        inH, hatched, culls, saleable: Math.max(0, c.total - (c.vaxCulls ?? 0)),
+        hatchability: inH > 0 ? (hatched / inH) * 100 : 0, on: c.on,
+      });
+    }
+    return out.sort((a, b) => (a.on < b.on ? 1 : -1));
+  }, [counts, batches]);
+
   if (!user) return null;
 
   function openRecord(id: string) { setSel(id); setHatched(""); setCulls(""); setErr(null); }
@@ -231,6 +250,39 @@ export default function HatchPage() {
                 </tr>
               );
             })}
+          </tbody>
+        </TableWrap>
+      </Card>
+
+      {/* Per-flock results — monitor each flock's performance */}
+      <Card>
+        <CardHeader title={`Flock results (${flockResults.length})`} />
+        <TableWrap>
+          <thead>
+            <tr>
+              <Th>Batch</Th><Th>Flock</Th><Th className="text-right">In hatcher</Th><Th className="text-right">Hatched</Th>
+              <Th className="text-right">Culls</Th><Th className="text-right">Final saleable</Th><Th className="text-right">Hatchability</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {flockResults.length === 0 ? <EmptyRow colSpan={7} text="No verified flock counts yet." /> : flockResults.map((r) => (
+              <tr key={r.id}>
+                <Td className="font-medium">{r.batchNo}</Td>
+                <Td>{r.farm} · {r.flockId}</Td>
+                <Td className="text-right">{r.inH.toLocaleString()}</Td>
+                <Td className="text-right">{r.hatched.toLocaleString()}</Td>
+                <Td className="text-right">{r.culls.toLocaleString()}</Td>
+                <Td className="text-right font-medium">{r.saleable.toLocaleString()}</Td>
+                <Td className="text-right">
+                  <div className="flex items-center justify-end gap-2">
+                    <div className="h-1.5 w-12 overflow-hidden rounded-full bg-line">
+                      <div className="h-full rounded-full bg-green" style={{ width: `${Math.min(100, r.hatchability)}%` }} />
+                    </div>
+                    {r.hatchability.toFixed(0)}%
+                  </div>
+                </Td>
+              </tr>
+            ))}
           </tbody>
         </TableWrap>
       </Card>
