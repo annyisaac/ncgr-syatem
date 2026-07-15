@@ -12,9 +12,9 @@ import { Field, Input } from "@/components/ui/Select";
 import { Modal } from "@/components/ui/Modal";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { todayISO, formatDate } from "@/lib/format";
-import type { Batch } from "@/lib/hatchery/types";
-import { saleableFrom, markStep, expectedHatchDate } from "@/lib/hatchery/lifecycle";
+import { todayISO, nowISO, formatDate } from "@/lib/format";
+import type { Batch, ChickCount } from "@/lib/hatchery/types";
+import { saleableFrom, markStep, expectedHatchDate, batchFlocks, flockTransferred } from "@/lib/hatchery/lifecycle";
 
 const CAN_ACT = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
@@ -27,7 +27,7 @@ const daysBetween = (fromIso: string, toIso: string) =>
 
 export default function HatchPage() {
   const { user } = useAuth();
-  const { batches, upsertBatch } = useHatchery();
+  const { batches, counts, upsertBatch, upsertCount, upsertInventory, newId } = useHatchery();
   const { toast } = useToast();
 
   const [sel, setSel] = useState<string | null>(null);
@@ -68,9 +68,37 @@ export default function HatchPage() {
     return pcts.length ? pcts.reduce((s, n) => s + n, 0) / pcts.length : 0;
   }, [hatchedRows]);
 
+  // Attendants' per-flock counts awaiting Production Technician verification.
+  const pendingCounts = useMemo(() => counts.filter((c) => !c.verified).sort((a, b) => (a.on < b.on ? 1 : -1)), [counts]);
+  const batchNo = (id: string) => batches.find((b) => b.id === id)?.batchNo ?? id;
+
   if (!user) return null;
 
   function openRecord(id: string) { setSel(id); setHatched(""); setCulls(""); setErr(null); }
+
+  /** Verify one flock's count → it becomes the batch's hatch result; when every
+   *  flock is verified, mark the batch hatched + counted and create inventory. */
+  function verifyCount(c: ChickCount) {
+    const b = batches.find((x) => x.id === c.batchId);
+    if (!b) return;
+    const vc: ChickCount = { ...c, verified: true, verifiedBy: user!.email, verifiedOn: nowISO() };
+    upsertCount(vc);
+    const verified = counts.filter((x) => x.batchId === b.id).map((x) => (x.id === c.id ? vc : x)).filter((x) => x.verified);
+    const saleableTot = verified.reduce((s, x) => s + x.total, 0);
+    const cullsTot = verified.reduce((s, x) => s + (x.culls ?? 0), 0);
+    const hatchedTot = saleableTot + cullsTot;
+    const inH = eggsInHatcher(b);
+    let nb: Batch = { ...b, hatchedCount: hatchedTot, culls: cullsTot, saleableCount: saleableTot, countedTotal: saleableTot, unhatchedCount: Math.max(0, inH - hatchedTot) };
+    const countableFlocks = batchFlocks(b).filter((f) => flockTransferred(f) > 0);
+    const allDone = countableFlocks.every((f) => verified.some((x) => x.flockId === f.flockId));
+    if (allDone && !nb.steps["hatching"]) {
+      nb = markStep(nb, "hatching", user!);
+      nb = markStep(nb, "counting", user!);
+      upsertInventory({ id: newId("inv"), productType: nb.productType, hatchDate: todayISO(), availableCount: saleableTot, batchId: nb.id, updatedBy: user!.email, on: nowISO() });
+    }
+    upsertBatch(nb);
+    toast(allDone ? `${b.batchNo} fully verified — ${saleableTot.toLocaleString()} saleable.` : `Flock ${c.flockId} verified.`);
+  }
 
   function record() {
     setErr(null);
@@ -90,12 +118,43 @@ export default function HatchPage() {
       <h1 className="section-heading text-lg">Hatch</h1>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Kpi label="Batches in hatchers" value={ready.length.toLocaleString()} />
         <Kpi label="Eggs in hatchers" value={eggsInHatchers.toLocaleString()} tone="gold" />
+        <Kpi label="Counts to verify" value={pendingCounts.length.toLocaleString()} tone={pendingCounts.length ? "gold" : undefined} />
         <Kpi label="Hatched this week" value={hatchedThisWeek.toLocaleString()} tone="green" />
         <Kpi label="Avg hatchability" value={`${avgHatch.toFixed(0)}%`} />
       </div>
+
+      {/* Counts to verify (Production Technician / managers) */}
+      {canAct && (
+        <Card>
+          <CardHeader title={`Counts to verify (${pendingCounts.length})`} />
+          <p className="-mt-1 mb-2 text-xs text-muted">Attendants&apos; per-flock counts. Verify to make them the batch&apos;s hatch result — culls are removed again at vaccination for the final saleable.</p>
+          <TableWrap>
+            <thead>
+              <tr><Th>Batch</Th><Th>Flock</Th><Th className="text-right">Saleable</Th><Th className="text-right">Culls</Th><Th className="text-right">Hatched</Th><Th>Counted by</Th><Th>Action</Th></tr>
+            </thead>
+            <tbody>
+              {pendingCounts.length === 0 ? (
+                <EmptyRow colSpan={7} text="No counts awaiting verification." />
+              ) : (
+                pendingCounts.map((c) => (
+                  <tr key={c.id}>
+                    <Td className="font-medium">{batchNo(c.batchId)}</Td>
+                    <Td>{c.flockId ?? "—"}</Td>
+                    <Td className="text-right font-medium">{c.total.toLocaleString()}</Td>
+                    <Td className="text-right">{(c.culls ?? 0).toLocaleString()}</Td>
+                    <Td className="text-right">{(c.total + (c.culls ?? 0)).toLocaleString()}</Td>
+                    <Td className="text-muted">{c.by}</Td>
+                    <Td><Button size="sm" onClick={() => verifyCount(c)}>Verify</Button></Td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </TableWrap>
+        </Card>
+      )}
 
       {/* Ready to hatch */}
       <Card>
