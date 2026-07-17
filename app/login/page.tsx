@@ -101,7 +101,7 @@ export default function LoginPage() {
           alt={`${COMPANY.name} logo`}
           width={300}
           height={100}
-          className="relative z-10 h-28 w-auto object-contain"
+          className="relative z-10 h-40 w-auto object-contain"
           priority
           unoptimized
         />
@@ -149,7 +149,7 @@ export default function LoginPage() {
             alt={`${COMPANY.name} logo`}
             width={280}
             height={94}
-            className="mx-auto h-24 w-auto object-contain"
+            className="mx-auto h-36 w-auto object-contain"
             priority
             unoptimized
           />
