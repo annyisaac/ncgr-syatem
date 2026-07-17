@@ -89,7 +89,6 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/dashboard" },
     { label: "My DSRs", href: "/dsrs" },
     { label: "Clients", href: "/clients" },
-    { label: "Availability", href: "/availability" },
     { label: "Commission", href: "/commission" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Zone Orders", href: "/orders" },

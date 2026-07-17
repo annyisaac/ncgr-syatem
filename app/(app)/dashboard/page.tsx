@@ -16,9 +16,9 @@ import { Kpi } from "@/components/dashboard/Kpi";
 import { LineChartView, PieChartView, DonutChartView, MultiLineChartView } from "@/components/charts/Charts";
 import { GlobalSearch } from "@/components/sales/GlobalSearch";
 
-import type { Order, BankStatement, User, DSR, Route } from "@/lib/types";
+import type { Order, BankStatement, User, DSR, Route, Availability } from "@/lib/types";
 import { PRODUCTS } from "@/lib/types";
-import { balance, orderTotal, paidAmount, toDeliver } from "@/lib/types";
+import { availableFor, balance, orderTotal, paidAmount, toDeliver } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
 import { provinceOfDistrict } from "@/lib/config";
 import { formatDate, todayISO } from "@/lib/format";
@@ -52,10 +52,10 @@ export default function DashboardPage() {
     return <CheckerDashboard orders={visible} statements={statements} user={user} />;
   }
   if (user.role === "Ross Order Receiver") {
-    return <RossDashboard orders={visible} user={user} />;
+    return <RossDashboard orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
   }
   if (user.role === "Tetra Zone Manager") {
-    return <ZoneDashboard orders={visible} dsrs={dsrs} routes={routes} />;
+    return <ZoneDashboard orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
   }
 
   return (
@@ -402,6 +402,8 @@ function AdminDashboard({
         </Card>
       </div>
 
+      <AvailabilityPanel availability={db.availability} orders={db.orders} focus="both" />
+
       <ProductSummary orders={orders} />
       <DSRPerformance orders={orders} />
 
@@ -430,10 +432,12 @@ function AdminDashboard({
 
 function ZoneDashboard({
   orders,
+  availability,
   dsrs,
   routes,
 }: {
   orders: Order[];
+  availability: Availability[];
   dsrs: DSR[];
   routes: Route[];
 }) {
@@ -533,6 +537,8 @@ function ZoneDashboard({
           </div>
         </Card>
       </div>
+
+      <AvailabilityPanel availability={availability} orders={orders} focus="Tetra Super Harco" />
 
       <Card>
         <SectionTitle label="District performance" />
@@ -636,223 +642,216 @@ function ZoneTile({
   );
 }
 
+/**
+ * Read-only ordering-availability panel — the upcoming open delivery dates and
+ * how many chicks are still available. Shown on the sales dashboards so the
+ * numbers live where people work; Admin still SETS them on /availability.
+ * `focus` picks which product columns to show.
+ */
+function AvailabilityPanel({
+  availability,
+  orders,
+  focus = "both",
+}: {
+  availability: Availability[];
+  orders: Order[];
+  focus?: "Ross 308" | "Tetra Super Harco" | "both";
+}) {
+  const today = todayISO();
+  const rows = availability
+    .filter((a) => a.date >= today && (a.ross > 0 || a.tetra > 0))
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .slice(0, 8);
+  const showRoss = focus === "both" || focus === "Ross 308";
+  const showTetra = focus === "both" || focus === "Tetra Super Harco";
+  const cols = 1 + (showRoss ? 2 : 0) + (showTetra ? 2 : 0);
+  return (
+    <Card>
+      <SectionTitle label="Ordering availability" />
+      <TableWrap>
+        <thead>
+          <tr>
+            <Th>Delivery date</Th>
+            {showRoss && <Th className="text-right">Ross available</Th>}
+            {showRoss && <Th className="text-right">Ross left</Th>}
+            {showTetra && <Th className="text-right">Tetra available</Th>}
+            {showTetra && <Th className="text-right">Tetra left</Th>}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <EmptyRow colSpan={cols} text="No upcoming ordering dates are open." />
+          ) : rows.map((a) => {
+            const rossLeft = availableFor(a, "Ross 308", orders);
+            const tetraLeft = availableFor(a, "Tetra Super Harco", orders);
+            return (
+              <tr key={a.id}>
+                <Td className="font-medium">{formatDate(a.date)}</Td>
+                {showRoss && <Td className="text-right">{a.ross.toLocaleString()}</Td>}
+                {showRoss && <Td className={`text-right font-semibold ${rossLeft > 0 ? "text-green" : "text-red"}`}>{rossLeft.toLocaleString()}</Td>}
+                {showTetra && <Td className="text-right">{a.tetra.toLocaleString()}</Td>}
+                {showTetra && <Td className={`text-right font-semibold ${tetraLeft > 0 ? "text-green" : "text-red"}`}>{tetraLeft.toLocaleString()}</Td>}
+              </tr>
+            );
+          })}
+        </tbody>
+      </TableWrap>
+    </Card>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Ross receiver dashboard
 // ---------------------------------------------------------------------------
 
-function RossDashboard({ orders, user }: { orders: Order[]; user: User }) {
-  const router = useRouter();
+function RossDashboard({
+  orders,
+  availability,
+  dsrs,
+  routes,
+}: {
+  orders: Order[];
+  availability: Availability[];
+  dsrs: DSR[];
+  routes: Route[];
+}) {
   const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
-  const [region, setRegion] = useState<string>("all");
-  const [query, setQuery] = useState("");
-  const [now, setNow] = useState<Date>(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
-  }, []);
 
-  const regions = useMemo(() => Array.from(new Set(orders.map((o) => o.province).filter(Boolean))).sort(), [orders]);
-
-  const scoped = useMemo(() => {
-    const inR = (d: string) => (!range.from && !range.to ? true : inRange(d, range));
-    const q = query.trim().toLowerCase();
-    return orders.filter((o) => inR(o.date) && (region === "all" || o.province === region) && (!q || o.name.toLowerCase().includes(q) || o.district.toLowerCase().includes(q)));
-  }, [orders, range, region, query]);
+  const scoped = useMemo(
+    () => orders.filter((o) => (!range.from && !range.to ? true : inRange(o.date, range))),
+    [orders, range]
+  );
   const active = useMemo(() => scoped.filter((o) => !isClosed(o)), [scoped]);
 
+  const newOrders = active.filter((o) => o.status === "pending").length;
   const chicks = active.reduce((s, o) => s + o.chicks, 0);
-  const amountReceived = verifiedCollected(active);
-  const totalValue = active.reduce((s, o) => s + orderTotal(o), 0);
-  const amountPending = active.reduce((s, o) => s + Math.max(0, balance(o)), 0);
-  const pendingOrders = active.filter((o) => balance(o) > 0).length;
-  const paymentRate = totalValue > 0 ? (amountReceived / totalValue) * 100 : 0;
-
-  // Previous equal-length period for the trend badge.
-  let deltaPct: number | null = null;
-  if (range.from && range.to) {
-    const from = new Date(range.from).getTime(), to = new Date(range.to).getTime();
-    const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
-    const prevTo = from - 86_400_000, prevFrom = prevTo - (to - from);
-    const prev = orders.filter((o) => (region === "all" || o.province === region) && !isClosed(o) && o.date >= iso(prevFrom) && o.date <= iso(prevTo));
-    const prevVal = prev.reduce((s, o) => s + orderTotal(o), 0);
-    if (prevVal > 0) deltaPct = ((totalValue - prevVal) / prevVal) * 100;
-  }
-
-  // Cumulative orders vs verified-paid orders over the delivery dates.
-  const dates = Array.from(new Set(active.map((o) => o.date))).sort();
-  const perDate = dates.map((d) => {
-    const day = active.filter((o) => o.date === d);
-    return { d, orders: day.length, paid: day.filter((o) => o.payments.some((p) => p.verified)).length };
-  });
-  const chartData = perDate.map((row, i) => {
-    const upto = perDate.slice(0, i + 1);
-    return { label: formatDate(row.d), orders: upto.reduce((a, x) => a + x.orders, 0), paid: upto.reduce((a, x) => a + x.paid, 0) };
-  });
+  const collected = verifiedCollected(active);
+  const owed = outstanding(active);
 
   const statusCounts = {
-    pending: scoped.filter((o) => o.status === "pending").length,
     fulfilled: scoped.filter((o) => o.status === "fulfilled").length,
+    pending: scoped.filter((o) => o.status === "pending").length,
     refunded: scoped.filter((o) => o.status === "refunded").length,
     rejected: scoped.filter((o) => o.status === "rejected").length,
   };
   const donut = [
-    { label: "Pending", value: statusCounts.pending },
     { label: "Fulfilled", value: statusCounts.fulfilled },
+    { label: "Pending", value: statusCounts.pending },
     { label: "Refunded", value: statusCounts.refunded },
     { label: "Rejected", value: statusCounts.rejected },
   ];
-  const donutTotal = scoped.length || 1;
-  const pct = (v: number) => ((v / donutTotal) * 100).toFixed(1);
+  const totalForPct = scoped.length || 1;
+  const pct = (v: number) => Math.round((v / totalForPct) * 100);
 
-  // Performance by district.
-  const perf = useMemo(() => {
-    const m = new Map<string, { orders: number; delivered: number; pending: number; amount: number }>();
+  // District rollup: orders, chicks, collected vs total value.
+  const districtRows = useMemo(() => {
+    const m = new Map<string, { orders: number; chicks: number; sales: number; total: number }>();
     for (const o of active) {
-      const g = m.get(o.district) ?? { orders: 0, delivered: 0, pending: 0, amount: 0 };
+      const g = m.get(o.district) ?? { orders: 0, chicks: 0, sales: 0, total: 0 };
       g.orders += 1;
-      if (o.deliverOk) g.delivered += o.chicks; else g.pending += o.chicks;
-      g.amount += orderTotal(o);
+      g.chicks += o.chicks;
+      g.sales += verifiedCollected([o]);
+      g.total += orderTotal(o);
       m.set(o.district, g);
     }
-    return Array.from(m.entries()).sort((a, b) => b[1].amount - a[1].amount).slice(0, 6);
+    return Array.from(m.entries()).sort((a, b) => b[1].chicks - a[1].chicks);
   }, [active]);
 
-  const recentOrders = useMemo(() => scoped.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 6), [scoped]);
-
-  const verifiedPayments = active.flatMap((o) => o.payments).filter((p) => p.verified).length;
-  const unverifiedPayments = active.flatMap((o) => o.payments).filter((p) => !p.verified).length;
-
+  const recentOrders = useMemo(
+    () => scoped.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 8),
+    [scoped]
+  );
   const statusTone = (s: Order["status"]) => (s === "fulfilled" ? "fulfilled" : s === "refunded" || s === "rejected" ? "red" : "gold");
 
   return (
-    <div className="space-y-4">
-      <div>
-        <h1 className="section-heading text-lg">Dashboard</h1>
-        <p className="text-sm text-muted">Welcome back, {user.name} — here&apos;s your Ross 308 sales today.</p>
-      </div>
-
-      {/* Filter bar */}
-      <div className="rounded-2xl border border-line bg-paper p-4 shadow-card">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1.2fr_1.7fr_1fr_1fr_auto] lg:items-end">
-          <FilterField label="Search">
-            <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Client or district…" className={CTRL} />
-          </FilterField>
-          <FilterField label="Delivery date range">
-            <div className="flex items-center gap-1.5">
-              <input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} className={CTRL} />
-              <span className="shrink-0 text-muted">–</span>
-              <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} className={CTRL} />
-            </div>
-          </FilterField>
-          <FilterField label="Product">
-            <div className={`${CTRL} flex items-center bg-cream/40 text-muted`}>Ross 308</div>
-          </FilterField>
-          <FilterField label="Region">
-            <select value={region} onChange={(e) => setRegion(e.target.value)} className={CTRL}>
-              <option value="all">All regions</option>
-              {regions.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </FilterField>
-          <Button variant="ghost" className="h-10" onClick={() => { setRange(ALL_TIME); setRegion("all"); setQuery(""); }}>↺ Reset</Button>
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="section-heading text-lg">Dashboard</h1>
+          <p className="text-sm text-muted">Welcome back! Here&apos;s your Ross 308 sales today.</p>
+        </div>
+        <div className="w-full sm:max-w-md">
+          <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
         </div>
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Kpi label="Total orders" value={String(scoped.length)} tone="gold" icon="orders" sub="This period" onClick={() => router.push("/orders")} />
-        <Kpi label="Total sales (chicks)" value={chicks.toLocaleString()} tone="green" icon="chicks" sub="Chicks ordered" />
-        <Kpi label="Amount received" value={formatRWF(amountReceived)} tone="red" icon="money" sub="Paid amount" />
-        <Kpi label="Amount pending" value={formatRWF(amountPending)} tone="blue" icon="alert" sub="Pending payments" />
-        <Kpi label="Total value" value={formatRWF(totalValue)} tone="purple" icon="chart" sub="Total order value" />
-      </div>
-
-      {/* Orders over time + status donut */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
-          <CardHeader title="Orders over time" />
-          <MultiLineChartView data={chartData} series={[{ key: "orders", name: "Total Orders", color: "#d4a017" }, { key: "paid", name: "Payments Received", color: "#1c1a16" }]} />
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-line bg-cream/30 p-3 text-center sm:grid-cols-4">
-            <Metric label="Total Orders" value={String(scoped.length)} />
-            <Metric label="Chicks Sold" value={chicks.toLocaleString()} />
-            <Metric label="Pending Orders" value={String(pendingOrders)} />
-            <Metric label="Payment Rate" value={`${paymentRate.toFixed(1)}%`} tone="green" />
-          </div>
-        </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader title="Orders by status" />
-          <DonutChartView data={donut} colors={["#d4a017", "#15803d", "#2563eb", "#b91c1c"]} centerLabel={String(scoped.length)} centerSub="Total orders" />
-          <div className="space-y-2 text-sm">
-            <LegendRow color="#d4a017" label="Pending" value={`${statusCounts.pending} (${pct(statusCounts.pending)}%)`} />
-            <LegendRow color="#15803d" label="Fulfilled" value={`${statusCounts.fulfilled} (${pct(statusCounts.fulfilled)}%)`} />
-            <LegendRow color="#2563eb" label="Refunded" value={`${statusCounts.refunded} (${pct(statusCounts.refunded)}%)`} />
-            <LegendRow color="#b91c1c" label="Rejected" value={`${statusCounts.rejected} (${pct(statusCounts.rejected)}%)`} />
-          </div>
-          {deltaPct !== null && (
-            <div className="mt-3 rounded-xl border border-line bg-cream/30 p-3 text-center text-sm">
-              <span className={deltaPct >= 0 ? "font-bold text-green" : "font-bold text-red"}>{deltaPct >= 0 ? "↗ +" : "↘ "}{deltaPct.toFixed(1)}%</span>
-              <span className="text-muted"> vs previous period</span>
-            </div>
-          )}
-        </Card>
-      </div>
-
-      {/* Recent performance + recent orders */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <CardHeader title="Recent performance (by district)" />
-          <TableWrap>
-            <thead><tr><Th>District</Th><Th className="text-right">Orders</Th><Th className="text-right">Delivered</Th><Th className="text-right">Pending</Th><Th className="text-right">Amount</Th></tr></thead>
-            <tbody>
-              {perf.length === 0 ? <EmptyRow colSpan={5} text="No orders yet." /> : perf.map(([d, g]) => (
-                <tr key={d}>
-                  <Td className="font-medium">{d}</Td>
-                  <Td className="text-right">{g.orders}</Td>
-                  <Td className="text-right text-green">{g.delivered.toLocaleString()}</Td>
-                  <Td className="text-right">{g.pending.toLocaleString()}</Td>
-                  <Td className="text-right">{formatRWF(g.amount)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </TableWrap>
-        </Card>
-
-        <Card>
-          <CardHeader title="Recent orders" action={<Link href="/orders" className="text-sm font-semibold text-gold-dark">View all →</Link>} />
-          <TableWrap>
-            <thead><tr><Th>Delivery</Th><Th>Client</Th><Th className="text-right">Chicks</Th><Th className="text-right">Amount</Th><Th>Status</Th></tr></thead>
-            <tbody>
-              {recentOrders.length === 0 ? <EmptyRow colSpan={5} text="No orders yet." /> : recentOrders.map((o) => (
-                <tr key={o.id}>
-                  <Td>{formatDate(o.date)}</Td>
-                  <Td>{o.name}</Td>
-                  <Td className="text-right">{o.chicks.toLocaleString()}</Td>
-                  <Td className="text-right">{formatRWF(orderTotal(o))}</Td>
-                  <Td><Pill tone={statusTone(o.status)}>{o.status}</Pill></Td>
-                </tr>
-              ))}
-            </tbody>
-          </TableWrap>
-        </Card>
-      </div>
-
-      {/* Payment progress + footer */}
       <Card>
-        <CardHeader title="Payment progress" />
-        <div className="flex flex-wrap items-center justify-around gap-3 py-2">
-          <ProgressCircle tone="green" value={verifiedPayments} label="Verified" />
-          <ProgressCircle tone="gold" value={unverifiedPayments} label="Pending" />
-          <ProgressCircle tone="red" value={statusCounts.rejected} label="Rejected" />
-          <ProgressCircle tone="blue" value={scoped.length} label="Total orders" />
-        </div>
+        <DateRange value={range} onChange={setRange} />
       </Card>
 
-      <div className="grid grid-cols-2 gap-3 rounded-2xl border border-line bg-paper p-4 shadow-card text-sm sm:grid-cols-4">
-        <FooterItem label="Today" value={formatDate(todayISO())} />
-        <FooterItem label="Current time" value={now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} />
-        <FooterItem label="Logged in as" value={user.name} />
-        <FooterItem label="Region" value={region === "all" ? "All regions" : region} />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <ZoneTile tone="gold" icon={ZICON.orders} value={String(newOrders)} label="Orders (new)" sub="New orders received" />
+        <ZoneTile tone="ink" icon={ZICON.sold} value={chicks.toLocaleString()} label="Chicks ordered" sub="Total chicks this period" />
+        <ZoneTile tone="green" icon={ZICON.money} value={formatRWF(collected)} label="Collected (revenue)" sub="Total amount collected" />
+        <ZoneTile tone="red" icon={ZICON.alert} value={formatRWF(owed)} label="Outstanding" sub="Amount outstanding" />
       </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <SectionTitle label="Chicks per delivery date" />
+          <LineChartView data={chicksPerDate(active)} valueName="Chicks" />
+        </Card>
+        <Card>
+          <SectionTitle label="Orders by status" />
+          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2">
+            <DonutChartView data={donut} colors={["#15803d", "#d4a017", "#2563eb", "#b91c1c"]} centerLabel={String(scoped.length)} centerSub="Orders" />
+            <div className="space-y-2.5 text-sm">
+              <LegendRow color="#15803d" label="Fulfilled" value={`${statusCounts.fulfilled} (${pct(statusCounts.fulfilled)}%)`} />
+              <LegendRow color="#d4a017" label="Pending" value={`${statusCounts.pending} (${pct(statusCounts.pending)}%)`} />
+              <LegendRow color="#2563eb" label="Refunded" value={`${statusCounts.refunded} (${pct(statusCounts.refunded)}%)`} />
+              <LegendRow color="#b91c1c" label="Rejected" value={`${statusCounts.rejected} (${pct(statusCounts.rejected)}%)`} />
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      <AvailabilityPanel availability={availability} orders={orders} focus="Ross 308" />
+
+      <Card>
+        <SectionTitle label="District performance" />
+        <TableWrap>
+          <thead>
+            <tr>
+              <Th>District</Th><Th>Province</Th>
+              <Th className="text-right">Orders</Th><Th className="text-right">Chicks</Th>
+              <Th className="text-right">Sales (RWF)</Th><Th className="text-right">Total (RWF)</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {districtRows.length === 0 ? (
+              <EmptyRow colSpan={6} text="No results yet." />
+            ) : districtRows.map(([d, g]) => (
+              <tr key={d}>
+                <Td className="font-medium">{d}</Td>
+                <Td className="text-muted">{provinceOfDistrict(d) ?? "—"}</Td>
+                <Td className="text-right">{g.orders}</Td>
+                <Td className="text-right">{g.chicks.toLocaleString()}</Td>
+                <Td className="text-right text-green">{formatRWF(g.sales)}</Td>
+                <Td className="text-right">{formatRWF(g.total)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+      </Card>
+
+      <Card>
+        <CardHeader title="Recent orders" action={<Link href="/orders" className="text-sm font-semibold text-gold-dark">View all →</Link>} />
+        <TableWrap>
+          <thead><tr><Th>Delivery</Th><Th>Client</Th><Th>District</Th><Th className="text-right">Chicks</Th><Th className="text-right">Amount</Th><Th>Status</Th></tr></thead>
+          <tbody>
+            {recentOrders.length === 0 ? <EmptyRow colSpan={6} text="No orders yet." /> : recentOrders.map((o) => (
+              <tr key={o.id}>
+                <Td>{formatDate(o.date)}</Td>
+                <Td>{o.name}</Td>
+                <Td className="text-muted">{o.district}</Td>
+                <Td className="text-right">{o.chicks.toLocaleString()}</Td>
+                <Td className="text-right">{formatRWF(orderTotal(o))}</Td>
+                <Td><Pill tone={statusTone(o.status)}>{o.status}</Pill></Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+      </Card>
     </div>
   );
 }
