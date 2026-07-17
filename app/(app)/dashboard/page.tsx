@@ -653,41 +653,71 @@ function AvailabilityPanel({
   const rows = availability
     .filter((a) => a.date >= today && (a.ross > 0 || a.tetra > 0))
     .sort((a, b) => (a.date < b.date ? -1 : 1))
-    .slice(0, 8);
+    .slice(0, 6);
   const showRoss = focus === "both" || focus === "Ross 308";
   const showTetra = focus === "both" || focus === "Tetra Super Harco";
-  const cols = 1 + (showRoss ? 2 : 0) + (showTetra ? 2 : 0);
+
+  const daysUntil = (d: string) => {
+    const diff = Math.round((new Date(d).getTime() - new Date(today).getTime()) / 86_400_000);
+    return diff <= 0 ? "Today" : diff === 1 ? "Tomorrow" : `In ${diff} days`;
+  };
+
   return (
     <Card>
       <SectionTitle label="Ordering availability" />
-      <TableWrap>
-        <thead>
-          <tr>
-            <Th>Delivery date</Th>
-            {showRoss && <Th className="text-right">Ross available</Th>}
-            {showRoss && <Th className="text-right">Ross left</Th>}
-            {showTetra && <Th className="text-right">Tetra available</Th>}
-            {showTetra && <Th className="text-right">Tetra left</Th>}
-          </tr>
-        </thead>
-        <tbody>
-          {rows.length === 0 ? (
-            <EmptyRow colSpan={cols} text="No upcoming ordering dates are open." />
-          ) : rows.map((a) => {
-            const rossLeft = availableFor(a, "Ross 308", orders);
-            const tetraLeft = availableFor(a, "Tetra Super Harco", orders);
+      {rows.length === 0 ? (
+        <p className="py-4 text-center text-sm text-muted">No upcoming ordering dates are open.</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          {rows.map((a) => {
+            // One meter per focused product with capacity opened on this date.
+            const meters: { name: string; cap: number; left: number }[] = [];
+            if (showRoss && a.ross > 0) meters.push({ name: "Ross 308", cap: a.ross, left: availableFor(a, "Ross 308", orders) });
+            if (showTetra && a.tetra > 0) meters.push({ name: "Tetra Super Harco", cap: a.tetra, left: availableFor(a, "Tetra Super Harco", orders) });
+            if (meters.length === 0) return null;
+
+            const full = meters.every((m) => m.left <= 0);
+            const filling = !full && meters.some((m) => m.cap > 0 && (m.cap - m.left) / m.cap >= 0.7);
+            const badge = full
+              ? { text: "Full", cls: "bg-red-bg text-red" }
+              : filling
+                ? { text: "Filling", cls: "bg-gold-bg text-gold-dark" }
+                : { text: "Open", cls: "bg-green-bg text-green" };
+
             return (
-              <tr key={a.id}>
-                <Td className="font-medium">{formatDate(a.date)}</Td>
-                {showRoss && <Td className="text-right">{a.ross.toLocaleString()}</Td>}
-                {showRoss && <Td className={`text-right font-semibold ${rossLeft > 0 ? "text-green" : "text-red"}`}>{rossLeft.toLocaleString()}</Td>}
-                {showTetra && <Td className="text-right">{a.tetra.toLocaleString()}</Td>}
-                {showTetra && <Td className={`text-right font-semibold ${tetraLeft > 0 ? "text-green" : "text-red"}`}>{tetraLeft.toLocaleString()}</Td>}
-              </tr>
+              <div key={a.id} className="rounded-2xl border border-line bg-paper p-4 shadow-card">
+                <div className="mb-2.5 flex items-baseline justify-between gap-2">
+                  <div>
+                    <p className="text-[0.98rem] font-bold leading-tight text-ink">{formatDate(a.date)}</p>
+                    <p className="text-[0.7rem] text-muted">{daysUntil(a.date)}</p>
+                  </div>
+                  <span className={`rounded-full px-2.5 py-0.5 text-[0.6rem] font-bold uppercase tracking-wide ${badge.cls}`}>{badge.text}</span>
+                </div>
+                {meters.map((m) => {
+                  const bookedPct = Math.min(100, Math.max(0, Math.round(((m.cap - m.left) / m.cap) * 100)));
+                  const bar = m.left <= 0 ? "bg-red" : bookedPct >= 70 ? "bg-gold" : "bg-green";
+                  return (
+                    <div key={m.name} className="mt-2.5">
+                      <div className="mb-1 flex items-center justify-between text-[0.76rem]">
+                        <span className="font-semibold text-ink">{m.name}</span>
+                        <span className={`tabular-nums ${m.left <= 0 ? "font-bold text-red" : "text-muted"}`}>
+                          {m.left <= 0 ? "Sold out" : `${m.left.toLocaleString()} left`}
+                        </span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-grey-bg">
+                        <div className={`h-full rounded-full ${bar}`} style={{ width: `${bookedPct}%` }} />
+                      </div>
+                      <p className="mt-1 text-right text-[0.64rem] text-muted">
+                        {(m.cap - m.left).toLocaleString()} of {m.cap.toLocaleString()} booked
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
             );
           })}
-        </tbody>
-      </TableWrap>
+        </div>
+      )}
     </Card>
   );
 }
