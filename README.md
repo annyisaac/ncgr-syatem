@@ -1,6 +1,6 @@
-# NCGR Ltd — Sales & Delivery Management System
+# NCGR LTD
 
-Role-based sales-and-delivery management for **NCGR Ltd**, a poultry hatchery in
+Role-based sales-and-delivery management for **NCGR LTD**, a poultry hatchery in
 Rwamagana–Gishari, Eastern Province, Rwanda. It manages orders, deliveries,
 payment verification, and DSR commissions for two chick products —
 **Tetra Super Harco** and **Ross 308**.

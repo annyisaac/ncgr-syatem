@@ -1,5 +1,5 @@
 /**
- * Static configuration for the NCGR Ltd system: company info, Rwandan
+ * Static configuration for the NCGR LTD system: company info, Rwandan
  * geography, Tetra zoning rules, commission rates, and the seed admin.
  *
  * Pure data + pure helper functions only — safe to import anywhere.
@@ -12,7 +12,7 @@ import type { Province, Zone, Product, User } from "./types";
 // ---------------------------------------------------------------------------
 
 export const COMPANY = {
-  name: "NCGR Ltd",
+  name: "NCGR LTD",
   address: "Rwamagana – Gishari, Eastern Province, Rwanda",
   email: "info@ncgrltd.com",
   tagline: "Your Partner in Poultry Excellence",

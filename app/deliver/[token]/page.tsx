@@ -78,7 +78,7 @@ export default function DriverDeliveryPage() {
   return (
     <Screen>
       <header className="mb-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">NCGR Ltd · Delivery</p>
+        <p className="text-xs font-semibold uppercase tracking-wide text-gold-dark">NCGR LTD · Delivery</p>
         <h1 className="text-xl font-bold text-ink">{driver || "Driver"}</h1>
         <p className="text-sm text-muted">
           {stops.length === 0

@@ -1,5 +1,5 @@
 /**
- * Shared domain types for the NCGR Ltd sales & delivery system.
+ * Shared domain types for the NCGR LTD sales & delivery system.
  *
  * These types are storage-agnostic: the data-access layer (lib/db.ts) is the
  * only place that knows how they are persisted. Keep this file free of any
