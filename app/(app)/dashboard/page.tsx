@@ -16,7 +16,7 @@ import { Kpi } from "@/components/dashboard/Kpi";
 import { LineChartView, PieChartView, DonutChartView, MultiLineChartView } from "@/components/charts/Charts";
 import { GlobalSearch } from "@/components/sales/GlobalSearch";
 
-import type { Order, BankStatement, User, DSR, Route, Availability } from "@/lib/types";
+import type { Order, BankStatement, User, Availability } from "@/lib/types";
 import { PRODUCTS } from "@/lib/types";
 import { availableFor, balance, orderTotal, paidAmount, toDeliver } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
@@ -52,10 +52,10 @@ export default function DashboardPage() {
     return <CheckerDashboard orders={visible} statements={statements} user={user} />;
   }
   if (user.role === "Ross Order Receiver") {
-    return <RossDashboard user={user} orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
+    return <RossDashboard user={user} orders={visible} availability={availability} />;
   }
   if (user.role === "Tetra Zone Manager") {
-    return <ZoneDashboard user={user} orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
+    return <ZoneDashboard user={user} orders={visible} availability={availability} />;
   }
 
   return (
@@ -502,16 +502,12 @@ function SalesOverview({
   user,
   orders,
   availability,
-  dsrs,
-  routes,
   focus,
   Tail,
 }: {
   user: User;
   orders: Order[];
   availability: Availability[];
-  dsrs: DSR[];
-  routes: Route[];
   focus: "Ross 308" | "Tetra Super Harco";
   Tail: React.ComponentType<{ active: Order[]; scoped: Order[] }>;
 }) {
@@ -563,16 +559,12 @@ function SalesOverview({
 
   return (
     <div className="space-y-5">
-      {/* Greeting left, search centred on the same line, period picker right */}
-      <div className="flex flex-wrap items-center gap-3">
+      {/* Greeting left, period picker right */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-lg font-bold text-ink">
           Hey {firstName} — <span className="font-normal text-muted">here&apos;s your sales overview</span>
         </h1>
-        {/* order-last drops the search to its own full row on small screens */}
-        <div className="order-last w-full min-w-0 lg:order-none lg:mx-auto lg:w-96">
-          <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-        </div>
-        <div className="ml-auto flex flex-wrap items-center gap-2 lg:ml-0">
+        <div className="flex flex-wrap items-center gap-2">
           <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
             {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
@@ -665,8 +657,6 @@ function ZoneDashboard(props: {
   user: User;
   orders: Order[];
   availability: Availability[];
-  dsrs: DSR[];
-  routes: Route[];
 }) {
   return <SalesOverview {...props} focus="Tetra Super Harco" Tail={ZoneTail} />;
 }
@@ -861,8 +851,6 @@ function RossDashboard(props: {
   user: User;
   orders: Order[];
   availability: Availability[];
-  dsrs: DSR[];
-  routes: Route[];
 }) {
   return <SalesOverview {...props} focus="Ross 308" Tail={RossTail} />;
 }
