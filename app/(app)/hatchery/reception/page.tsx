@@ -11,7 +11,7 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
-import { PRODUCTS, type Product } from "@/lib/types";
+import { FarmsManager } from "@/components/hatchery/FarmsManager";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
 import type { Reception, ReceptionLocation } from "@/lib/hatchery/types";
 import { settableEggs } from "@/lib/hatchery/lifecycle";
@@ -23,39 +23,54 @@ const CAN_ADD = [
   "Hatchery Operations Manager",
   "Production Technician",
 ];
+const CAN_MANAGE_FARMS = ["Admin", "Hatchery Manager"];
 
 const num = (v: string) => Number(v) || 0;
 
 export default function ReceptionPage() {
   const { user } = useAuth();
-  const { receptions, batches, upsertReception, newId } = useHatchery();
+  const { receptions, batches, farms, flocks, upsertReception, newId } = useHatchery();
   const { toast } = useToast();
 
   const [show, setShow] = useState(false);
+  const [showFarms, setShowFarms] = useState(false);
   const [f, setF] = useState({
-    farm: "", flockId: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "",
+    flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "",
     crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "",
-    product: "Tetra Super Harco" as Product, date: todayISO(),
+    date: todayISO(),
   });
   const [err, setErr] = useState<string | null>(null);
 
   const canAdd = !!user && CAN_ADD.includes(user.role);
+  const canManageFarms = !!user && CAN_MANAGE_FARMS.includes(user.role);
   const rows = useMemo(() => receptions.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), [receptions]);
   const batchNo = (id?: string) => (id ? batches.find((b) => b.id === id)?.batchNo ?? id : null);
+  const farmName = (id: string) => farms.find((x) => x.id === id)?.name ?? "—";
+
+  // Only active flocks whose farm is also active can be received against.
+  const activeFlocks = useMemo(
+    () => flocks
+      .filter((x) => x.active && farms.find((fm) => fm.id === x.farmId)?.active !== false)
+      .map((x) => ({ ...x, farmName: farmName(x.farmId) }))
+      .sort((a, b) => (a.farmName === b.farmName ? a.code.localeCompare(b.code) : a.farmName.localeCompare(b.farmName))),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [flocks, farms]
+  );
 
   if (!user) return null;
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!f.farm.trim()) return setErr("Enter the farm name.");
-    if (!f.flockId.trim()) return setErr("Enter the flock ID.");
+    const flock = flocks.find((x) => x.id === f.flock);
+    if (!flock) return setErr("Select the flock.");
     if (num(f.eggsReceived) <= 0) return setErr("Enter eggs received.");
+    const farm = farmName(flock.farmId);
     const rec: Reception = {
       id: newId("rec"),
       date: f.date,
-      farm: f.farm.trim(),
-      flockId: f.flockId.trim(),
+      farm,
+      flockId: flock.code,
       ageOfFlock: num(f.ageOfFlock),
       eggsReceived: num(f.eggsReceived),
       ageOfEggs: num(f.ageOfEggs),
@@ -63,14 +78,14 @@ export default function ReceptionPage() {
       crackedOnSet: num(f.crackedOnSet),
       misshapen: num(f.misshapen),
       dirty: num(f.dirty),
-      productType: f.product,
+      productType: flock.productType,
       by: user!.email,
       on: nowISO(),
     };
     upsertReception(rec);
-    toast(`Received ${rec.eggsReceived} eggs from ${rec.farm} — ${settableEggs(rec).toLocaleString()} settable.`);
+    toast(`Received ${rec.eggsReceived} eggs from ${farm} — ${settableEggs(rec).toLocaleString()} settable.`);
     setShow(false);
-    setF({ ...f, farm: "", flockId: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "", crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "" });
+    setF({ ...f, flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "", crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "" });
   }
 
   function setLocation(r: Reception, location: ReceptionLocation) {
@@ -82,18 +97,31 @@ export default function ReceptionPage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <h1 className="section-heading text-lg">Egg Reception</h1>
-        {canAdd && <Button onClick={() => setShow((v) => !v)}>{show ? "Hide form" : "Record reception"}</Button>}
+        <div className="flex flex-wrap gap-2">
+          {canManageFarms && (
+            <Button variant="secondary" onClick={() => setShowFarms((v) => !v)}>
+              {showFarms ? "Hide farms & flocks" : "Manage farms & flocks"}
+            </Button>
+          )}
+          {canAdd && <Button onClick={() => setShow((v) => !v)}>{show ? "Hide form" : "Record reception"}</Button>}
+        </div>
       </div>
+
+      {showFarms && canManageFarms && (
+        <Card>
+          <CardHeader title="Farms & flocks" />
+          <FarmsManager />
+        </Card>
+      )}
 
       {show && canAdd && (
         <Card>
           <CardHeader title="Receive eggs from farm" />
           <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Farm name"><Input value={f.farm} onChange={(e) => setF({ ...f, farm: e.target.value })} /></Field>
-            <Field label="Flock ID"><Input value={f.flockId} onChange={(e) => setF({ ...f, flockId: e.target.value })} /></Field>
-            <Field label="Product">
-              <Select value={f.product} onChange={(e) => setF({ ...f, product: e.target.value as Product })}
-                options={PRODUCTS.map((p) => ({ value: p, label: p }))} />
+            <Field label="Farm · Flock (product)">
+              <Select value={f.flock} onChange={(e) => setF({ ...f, flock: e.target.value })}
+                placeholder={activeFlocks.length ? "Select flock" : "No flocks defined"}
+                options={activeFlocks.map((x) => ({ value: x.id, label: `${x.farmName} · ${x.code} · ${x.productType}` }))} />
             </Field>
             <Field label="Age of flock (weeks)"><Input type="number" value={f.ageOfFlock} onChange={(e) => setF({ ...f, ageOfFlock: e.target.value })} /></Field>
             <Field label="Eggs received"><Input type="number" value={f.eggsReceived} onChange={(e) => setF({ ...f, eggsReceived: e.target.value })} /></Field>

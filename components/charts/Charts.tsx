@@ -31,5 +31,9 @@ export const PieChartView = dynamic(
   () => import("./ChartsImpl").then((m) => m.PieChartView),
   { ssr: false, loading: Placeholder }
 );
+export const DonutChartView = dynamic(
+  () => import("./ChartsImpl").then((m) => m.DonutChartView),
+  { ssr: false, loading: Placeholder }
+);
 
 export type { BarDatum, Series, PieDatum } from "./ChartsImpl";

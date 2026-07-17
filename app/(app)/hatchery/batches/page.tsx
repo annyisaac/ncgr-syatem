@@ -251,7 +251,7 @@ export default function BatchesPage() {
                 <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
                 <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>
                 <Td className="text-right">{b.saleableCount.toLocaleString()}</Td>
-                <Td><Pill tone={b.status === "delivered" ? "fulfilled" : b.status === "dispatched" ? "gold" : "info"}>{b.status}</Pill></Td>
+                <Td><Pill tone={b.status === "inactive" ? "neutral" : b.status === "delivered" ? "fulfilled" : b.status === "dispatched" ? "gold" : "info"}>{b.status}</Pill></Td>
               </tr>
             ))}
           </tbody>

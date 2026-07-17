@@ -68,11 +68,13 @@ const CHECK_LABEL: Record<string, string> = {
 
 function OrdersInner() {
   const { user } = useAuth();
-  const { orders, upsertOrder, setOrders } = useData();
+  const { orders, upsertOrder, removeOrder } = useData();
   const { toast } = useToast();
   const search = useSearchParams();
   const tile = search.get("tile") ?? "all";
   const dateParam = search.get("date") ?? "";
+  // Deep-link from a notification: show just that one order.
+  const orderParam = search.get("order") ?? "";
 
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
@@ -91,11 +93,16 @@ function OrdersInner() {
   const isAdmin = role === "Admin";
   const isSales = role === "Tetra Zone Manager" || role === "Ross Order Receiver";
   const isChecker = role === "Tetra Payment Checker" || role === "Ross Payment Checker";
-  const canAct = isAdmin || isSales;
+  // Payment checkers now get the same order privileges as a seller (add + edit).
+  const canSell = isSales || isChecker;
+  const canAct = isAdmin || canSell;
 
   const rows = useMemo(() => {
     if (!user) return [];
     let list = visibleOrders(orders, user);
+
+    // Arrived from a notification — show only that order, ignoring other filters.
+    if (orderParam) return list.filter((o) => o.id === orderParam);
 
     // Only confirmed orders reach the payment checker (Admin sees all).
     if (isChecker) list = list.filter((o) => o.confirmedOk);
@@ -136,7 +143,7 @@ function OrdersInner() {
               ? -1
               : a.plan - b.plan
       );
-  }, [orders, user, isChecker, tile, statusFilter, dateFilter, query]);
+  }, [orders, user, isChecker, tile, statusFilter, dateFilter, query, orderParam]);
 
   if (!user) return null;
 
@@ -159,22 +166,14 @@ function OrdersInner() {
     );
   }
   function doReorder(o: Order, dir: -1 | 1) {
-    setOrders(reorderPlan(orders, o.id, dir));
+    // Only the reordered rows change — save those, never the whole collection
+    // (a full replace deletes orders this tab hasn't loaded yet).
+    const next = reorderPlan(orders, o.id, dir);
+    const before = new Map(orders.map((x) => [x.id, x]));
+    next.filter((x) => before.get(x.id) !== x).forEach((x) => void upsertOrder(x));
   }
 
   function buildActions(o: Order): DropdownAction[] {
-    // Payment checkers can record payments (they receive them), nothing else.
-    if (isChecker) {
-      const r = canAddPayment(o);
-      return [
-        {
-          label: "Add payment",
-          disabled: !!r,
-          disabledReason: r ?? "",
-          onClick: () => setModal({ type: "pay", order: o }),
-        },
-      ];
-    }
     if (!canAct) return [];
     const acts: DropdownAction[] = [];
 
@@ -241,7 +240,26 @@ function OrdersInner() {
       });
     }
 
-    if (isSales && !isClosed(o) && !o.request) {
+    // Admin only, irreversible — the row and its history are gone for good.
+    if (isAdmin) {
+      acts.push({
+        label: "Delete order",
+        danger: true,
+        onClick: () => {
+          if (
+            !confirm(
+              `Permanently delete ${o.name}'s order (${o.chicks.toLocaleString()} ${o.product}, ${formatDate(o.date)})?\n\n` +
+                `This cannot be undone and its history is lost. To cancel an order instead, use Reject or Refund.`
+            )
+          )
+            return;
+          void removeOrder(o.id);
+          toast(`Order for ${o.name} deleted.`);
+        },
+      });
+    }
+
+    if (canSell && !isClosed(o) && !o.request) {
       acts.push({
         label: "Request refund / compensation",
         onClick: () => setModal({ type: "request", order: o }),
@@ -303,7 +321,14 @@ function OrdersInner() {
         </div>
       </div>
 
-      {(tile !== "all" || dateFilter) && (
+      {orderParam && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Pill tone="gold">Showing one order from a notification</Pill>
+          <Link href="/orders" className="text-xs text-gold-dark underline">Show all orders</Link>
+        </div>
+      )}
+
+      {!orderParam && (tile !== "all" || dateFilter) && (
         <div className="flex flex-wrap items-center gap-2">
           {tile !== "all" && <Pill tone="info">Filtered: {tile}</Pill>}
           {dateFilter && (

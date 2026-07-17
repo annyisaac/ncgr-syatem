@@ -7,7 +7,6 @@ import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Kpi } from "@/components/dashboard/Kpi";
-import { RecentActivity } from "@/components/RecentActivity";
 import { formatRWF } from "@/lib/config";
 import { balance, toDeliver } from "@/lib/types";
 import { formatDate, todayISO } from "@/lib/format";
@@ -103,7 +102,6 @@ export default function DsrHome() {
         ))}
       </div>
 
-      <RecentActivity />
     </div>
   );
 }

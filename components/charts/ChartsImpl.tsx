@@ -235,6 +235,43 @@ export interface PieDatum {
   value: number;
 }
 
+/** Donut with custom colours and a centered label (legend is rendered by the caller). */
+export function DonutChartView({
+  data,
+  colors,
+  centerLabel,
+  centerSub,
+}: {
+  data: PieDatum[];
+  colors: string[];
+  centerLabel: string;
+  centerSub?: string;
+}) {
+  const mounted = useMounted();
+  if (!mounted) return <Placeholder />;
+  const total = data.reduce((s, d) => s + d.value, 0);
+  if (total === 0)
+    return <div className="flex h-64 items-center justify-center text-sm text-ink/40">No data</div>;
+  return (
+    <div className="relative h-64 w-full">
+      <ResponsiveContainer width="100%" height="100%">
+        <PieChart>
+          <Pie data={data} dataKey="value" nameKey="label" cx="50%" cy="50%" innerRadius={66} outerRadius={94} paddingAngle={2} stroke="none">
+            {data.map((_, i) => (
+              <Cell key={i} fill={colors[i % colors.length]} />
+            ))}
+          </Pie>
+          <Tooltip />
+        </PieChart>
+      </ResponsiveContainer>
+      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+        <span className="text-base font-bold text-ink">{centerLabel}</span>
+        {centerSub && <span className="text-[0.7rem] text-muted">{centerSub}</span>}
+      </div>
+    </div>
+  );
+}
+
 export function PieChartView({ data }: { data: PieDatum[] }) {
   const mounted = useMounted();
   if (!mounted) return <Placeholder />;

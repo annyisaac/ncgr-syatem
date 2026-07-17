@@ -38,7 +38,11 @@ import type {
   Machine,
   MachineReading,
   Operator,
+  Farm,
+  Flock,
   Reception,
+  SparePart,
+  SparePartRequest,
   StoreReading,
   Supply,
   Vaccination,
@@ -65,6 +69,10 @@ interface HatcheryContextValue {
   dispatches: Dispatch[];
   farmVisits: FarmVisit[];
   vaccineRequests: VaccineRequest[];
+  spareParts: SparePart[];
+  spareRequests: SparePartRequest[];
+  farms: Farm[];
+  flocks: Flock[];
 
   reload: () => Promise<void>;
 
@@ -87,6 +95,10 @@ interface HatcheryContextValue {
   upsertDispatch: (d: Dispatch) => Promise<void>;
   upsertFarmVisit: (v: FarmVisit) => Promise<void>;
   upsertVaccineRequest: (r: VaccineRequest) => Promise<void>;
+  upsertSparePart: (p: SparePart) => Promise<void>;
+  upsertSpareRequest: (r: SparePartRequest) => Promise<void>;
+  upsertFarm: (f: Farm) => Promise<void>;
+  upsertFlock: (f: Flock) => Promise<void>;
 
   newId: (prefix: string) => string;
 }
@@ -124,11 +136,15 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const [dispatches, setDispatches] = useState<Dispatch[]>([]);
   const [farmVisits, setFarmVisits] = useState<FarmVisit[]>([]);
   const [vaccineRequests, setVaccineRequests] = useState<VaccineRequest[]>([]);
+  const [spareParts, setSpareParts] = useState<SparePart[]>([]);
+  const [spareRequests, setSpareRequests] = useState<SparePartRequest[]>([]);
+  const [farms, setFarms] = useState<Farm[]>([]);
+  const [flocks, setFlocks] = useState<Flock[]>([]);
 
   const load = useCallback(async () => {
     try {
       const [
-        rec, store, fum, mac, op, bat, rd, cnt, box, sup, vac, bio, mnt, inv, alloc, disp, fv, vr,
+        rec, store, fum, mac, op, bat, rd, cnt, box, sup, vac, bio, mnt, inv, alloc, disp, fv, vr, sp, spr, frm, flk,
       ] = await Promise.all([
         fetchTable<Reception>("receptions"),
         fetchTable<StoreReading>("store_readings"),
@@ -148,6 +164,10 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
         fetchTable<Dispatch>("dispatches"),
         fetchTable<FarmVisit>("farm_visits"),
         fetchTable<VaccineRequest>("vaccine_requests"),
+        fetchTable<SparePart>("spare_parts"),
+        fetchTable<SparePartRequest>("spare_part_requests"),
+        fetchTable<Farm>("farms"),
+        fetchTable<Flock>("flocks"),
       ]);
       setReceptions(rec);
       setStoreReadings(store);
@@ -167,6 +187,10 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
       setDispatches(disp);
       setFarmVisits(fv);
       setVaccineRequests(vr);
+      setSpareParts(sp);
+      setSpareRequests(spr);
+      setFarms(frm);
+      setFlocks(flk);
     } catch (err) {
       console.error("Failed to load hatchery data:", err);
     }
@@ -230,6 +254,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     receptions, storeReadings, fumigations, machines, operators, batches: sortedBatches, readings,
     counts, boxLogs, supplies, vaccinations, biosecurity, maintenance,
     inventory, allocations, dispatches, farmVisits, vaccineRequests,
+    spareParts, spareRequests, farms, flocks,
     reload: load,
     upsertReception: (r) => persist("receptions", r, setReceptions),
     upsertStoreReading: (r) => persist("store_readings", r, setStoreReadings),
@@ -253,6 +278,10 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     upsertDispatch: (d) => persist("dispatches", d, setDispatches),
     upsertFarmVisit: (v) => persist("farm_visits", v, setFarmVisits),
     upsertVaccineRequest: (r) => persist("vaccine_requests", r, setVaccineRequests),
+    upsertSparePart: (p) => persist("spare_parts", p, setSpareParts),
+    upsertSpareRequest: (r) => persist("spare_part_requests", r, setSpareRequests),
+    upsertFarm: (f) => persist("farms", f, setFarms),
+    upsertFlock: (f) => persist("flocks", f, setFlocks),
     newId,
   };
 

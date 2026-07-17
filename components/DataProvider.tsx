@@ -42,6 +42,10 @@ import {
   saveDSROne,
   saveOrders,
   saveOrderOne,
+  saveStatementOne,
+  deleteStatementOne,
+  deleteRouteOne,
+  deleteOrderOne,
   placeOrder as placeOrderDb,
   type PlaceResult,
   saveRoutes,
@@ -78,6 +82,8 @@ interface DataContextValue {
 
   setOrders: (orders: Order[]) => Promise<void>;
   upsertOrder: (order: Order) => Promise<void>;
+  /** Admin-only, irreversible: permanently delete one order. */
+  removeOrder: (id: string) => Promise<void>;
   /** Race-safe order creation: server re-checks the day's availability. */
   placeOrder: (order: Order) => Promise<PlaceResult>;
 
@@ -85,6 +91,9 @@ interface DataContextValue {
   upsertCommission: (c: CommissionRequest) => Promise<void>;
 
   setStatements: (s: BankStatement[]) => Promise<void>;
+  upsertStatement: (s: BankStatement) => Promise<void>;
+  removeStatement: (id: string) => Promise<void>;
+  removeRoute: (id: string) => Promise<void>;
 
   setRoutes: (r: Route[]) => Promise<void>;
   upsertRoute: (r: Route) => Promise<void>;
@@ -245,6 +254,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setOrders: (orders) => apply("orders", orders, saveOrders),
     upsertOrder: (order) =>
       applyOne("orders", order, (o) => o.id === order.id, () => saveOrderOne(order)),
+    removeOrder: async (id) => {
+      setDb((prev) => ({ ...prev, orders: prev.orders.filter((o) => o.id !== id) }));
+      await deleteOrderOne(id);
+    },
     placeOrder: async (order) => {
       const res = await placeOrderDb(order);
       if (res.ok) {
@@ -260,10 +273,20 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     setStatements: (statements) =>
       apply("statements", statements, saveStatements),
+    upsertStatement: (s) =>
+      applyOne("statements", s, (x) => x.id === s.id, () => saveStatementOne(s)),
+    removeStatement: async (id) => {
+      setDb((prev) => ({ ...prev, statements: prev.statements.filter((s) => s.id !== id) }));
+      await deleteStatementOne(id);
+    },
 
     setRoutes: (routes) => apply("routes", routes, saveRoutes),
     upsertRoute: (r) =>
       applyOne("routes", r, (x) => x.id === r.id, () => saveRouteOne(r)),
+    removeRoute: async (id) => {
+      setDb((prev) => ({ ...prev, routes: (prev.routes ?? []).filter((r) => r.id !== id) }));
+      await deleteRouteOne(id);
+    },
 
     setAvailability: (a) => apply("availability", a, saveAvailability),
     upsertAvailability: (a) =>

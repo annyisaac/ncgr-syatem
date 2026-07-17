@@ -2,21 +2,36 @@
 
 import { useParams } from "next/navigation";
 import Link from "next/link";
+import { useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
+import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
+import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
+import { Field, Input } from "@/components/ui/Select";
 import { cn } from "@/lib/cn";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate, formatDateTime, nowISO } from "@/lib/format";
 import { LIFECYCLE_STEPS } from "@/lib/hatchery/types";
 import { removedInStage, fertilityPct, hatchabilityPct, flockRemoved, flockFertileAfterC2, flockTransferred } from "@/lib/hatchery/lifecycle";
+
+const CAN_EDIT_CODE = ["Admin", "Hatchery Manager"];
 
 export default function BatchDetailPage() {
   const params = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { batches } = useHatchery();
+  const { batches, upsertBatch } = useHatchery();
+  const { toast } = useToast();
   const batch = batches.find((b) => b.id === params.id);
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  const canEditCode = !!user && CAN_EDIT_CODE.includes(user.role);
 
   if (!user) return null;
   if (!batch) {
@@ -30,13 +45,63 @@ export default function BatchDetailPage() {
 
   const nextStep = LIFECYCLE_STEPS.find((s) => !batch.steps[s.key]);
 
+  function openEdit() {
+    setCode(batch!.batchNo);
+    setErr(null);
+    setEditOpen(true);
+  }
+
+  async function saveCode() {
+    setErr(null);
+    const next = code.trim();
+    if (!next) return setErr("Enter a batch code.");
+    if (next === batch!.batchNo) return setEditOpen(false);
+    if (batches.some((b) => b.id !== batch!.id && b.batchNo.toLowerCase() === next.toLowerCase()))
+      return setErr(`Batch code “${next}” is already used by another batch.`);
+    setSaving(true);
+    try {
+      await upsertBatch({
+        ...batch!,
+        batchNo: next,
+        history: [...(batch!.history ?? []), `${nowISO()} — Batch code changed ${batch!.batchNo} → ${next} (by ${user!.name})`],
+      });
+      toast(`Batch code updated to ${next}.`);
+      setEditOpen(false);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="space-y-5">
       <Link href="/hatchery/batches" className="text-sm text-gold-dark underline">← Back to batches</Link>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">{batch.batchNo}</h1>
-        <Pill tone={batch.status === "delivered" ? "fulfilled" : batch.status === "dispatched" ? "gold" : "info"}>{batch.status}</Pill>
+        <div className="flex flex-wrap items-center gap-2">
+          <h1 className="section-heading text-lg">{batch.batchNo}</h1>
+          {canEditCode && <Button variant="ghost" size="sm" onClick={openEdit}>Edit code</Button>}
+        </div>
+        <Pill tone={batch.status === "inactive" ? "neutral" : batch.status === "delivered" ? "fulfilled" : batch.status === "dispatched" ? "gold" : "info"}>{batch.status}</Pill>
       </div>
+
+      <Modal
+        open={editOpen}
+        onClose={() => setEditOpen(false)}
+        title="Edit batch code"
+        footer={
+          <>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancel</Button>
+            <Button onClick={saveCode} disabled={saving}>{saving ? "Saving…" : "Save code"}</Button>
+          </>
+        }
+      >
+        <div className="space-y-3">
+          <Field label="Batch code">
+            <Input value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. NCGR-H26-W01-01" />
+          </Field>
+          <p className="text-xs text-muted">Only the batch code changes — flocks, counts and history are kept.</p>
+          {err && <p className="text-sm text-status-refunded">{err}</p>}
+        </div>
+      </Modal>
 
       <Card>
         <CardHeader title="Batch" />

@@ -5,13 +5,29 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import { useData } from "./DataProvider";
 import { cn } from "@/lib/cn";
-import type { NotificationType } from "@/lib/types";
+import { notificationHref } from "@/lib/notifications";
+import type { AppNotification, NotificationType } from "@/lib/types";
 
 const TONE: Record<NotificationType, string> = {
   new_order: "bg-gold-bg text-gold-dark",
   payment: "bg-green-bg text-green",
+  confirmed: "bg-blue-bg text-blue",
   reschedule: "bg-blue-bg text-blue",
+  fulfilled: "bg-green-bg text-green",
   rejected: "bg-red-bg text-red",
+  refunded: "bg-red-bg text-red",
+  deleted: "bg-red-bg text-red",
+};
+
+const LABEL: Record<NotificationType, string> = {
+  new_order: "NEW",
+  payment: "PAY",
+  confirmed: "OK",
+  reschedule: "RSC",
+  fulfilled: "DLV",
+  rejected: "REJ",
+  refunded: "RFD",
+  deleted: "DEL",
 };
 
 function timeAgo(iso: string): string {
@@ -32,8 +48,9 @@ export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
-  const unread = notifications.filter((n) => !n.read).length;
-  const ordersHref = user?.role === "DSR" ? "/dsr/orders" : "/orders";
+  // The bell is an inbox: once read, a notification leaves the list.
+  const items = notifications.filter((n) => !n.read);
+  const unread = items.length;
 
   // Close on outside click.
   useEffect(() => {
@@ -45,10 +62,11 @@ export function NotificationBell() {
     return () => document.removeEventListener("mousedown", onClick);
   }, [open]);
 
-  function openNotification(id: string, orderId?: string) {
-    void markNotifications([id]);
+  // Reading it removes it from the list, then we go where it points.
+  function openNotification(n: AppNotification) {
+    void markNotifications([n.id]);
     setOpen(false);
-    if (orderId) router.push(ordersHref);
+    if (user) router.push(notificationHref(n, user.role));
   }
 
   return (
@@ -85,21 +103,18 @@ export function NotificationBell() {
             )}
           </div>
           <div className="max-h-[60vh] overflow-y-auto">
-            {notifications.length === 0 ? (
-              <p className="px-4 py-8 text-center text-sm text-muted">No notifications yet.</p>
+            {items.length === 0 ? (
+              <p className="px-4 py-8 text-center text-sm text-muted">You&apos;re all caught up.</p>
             ) : (
-              notifications.map((n) => (
+              items.map((n) => (
                 <button
                   key={n.id}
                   type="button"
-                  onClick={() => openNotification(n.id, n.orderId)}
-                  className={cn(
-                    "flex w-full items-start gap-3 border-b border-line px-4 py-3 text-left transition hover:bg-grey-bg",
-                    !n.read && "bg-gold-bg/30"
-                  )}
+                  onClick={() => openNotification(n)}
+                  className="flex w-full items-start gap-3 border-b border-line bg-gold-bg/30 px-4 py-3 text-left transition hover:bg-grey-bg"
                 >
                   <span className={cn("mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-[0.6rem] font-bold uppercase", TONE[n.type] ?? "bg-grey-bg text-ink")}>
-                    {n.type === "new_order" ? "NEW" : n.type === "payment" ? "PAY" : n.type === "reschedule" ? "RSC" : "REJ"}
+                    {LABEL[n.type] ?? "•"}
                   </span>
                   <span className="min-w-0 flex-1">
                     <span className="flex items-center justify-between gap-2">

@@ -50,6 +50,16 @@ export default function MachineDetailPage() {
 
   if (!user) return null;
 
+  // Attendants record readings but aren't allowed into machine detail/graphs.
+  if (user.role === "Hatchery Attendant") {
+    return (
+      <div className="space-y-4">
+        <Link href="/hatchery/machines" className="text-sm text-gold-dark underline">← Back to machines</Link>
+        <Card><p className="text-sm text-muted">Machine details aren&apos;t available for your role. You can record machine readings from the Machines page.</p></Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-5">
       <Link href="/hatchery/machines" className="text-sm text-gold-dark underline">← Back to machines</Link>

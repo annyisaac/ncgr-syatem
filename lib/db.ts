@@ -56,14 +56,23 @@ async function fetchCollection<T>(table: string): Promise<T[]> {
 }
 
 /**
- * Full replace of a collection: upsert every item, then delete rows that are
- * no longer in the list (e.g. removed bank statements, restored backups).
+ * Save a list of items (upsert only).
+ *
+ * DANGER — `prune`: when true this ALSO deletes every row missing from `items`,
+ * i.e. it makes the table match the caller's list exactly. A caller whose list
+ * is even slightly stale (e.g. another user created a row a second ago) would
+ * silently DELETE that row. It has caused real data loss, so `prune` is OFF by
+ * default and must only be used where "make the DB match this snapshot" is
+ * genuinely intended — currently only `replaceDatabase()` (backup restore).
+ *
+ * For everything else: upsert-only here, or a single-row upsert/delete below.
  */
 async function saveCollection<T>(
   table: string,
   pk: string,
   items: T[],
-  keyOf: (item: T) => string
+  keyOf: (item: T) => string,
+  prune = false
 ): Promise<void> {
   if (!inBrowser()) return;
   const sb = getSupabase();
@@ -79,7 +88,9 @@ async function saveCollection<T>(
     if (error) throw new Error(`Could not save ${table}: ${error.message}`);
   }
 
-  // Remove rows that are no longer present.
+  if (!prune) return;
+
+  // Remove rows that are no longer present (restore only).
   const { data: existing, error: readErr } = await sb.from(table).select(pk);
   if (readErr) throw new Error(`Could not check ${table}: ${readErr.message}`);
   const keep = new Set(items.map(keyOf));
@@ -110,17 +121,21 @@ export async function getDatabase(): Promise<Database> {
   return { users, dsrs, orders, commissions, statements, routes, availability, dsrVisits };
 }
 
-/** Replace everything (backup restore). */
+/**
+ * Replace everything (backup restore) — the ONLY place that prunes rows missing
+ * from the passed snapshot. It is destructive by design and is gated behind an
+ * explicit Admin confirmation in the UI.
+ */
 export async function replaceDatabase(db: Database): Promise<void> {
   await Promise.all([
-    saveUsers(db.users),
-    saveDSRs(db.dsrs),
-    saveOrders(db.orders),
-    saveCommissions(db.commissions),
-    saveStatements(db.statements),
-    saveRoutes(db.routes ?? []),
-    saveAvailability(db.availability ?? []),
-    saveCollection("dsr_visits", "id", db.dsrVisits ?? [], (v) => v.id),
+    saveCollection("users", "email", db.users, (u) => u.email, true),
+    saveCollection("dsrs", "id", db.dsrs, (d) => d.id, true),
+    saveCollection("orders", "id", db.orders, (o) => o.id, true),
+    saveCollection("commissions", "id", db.commissions, (c) => c.id, true),
+    saveCollection("statements", "id", db.statements, (s) => s.id, true),
+    saveCollection("routes", "id", db.routes ?? [], (r) => r.id, true),
+    saveCollection("availability", "id", db.availability ?? [], (a) => a.id, true),
+    saveCollection("dsr_visits", "id", db.dsrVisits ?? [], (v) => v.id, true),
   ]);
 }
 
@@ -292,7 +307,19 @@ async function upsertOne<T>(table: string, pk: string, key: string, item: T): Pr
   if (error) throw new Error(`Could not save to ${table}: ${error.message}`);
 }
 
+async function deleteOne(table: string, pk: string, key: string): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase().from(table).delete().eq(pk, key);
+  if (error) throw new Error(`Could not delete from ${table}: ${error.message}`);
+}
+
 export const saveOrderOne = (o: Order) => upsertOne("orders", "id", o.id, o);
+export const saveStatementOne = (s: BankStatement) => upsertOne("statements", "id", s.id, s);
+/** Explicit single-row deletes — the only way the app removes a row. */
+export const deleteStatementOne = (id: string) => deleteOne("statements", "id", id);
+export const deleteRouteOne = (id: string) => deleteOne("routes", "id", id);
+/** Admin-only, irreversible: permanently removes an order. */
+export const deleteOrderOne = (id: string) => deleteOne("orders", "id", id);
 
 // ---------------------------------------------------------------------------
 // Atomic order placement (availability-checked, race-safe)

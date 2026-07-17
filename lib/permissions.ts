@@ -60,14 +60,16 @@ const H_VACCINATION: NavItem = { label: "Vaccination", href: "/hatchery/vaccinat
 const H_FARM_VISITS: NavItem = { label: "Farm visits", href: "/hatchery/farm-visits" };
 const H_VAC_REQUESTS: NavItem = { label: "Vaccine requests", href: "/hatchery/vaccine-requests" };
 const H_COORD: NavItem = { label: "Coordination", href: "/hatchery/coordination" };
+const H_CHICKS: NavItem = { label: "Chick inventory", href: "/hatchery/chicks" };
 const H_INVENTORY: NavItem = { label: "Inventory", href: "/hatchery/inventory" };
+const H_SPAREPARTS: NavItem = { label: "Spare parts", href: "/hatchery/spareparts" };
 const H_BIO: NavItem = { label: "Biosecurity", href: "/hatchery/biosecurity" };
 const H_MAINT: NavItem = { label: "Maintenance", href: "/hatchery/maintenance" };
 
 const H_ALL: NavItem[] = [
   H_DASH, H_RECEPTION, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_BATCHES,
   H_CANDLING, H_HATCH, H_COUNTING, H_BOXES, H_VACCINATION, H_VAC_REQUESTS,
-  H_FARM_VISITS, H_COORD, H_INVENTORY, H_BIO, H_MAINT,
+  H_FARM_VISITS, H_COORD, H_CHICKS, H_INVENTORY, H_SPAREPARTS, H_BIO, H_MAINT,
 ];
 
 const NAV: Record<Role, NavItem[]> = {
@@ -95,6 +97,7 @@ const NAV: Record<Role, NavItem[]> = {
   "Ross Order Receiver": [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Clients", href: "/clients" },
+    { label: "Ross batches", href: "/ross-batches" },
     { label: "Commission", href: "/commission" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
@@ -127,7 +130,7 @@ const NAV: Record<Role, NavItem[]> = {
   "Operations Manager": H_ALL,
   "Hatchery Operations Manager": [
     H_DASH, H_RECEPTION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
-    H_COUNTING, H_BOXES, H_COORD, H_INVENTORY,
+    H_COUNTING, H_BOXES, H_COORD, H_CHICKS, H_INVENTORY,
   ],
   "Production Technician": [
     H_DASH, H_RECEPTION, H_FUMIGATION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
@@ -146,10 +149,10 @@ const NAV: Record<Role, NavItem[]> = {
     H_DASH, H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
   ],
   "Maintenance Technician": [
-    H_DASH, H_MACHINES, H_MAINT,
+    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS,
   ],
   "Hatchery Sales & Coordination Officer": [
-    H_DASH, H_COORD, H_FARM_VISITS, H_INVENTORY, H_BATCHES,
+    H_DASH, H_COORD, H_FARM_VISITS, H_CHICKS, H_INVENTORY, H_BATCHES,
   ],
 };
 

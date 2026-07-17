@@ -73,7 +73,7 @@ export default function DayPlanPage() {
   const params = useParams<{ date: string }>();
   const activeDate = params.date;
   const { user } = useAuth();
-  const { orders, routes, upsertRoute, setRoutes, upsertOrder, newId } = useData();
+  const { orders, routes, upsertRoute, removeRoute, upsertOrder, newId } = useData();
   const { toast } = useToast();
 
   const [rName, setRName] = useState("");
@@ -126,7 +126,9 @@ export default function DayPlanPage() {
   function deleteRoute(route: Route) {
     if (!confirm(`Delete route “${route.name}”? Its orders will be un-assigned.`)) return;
     scoped.filter((o) => o.routeId === route.id).forEach((o) => upsertOrder({ ...o, routeId: undefined, deliveryChicks: undefined, pickupLocation: undefined }));
-    setRoutes(routes.filter((r) => r.id !== route.id));
+    // Explicit single-row delete — sending the whole list would delete routes
+    // another planner created since this tab loaded.
+    void removeRoute(route.id);
     toast(`Route ${route.name} deleted.`);
   }
 

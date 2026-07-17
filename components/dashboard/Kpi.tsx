@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/cn";
 
-type Tone = "default" | "gold" | "green" | "red" | "blue";
+type Tone = "default" | "gold" | "green" | "red" | "blue" | "purple";
 
 /** Icon chip colours per tone (icon + tinted background). */
 const chipTone: Record<Tone, string> = {
@@ -11,6 +11,7 @@ const chipTone: Record<Tone, string> = {
   green: "bg-green-bg text-green",
   red: "bg-red-bg text-red",
   blue: "bg-blue-bg text-blue",
+  purple: "bg-[#efe7fb] text-[#7c3aed]",
 };
 
 /** Compact inline-SVG icon set (no icon library — keeps the bundle lean). */

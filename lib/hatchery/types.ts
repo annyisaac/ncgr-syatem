@@ -47,6 +47,30 @@ export const LIFECYCLE_STEPS: { key: string; label: string }[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Breeder farms & flocks — maintained by Admin / Hatchery Manager; selected
+// (not typed) by Production Technicians at egg reception.
+// ---------------------------------------------------------------------------
+
+export interface Farm {
+  id: string;
+  name: string;
+  location?: string;
+  active: boolean;
+  by: string;
+  on: string;
+}
+
+export interface Flock {
+  id: string;
+  code: string; // the flock ID, e.g. "NCGR-F25-R03-03"
+  farmId: string;
+  productType: Product; // breed this flock lays for
+  active: boolean;
+  by: string;
+  on: string;
+}
+
+// ---------------------------------------------------------------------------
 // Egg reception
 // ---------------------------------------------------------------------------
 
@@ -148,11 +172,15 @@ export interface MachineReading {
   wetF: number;
   digitalTempF: number;
   digitalHumidityF: number;
+  /** Egg-turning direction at this reading; alternates each turn. */
+  turning?: TurnDirection;
   operator: string; // operator name (verified by code)
   operatorCode?: string; // the code the operator entered to prove identity
   comment?: string;
   recordedBy: string;
 }
+
+export type TurnDirection = "left" | "right";
 
 // ---------------------------------------------------------------------------
 // Candling
@@ -201,7 +229,9 @@ export interface BatchFlock {
 // Batch
 // ---------------------------------------------------------------------------
 
-export type BatchStatus = "active" | "dispatched" | "delivered";
+// "inactive" = every chick delivered and inventory drained to zero; the batch
+// is closed and drops out of active lists.
+export type BatchStatus = "active" | "dispatched" | "delivered" | "inactive";
 
 export interface Batch {
   id: string;
@@ -266,7 +296,33 @@ export interface BoxLog {
 // Supplies inventory (unassembled boxes + vaccines)
 // ---------------------------------------------------------------------------
 
-export type SupplyKind = "box" | "vaccine";
+// Inventory categories kept in the general store. "box" and "vaccine" are the
+// original two (consumed by box-making + vaccination); the rest are purchased
+// consumables. Hatched chicks are NOT a Supply — they are read live from
+// chick_inventory as a read-only category on the Inventory page.
+export type SupplyKind =
+  | "box"
+  | "vaccine"
+  | "staff-food"
+  | "dog-food"
+  | "hygiene";
+
+export const SUPPLY_CATEGORIES: { value: SupplyKind; label: string; unit: string }[] = [
+  { value: "vaccine", label: "Vaccines", unit: "doses" },
+  { value: "box", label: "Unassembled boxes", unit: "boxes" },
+  { value: "staff-food", label: "Food (hatchery staff)", unit: "kg" },
+  { value: "dog-food", label: "Food (dogs)", unit: "kg" },
+  { value: "hygiene", label: "Hygiene materials", unit: "units" },
+];
+
+/** One purchase / stock-in: how much was bought, at what price, from whom. */
+export interface Purchase {
+  qty: number;
+  unitCost: number; // RWF per unit
+  supplier: string;
+  on: string;
+  by: string;
+}
 
 export interface Supply {
   id: string;
@@ -274,8 +330,43 @@ export interface Supply {
   name: string;
   unit: string; // e.g. "boxes", "doses"
   quantity: number; // current stock
+  purchases?: Purchase[]; // buy log (qty + cost + supplier)
   history: string[];
   by: string;
+  on: string;
+}
+
+// ---------------------------------------------------------------------------
+// Spare parts store — recorded by the Hatchery Manager, who approves each
+// withdrawal request before a part leaves the room.
+// ---------------------------------------------------------------------------
+
+export interface SparePart {
+  id: string;
+  name: string;
+  unit: string; // e.g. "pcs"
+  quantity: number; // in the spare-part room
+  location?: string;
+  purchases?: Purchase[];
+  history: string[];
+  by: string;
+  on: string;
+}
+
+export type SparePartRequestStatus = "pending" | "approved" | "rejected";
+
+export interface SparePartRequest {
+  id: string;
+  partId: string;
+  partName: string; // snapshot at request time
+  quantity: number;
+  reason: string;
+  requestedBy: string; // email
+  requestedByName: string;
+  status: SparePartRequestStatus;
+  decidedBy?: string;
+  decidedOn?: string;
+  note?: string;
   on: string;
 }
 

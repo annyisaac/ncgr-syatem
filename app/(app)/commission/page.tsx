@@ -26,7 +26,7 @@ import type { CommissionRequest } from "@/lib/types";
 
 export default function CommissionPage() {
   const { user } = useAuth();
-  const { orders, commissions, setOrders, upsertCommission, newId } = useData();
+  const { orders, commissions, upsertOrder, upsertCommission, newId } = useData();
   const { toast } = useToast();
 
   const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
@@ -52,10 +52,17 @@ export default function CommissionPage() {
 
   if (!user) return null;
 
+  /** Save only the orders that actually changed — re-sending the whole
+   *  collection deletes rows this tab hasn't loaded yet. */
+  function saveChanged(next: import("@/lib/types").Order[]) {
+    const before = new Map(orders.map((o) => [o.id, o]));
+    next.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
+  }
+
   function initiate(dsrId: string, dsrName: string, product: CommissionRequest["product"]) {
     const res = initiateCommission(orders, dsrId, dsrName, product, user!, newId);
     if (!res) return toast("No commission currently due for this DSR.", "info");
-    setOrders(res.orders);
+    saveChanged(res.orders);
     upsertCommission(res.request);
     toast(`Commission request initiated for ${dsrName}.`);
   }
@@ -63,21 +70,21 @@ export default function CommissionPage() {
   function payNow(dsrId: string, dsrName: string, product: CommissionRequest["product"]) {
     const res = payCommissionNow(orders, dsrId, dsrName, product, user!, newId);
     if (!res) return toast("No commission currently due for this DSR.", "info");
-    setOrders(res.orders);
+    saveChanged(res.orders);
     upsertCommission(res.request);
     toast(`Commission paid to ${dsrName}.`);
   }
 
   function approve(req: CommissionRequest) {
     const res = approveCommission(req, orders, user!);
-    setOrders(res.orders);
+    saveChanged(res.orders);
     upsertCommission(res.request);
     toast(`Approved commission for ${req.dsrName}.`);
   }
 
   function reject(req: CommissionRequest) {
     const res = rejectCommission(req, orders, user!);
-    setOrders(res.orders);
+    saveChanged(res.orders);
     upsertCommission(res.request);
     toast(`Rejected commission request for ${req.dsrName}.`);
   }

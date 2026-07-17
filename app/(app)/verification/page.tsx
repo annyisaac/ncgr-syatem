@@ -13,6 +13,7 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import type { BankStatement, Order, Payment } from "@/lib/types";
+import { orderTotal } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
 import { formatDateTime, nowISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
@@ -33,9 +34,29 @@ interface Staged {
   amtCol: string;
 }
 
+/** A checker may enter several transaction ids separated by a dash/space/comma. */
+function splitRefs(input: string): string[] {
+  return input.split(/[\s,\-]+/).map((s) => s.trim()).filter(Boolean);
+}
+function lookupRefs(refs: string[], statements: BankStatement[]) {
+  const all = statements.flatMap((s) => s.rows);
+  const norm = (s: string) => s.trim().toLowerCase();
+  return refs.map((ref) => ({ ref, matches: all.filter((r) => norm(r.ref) === norm(ref)) }));
+}
+
+/** Verified amount collected on an order vs what is owed. */
+function payMatch(o: Order): { tone: "green" | "gold" | "blue"; label: string } {
+  const total = orderTotal(o);
+  const paid = o.payments.filter((p) => p.verified).reduce((s, p) => s + p.amt, 0);
+  if (paid > total) return { tone: "blue", label: `Overpaid +${formatRWF(paid - total)}` };
+  if (paid === total) return { tone: "green", label: "Paid in full" };
+  if (paid > 0) return { tone: "gold", label: `Short ${formatRWF(total - paid)}` };
+  return { tone: "gold", label: `Owes ${formatRWF(total)}` };
+}
+
 export default function VerificationPage() {
   const { user } = useAuth();
-  const { orders, statements, setStatements, setOrders, newId } = useData();
+  const { orders, statements, upsertStatement, removeStatement, upsertOrder, newId } = useData();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -65,6 +86,12 @@ export default function VerificationPage() {
         .filter((o) => o.payments.length > 0)
         .flatMap((o) => o.payments.map((p, i) => ({ o, p, i })))
         .sort((a, b) => Number(!!a.p.verified) - Number(!!b.p.verified) || (a.o.date < b.o.date ? -1 : 1)),
+    [myOrders]
+  );
+
+  // Payments a checker sent to the Admin (missing/ambiguous transaction ids).
+  const approvalRows = useMemo(
+    () => myOrders.flatMap((o) => o.payments.map((p, i) => ({ o, p, i })).filter((x) => x.p.pendingApproval && !x.p.verified)),
     [myOrders]
   );
 
@@ -108,13 +135,15 @@ export default function VerificationPage() {
       amtColumn: staged.amtCol,
       rows,
     };
-    setStatements([...statements, stmt]);
+    // Single-row write — sending the whole list would delete statements another
+    // checker uploaded since this tab loaded.
+    void upsertStatement(stmt);
     setStaged(null);
     toast(`Added statement "${stmt.fileName}" (${rows.length} rows).`);
   }
 
-  function removeStatement(id: string) {
-    setStatements(statements.filter((s) => s.id !== id));
+  function onRemoveStatement(id: string) {
+    void removeStatement(id); // explicit single-row delete
     toast("Statement removed.");
   }
 
@@ -124,34 +153,78 @@ export default function VerificationPage() {
       return;
     }
     const res = runAutoCheck(orders, statements, user!, visibleIds);
-    setOrders(res.orders);
+    // Save ONLY the orders the check actually changed. Never re-send the whole
+    // collection — that deletes rows this tab hasn't loaded yet.
+    const before = new Map(orders.map((o) => [o.id, o]));
+    res.orders.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
     setOutcomes(res.outcomes);
     const verified = res.outcomes.filter((o) => o.result === "verified" || o.result === "corrected").length;
     toast(`Automatic check done — ${verified} verified/corrected, ${res.outcomes.length} checked.`);
   }
 
-  function saveManual(order: Order, payIndex: number, ref: string, comment: string) {
-    const payments = order.payments.map((p, i) =>
-      i === payIndex
-        ? {
-            ...p,
-            verified: true,
-            verifiedBy: user!.email,
-            verifiedOn: nowISO(),
-            checkedRef: ref,
-            comment,
-            flag: undefined,
-          }
-        : p
-    );
-    const line = `Manually verified payment (ref ${ref}) — ${comment}`;
-    setOrders(
-      orders.map((o) =>
-        o.id === order.id ? withHistory({ ...order, payments }, user!, line) : o
-      )
-    );
-    toast("Payment verified.");
+  function patchPayment(order: Order, payIndex: number, patch: Partial<Payment>, line: string) {
+    const payments = order.payments.map((p, i) => (i === payIndex ? { ...p, ...patch } : p));
+    // Single-row write: replacing the whole collection would delete any order
+    // created since this tab loaded.
+    void upsertOrder(withHistory({ ...order, payments }, user!, line));
+  }
+
+  function saveManual(order: Order, payIndex: number, input: string, comment: string) {
+    const p0 = order.payments[payIndex];
+    const refs = splitRefs(input);
+    const on = nowISO();
+    const base: Partial<Payment> = { verified: true, verifiedBy: user!.email, verifiedOn: on, comment, flag: undefined, pendingApproval: undefined };
+
+    // Cash / non-bank verifies at the recorded amount.
+    if (refs.length === 1 && refs[0].toLowerCase() === "cash") {
+      patchPayment(order, payIndex, { ...base, checkedRef: "CASH" }, `Manually verified payment (CASH) — ${comment}`);
+      toast("Payment verified (cash).");
+      return setManual(null);
+    }
+
+    const lookups = lookupRefs(refs, statements);
+    const allClean = refs.length > 0 && lookups.every((l) => l.matches.length === 1);
+
+    if (allClean) {
+      // Every id was found exactly once — use the amount(s) from the statement.
+      const amt = lookups.reduce((s, l) => s + l.matches[0].amt, 0);
+      const corrected = amt !== p0.amt;
+      const refLabel = refs.join(" + ");
+      patchPayment(order, payIndex,
+        { ...base, amt, checkedRef: refLabel, flag: corrected ? `Amount set to ${amt.toLocaleString()} from statement` : undefined },
+        corrected
+          ? `Verified payment (${refLabel}) — amount ${p0.amt.toLocaleString()} → ${amt.toLocaleString()} RWF from statement — ${comment}`
+          : `Verified payment (${refLabel}) from statement — ${comment}`);
+      toast(corrected ? `Verified — amount set to ${formatRWF(amt)} from the statement.` : `Verified ${formatRWF(amt)} from the statement.`);
+      return setManual(null);
+    }
+
+    // Missing or ambiguous transaction id → hold for the Admin's final say.
+    const missing = lookups.filter((l) => l.matches.length === 0).map((l) => l.ref);
+    const dup = lookups.filter((l) => l.matches.length > 1).map((l) => l.ref);
+    const flag = missing.length ? `Missing in statements: ${missing.join(", ")}` : `Duplicate ref: ${dup.join(", ")}`;
+    patchPayment(order, payIndex,
+      { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, flag },
+      `Payment (${refs.join(", ")}) sent to Admin — ${flag} — ${comment}`);
+    toast(`Sent to Admin for approval — ${flag}.`, "info");
     setManual(null);
+  }
+
+  // Admin's final say on payments a checker couldn't match to a statement.
+  function adminApprove(order: Order, payIndex: number) {
+    const p0 = order.payments[payIndex];
+    const ref = (p0.pendingApproval?.refs ?? []).join(" + ") || p0.ref;
+    patchPayment(order, payIndex,
+      { verified: true, verifiedBy: user!.email, verifiedOn: nowISO(), checkedRef: ref, comment: `Approved by Admin${p0.pendingApproval?.note ? ` — ${p0.pendingApproval.note}` : ""}`, flag: undefined, pendingApproval: undefined },
+      `Admin approved payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — ${formatRWF(p0.amt)}`);
+    toast("Payment approved.");
+  }
+  function adminReject(order: Order, payIndex: number) {
+    const p0 = order.payments[payIndex];
+    patchPayment(order, payIndex,
+      { verified: false, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" },
+      `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")})`);
+    toast("Payment rejected.", "info");
   }
 
   return (
@@ -232,7 +305,7 @@ export default function VerificationPage() {
                     <Td>{formatDateTime(s.uploadedOn)}</Td>
                     {isAdmin && (
                       <Td>
-                        <Button size="sm" variant="ghost" onClick={() => removeStatement(s.id)}>
+                        <Button size="sm" variant="ghost" onClick={() => onRemoveStatement(s.id)}>
                           Remove
                         </Button>
                       </Td>
@@ -293,6 +366,47 @@ export default function VerificationPage() {
         )}
       </Card>
 
+      {/* Admin's final say on missing/unmatched transaction ids */}
+      {isAdmin && (
+        <Card className={approvalRows.length ? "border-gold bg-gold-bg/25" : undefined}>
+          <CardHeader title={`Missing-payment approvals (${approvalRows.length})`} />
+          <p className="mb-3 text-sm text-ink/60">
+            Payments a checker could not match to any bank statement. You have the final say — approve to verify, or reject.
+          </p>
+          <TableWrap>
+            <thead>
+              <tr>
+                <Th>Client</Th><Th>Product</Th><Th className="text-right">Amount</Th>
+                <Th>Transaction id(s)</Th><Th>From checker</Th><Th>Action</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {approvalRows.length === 0 ? (
+                <EmptyRow colSpan={6} text="Nothing awaiting your approval." />
+              ) : approvalRows.map(({ o, p, i }) => (
+                <tr key={`${o.id}-${i}`}>
+                  <Td>{o.name}</Td>
+                  <Td>{o.product}</Td>
+                  <Td className="text-right">{formatRWF(p.amt)}</Td>
+                  <Td>
+                    <span className="font-mono text-xs">{(p.pendingApproval?.refs ?? []).join(", ")}</span>
+                    <div className="text-xs text-status-refunded">{p.flag}</div>
+                    {p.pendingApproval?.note && <div className="text-xs text-muted">“{p.pendingApproval.note}”</div>}
+                  </Td>
+                  <Td className="text-xs text-muted">{p.pendingApproval?.by}</Td>
+                  <Td>
+                    <div className="flex gap-2">
+                      <Button size="sm" onClick={() => adminApprove(o, i)}>Approve</Button>
+                      <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button>
+                    </div>
+                  </Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Card>
+      )}
+
       {/* Payments — awaiting + already checked */}
       <Card>
         <CardHeader title={`Payments (${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`} />
@@ -310,12 +424,13 @@ export default function VerificationPage() {
               <Th className="text-right">Amount</Th>
               <Th>Reference</Th>
               <Th>Status</Th>
+              <Th>Vs owed</Th>
               <Th>Action</Th>
             </tr>
           </thead>
           <tbody>
             {payRows.length === 0 ? (
-              <EmptyRow colSpan={7} text="No payments recorded on confirmed orders yet." />
+              <EmptyRow colSpan={8} text="No payments recorded on confirmed orders yet." />
             ) : (
               payRows.map(({ o, p, i }) => (
                 <tr key={`${o.id}-${i}`} className={p.verified ? "bg-green-bg" : undefined}>
@@ -333,13 +448,30 @@ export default function VerificationPage() {
                         <Pill tone="fulfilled">Checked ✓</Pill>
                         <div className="text-xs text-muted">by {p.verifiedBy ?? "—"}{p.verifiedOn ? ` · ${formatDateTime(p.verifiedOn)}` : ""}</div>
                       </div>
+                    ) : p.pendingApproval ? (
+                      <div>
+                        <Pill tone="gold">Awaiting admin</Pill>
+                        <div className="text-xs text-muted">sent by {p.pendingApproval.by}</div>
+                      </div>
                     ) : (
                       <Pill tone="pending">Unverified</Pill>
                     )}
                   </Td>
                   <Td>
+                    {(() => { const m = payMatch(o); return <Pill tone={m.tone === "green" ? "fulfilled" : m.tone === "blue" ? "info" : "gold"}>{m.label}</Pill>; })()}
+                  </Td>
+                  <Td>
                     {p.verified ? (
                       <span className="text-xs text-muted">—</span>
+                    ) : p.pendingApproval ? (
+                      isAdmin ? (
+                        <div className="flex gap-2">
+                          <Button size="sm" onClick={() => adminApprove(o, i)}>Approve</Button>
+                          <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted">with admin</span>
+                      )
                     ) : (
                       <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
                         Verify manually
@@ -357,6 +489,7 @@ export default function VerificationPage() {
         <ManualModal
           order={manual.order}
           payment={manual.order.payments[manual.payIndex]}
+          statements={statements}
           onClose={() => setManual(null)}
           onSave={(ref, comment) => saveManual(manual.order, manual.payIndex, ref, comment)}
         />
@@ -368,17 +501,34 @@ export default function VerificationPage() {
 function ManualModal({
   order,
   payment,
+  statements,
   onClose,
   onSave,
 }: {
   order: Order;
   payment: Payment;
+  statements: BankStatement[];
   onClose: () => void;
   onSave: (ref: string, comment: string) => void;
 }) {
   const [ref, setRef] = useState(payment.ref);
   const [comment, setComment] = useState("");
   const [err, setErr] = useState<string | null>(null);
+
+  // Live per-id lookup across all uploaded statements.
+  const refs = splitRefs(ref);
+  const cash = refs.length === 1 && refs[0].toLowerCase() === "cash";
+  const lookups = cash ? [] : lookupRefs(refs, statements);
+  const allClean = !cash && refs.length > 0 && lookups.every((l) => l.matches.length === 1);
+  const bankTotal = allClean ? lookups.reduce((s, l) => s + l.matches[0].amt, 0) : null;
+  const anyMissing = !cash && lookups.some((l) => l.matches.length === 0);
+
+  const action: "cash" | "verify" | "admin" = cash ? "cash" : allClean ? "verify" : "admin";
+  const btnLabel =
+    action === "cash" ? "Confirm (cash)"
+    : action === "verify" ? (bankTotal !== payment.amt ? `Verify at ${formatRWF(bankTotal!)}` : "Confirm verification")
+    : "Send to Admin for approval";
+
   return (
     <Modal
       open
@@ -389,21 +539,70 @@ function ManualModal({
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button
             onClick={() => {
-              if (!ref.trim()) return setErr("Enter the reference (or CASH).");
+              if (!ref.trim()) return setErr("Enter the transaction id(s) or CASH.");
               if (!comment.trim()) return setErr("A comment is required.");
               onSave(ref.trim(), comment.trim());
             }}
           >
-            Confirm verification
+            {btnLabel}
           </Button>
         </>
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-ink/60">Amount: <strong>{formatRWF(payment.amt)}</strong></p>
-        <Field label="Reference verified (cash allowed — write CASH)">
+        <p className="text-sm text-ink/60">Recorded amount: <strong>{formatRWF(payment.amt)}</strong></p>
+        <Field label="Transaction id(s) — two ids separated by a dash, e.g. 291516404175-29165859045 · cash: write CASH">
           <Input value={ref} onChange={(e) => setRef(e.target.value)} />
         </Field>
+
+        {!cash && refs.length > 0 && (
+          <div className="space-y-1 rounded-lg border border-line bg-cream/40 p-2.5 text-sm">
+            {lookups.map((l, idx) => (
+              <div key={idx} className="flex items-center justify-between gap-2">
+                <span className="truncate font-mono text-xs">{l.ref}</span>
+                {l.matches.length === 1 ? (
+                  <span className="shrink-0 text-green">found · {formatRWF(l.matches[0].amt)}</span>
+                ) : l.matches.length > 1 ? (
+                  <span className="shrink-0 text-gold-dark">appears {l.matches.length}× · review</span>
+                ) : (
+                  <span className="shrink-0 text-red">not in any statement</span>
+                )}
+              </div>
+            ))}
+            {allClean && bankTotal !== null && (
+              <div className="flex items-center justify-between border-t border-line pt-1 font-semibold">
+                <span>Total from statement</span><span>{formatRWF(bankTotal)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {action === "admin" && (
+          <div className="rounded-lg border border-gold bg-gold-bg/50 px-3 py-2 text-sm text-gold-dark">
+            {anyMissing ? "One or more transaction ids aren’t in any statement." : "A reference is ambiguous."} This can’t be
+            confirmed here — it will be <strong>sent to the Admin</strong> for the final decision.
+          </div>
+        )}
+        {action === "verify" && bankTotal !== payment.amt && (
+          <div className="rounded-lg border border-gold bg-gold-bg/50 px-3 py-2 text-sm text-gold-dark">
+            Recorded <strong>{formatRWF(payment.amt)}</strong> but the statement total is <strong>{formatRWF(bankTotal!)}</strong>.
+            On confirm the amount will be set to <strong>{formatRWF(bankTotal!)}</strong>.
+          </div>
+        )}
+        {(action === "verify" || action === "cash") && (() => {
+          const amt = action === "verify" ? bankTotal! : payment.amt;
+          const otherVerified = order.payments.filter((pp) => pp !== payment && pp.verified).reduce((s, pp) => s + pp.amt, 0);
+          const paid = otherVerified + amt;
+          const total = orderTotal(order);
+          const cls = paid === total ? "text-green" : "text-gold-dark";
+          const state = paid > total ? `overpaid by ${formatRWF(paid - total)}` : paid === total ? "paid in full" : `still short ${formatRWF(total - paid)}`;
+          return (
+            <div className="rounded-lg border border-line bg-cream/40 px-3 py-2 text-sm">
+              After this the order will have <strong>{formatRWF(paid)}</strong> of <strong>{formatRWF(total)}</strong> owed — <strong className={cls}>{state}</strong>.
+            </div>
+          );
+        })()}
+
         <Field label="Comment (required)">
           <Input value={comment} onChange={(e) => setComment(e.target.value)} />
         </Field>

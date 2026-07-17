@@ -18,7 +18,15 @@ import { nowISO, formatDate } from "@/lib/format";
 import { withHistory, fulfillOrder } from "@/lib/orders";
 import { markStep } from "@/lib/hatchery/lifecycle";
 import type { Allocation, Dispatch } from "@/lib/hatchery/types";
-import type { Order as SalesOrder } from "@/lib/types";
+import { PRODUCTS, balance, isFullyPaid, type Order as SalesOrder } from "@/lib/types";
+
+/** Delivery payment state for the coordination view. */
+function payState(o: SalesOrder): { label: string; tone: "green" | "gold" | "red" | "info" } {
+  if (isFullyPaid(o)) return { label: "Paid", tone: "green" };
+  if (o.debtOk) return { label: "On debt", tone: "info" };
+  if (o.payments.some((p) => p.amt > 0)) return { label: "Partial", tone: "gold" };
+  return { label: "Unpaid", tone: "red" };
+}
 
 const CAN_PROPOSE = ["Admin", "Hatchery Manager", "Hatchery Sales & Coordination Officer"];
 const CAN_FINALIZE = ["Admin", "Hatchery Manager"];
@@ -58,6 +66,22 @@ export default function CoordinationPage() {
     }
     return m;
   }, [allocations]);
+
+  // Sales demand: confirmed orders still awaiting delivery — this is what the
+  // hatchery must ship out. Sorted by delivery date + route order (the plan).
+  const toDeliver = useMemo(
+    () => orderList
+      .filter((o) => !o.deliverOk)
+      .slice()
+      .sort((a, b) => (a.date === b.date ? a.plan - b.plan : a.date < b.date ? -1 : 1)),
+    [orderList]
+  );
+  const demandByProduct = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const o of toDeliver) m.set(o.product, (m.get(o.product) ?? 0) + o.chicks);
+    return m;
+  }, [toDeliver]);
+  const chicksInStock = useMemo(() => inventory.reduce((s, i) => s + i.availableCount, 0), [inventory]);
 
   const batchNo = (id: string) => batches.find((b) => b.id === id)?.batchNo ?? id;
   const orderName = (id?: string) => (id ? orders.find((o) => o.id === id)?.name ?? id : "—");
@@ -137,9 +161,23 @@ export default function CoordinationPage() {
   }
 
   function confirmDelivery(d: Dispatch) {
-    upsertDispatch({ ...d, deliveredAt: nowISO() });
+    const on = nowISO();
+    upsertDispatch({ ...d, deliveredAt: on });
     const b = batches.find((x) => x.id === d.batchId);
-    if (b) upsertBatch({ ...markStep(b, "delivery", user!), status: "delivered" });
+    if (b) {
+      // Once every chick is delivered and the batch's inventory is drained to
+      // zero, close the batch (inactive). Otherwise it stays "delivered".
+      const batchDisp = dispatches.map((x) => (x.id === d.id ? { ...x, deliveredAt: on } : x)).filter((x) => x.batchId === d.batchId);
+      const allDelivered = batchDisp.length > 0 && batchDisp.every((x) => x.deliveredAt);
+      const avail = inventory.find((i) => i.batchId === d.batchId)?.availableCount ?? 0;
+      const closed = allDelivered && avail <= 0;
+      const nb = markStep(b, "delivery", user!);
+      upsertBatch(
+        closed
+          ? { ...nb, status: "inactive", history: [...nb.history, `${on} — Batch inactivated: all chicks delivered (by ${user!.name})`] }
+          : { ...nb, status: "delivered" }
+      );
+    }
     const so = orders.find((o) => o.id === d.orderId);
     if (so && !so.deliverOk) upsertOrder(fulfillOrder(so, user!, "Delivered (confirmed at hatchery dispatch)"));
     toast(`Delivery confirmed for ${orderName(d.orderId)}.`);
@@ -150,6 +188,67 @@ export default function CoordinationPage() {
   return (
     <div className="space-y-5">
       <h1 className="section-heading text-lg">Sales Coordination</h1>
+
+      {/* Delivery demand from sales — per product, payment status, delivery plan */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        {PRODUCTS.map((p) => (
+          <div key={p} className="rounded-xl border border-line bg-paper p-3.5">
+            <p className="text-xs text-muted">{p} to deliver</p>
+            <p className="text-xl font-bold text-gold-dark">{(demandByProduct.get(p) ?? 0).toLocaleString()}</p>
+          </div>
+        ))}
+        <div className="rounded-xl border border-line bg-paper p-3.5">
+          <p className="text-xs text-muted">Orders awaiting delivery</p>
+          <p className="text-xl font-bold text-ink">{toDeliver.length.toLocaleString()}</p>
+        </div>
+        <div className="rounded-xl border border-line bg-paper p-3.5">
+          <p className="text-xs text-muted">Chicks in inventory</p>
+          <p className={`text-xl font-bold ${chicksInStock > 0 ? "text-green" : "text-ink"}`}>{chicksInStock.toLocaleString()}</p>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader title={`Chicks to deliver — sales delivery plan (${toDeliver.length})`} />
+        <TableWrap>
+          <thead>
+            <tr>
+              <Th>Delivery date</Th>
+              <Th>Client</Th>
+              <Th>Product</Th>
+              <Th className="text-right">Chicks</Th>
+              <Th>Payment</Th>
+              <Th className="text-right">Balance</Th>
+              <Th className="text-right">Allocated</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {toDeliver.length === 0 ? (
+              <EmptyRow colSpan={7} text="Nothing awaiting delivery." />
+            ) : (
+              toDeliver.map((o) => {
+                const ps = payState(o);
+                const bal = balance(o);
+                const allocated = allocByOrder.get(o.id) ?? 0;
+                return (
+                  <tr key={o.id}>
+                    <Td>{formatDate(o.date)}</Td>
+                    <Td>{o.name}</Td>
+                    <Td>{o.product}</Td>
+                    <Td className="text-right">{o.chicks.toLocaleString()}</Td>
+                    <Td><Pill tone={ps.tone}>{ps.label}</Pill></Td>
+                    <Td className="text-right">{bal > 0 ? `${bal.toLocaleString()} RWF` : "—"}</Td>
+                    <Td className="text-right">
+                      {allocated >= o.chicks
+                        ? <Pill tone="green">ready</Pill>
+                        : <span className="text-muted">{allocated.toLocaleString()}/{o.chicks.toLocaleString()}</span>}
+                    </Td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </TableWrap>
+      </Card>
 
       {/* Orders needing chicks */}
       <Card>

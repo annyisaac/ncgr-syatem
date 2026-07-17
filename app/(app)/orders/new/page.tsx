@@ -32,9 +32,9 @@ export default function NewOrderPage() {
 
   // Roles allowed to create orders.
   const roleProduct: Product | undefined =
-    user?.role === "Tetra Zone Manager"
+    user?.role === "Tetra Zone Manager" || user?.role === "Tetra Payment Checker"
       ? "Tetra Super Harco"
-      : user?.role === "Ross Order Receiver"
+      : user?.role === "Ross Order Receiver" || user?.role === "Ross Payment Checker"
         ? "Ross 308"
         : undefined;
   const isAdmin = user?.role === "Admin";

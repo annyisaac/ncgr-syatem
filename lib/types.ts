@@ -84,7 +84,16 @@ export function isHatcheryRole(role: Role): boolean {
 }
 
 /** An in-app notification (also mirrored to email in Tier 2). */
-export type NotificationType = "new_order" | "payment" | "reschedule" | "rejected";
+/** Every action on an order notifies whoever "has" it (see `_order_audience`). */
+export type NotificationType =
+  | "new_order"
+  | "payment"
+  | "reschedule"
+  | "rejected"
+  | "confirmed"
+  | "fulfilled"
+  | "refunded"
+  | "deleted";
 export interface AppNotification {
   id: string;
   recipient: string;
@@ -174,6 +183,11 @@ export interface Payment {
   comment?: string; // required for manual verification
   checkedRef?: string; // the reference the checker actually verified
   flag?: string; // e.g. "Amount corrected from statement", "Duplicate ref"
+  /**
+   * A checker tried to verify but one or more transaction ids were not in any
+   * bank statement — the payment is held for the Admin's final decision.
+   */
+  pendingApproval?: { by: string; on: string; refs: string[]; note?: string };
 }
 
 export interface Order {

@@ -35,7 +35,13 @@ export default function DSRDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const { user } = useAuth();
-  const { dsrs, orders, setOrders, upsertCommission, upsertDSR, newId } = useData();
+  const { dsrs, orders, upsertOrder, upsertCommission, upsertDSR, newId } = useData();
+
+  /** Save only the orders that changed — never re-send the whole collection. */
+  const saveChanged = (next: import("@/lib/types").Order[]) => {
+    const before = new Map(orders.map((o) => [o.id, o]));
+    next.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
+  };
   const { toast } = useToast();
   const [targetInput, setTargetInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -82,7 +88,7 @@ export default function DSRDetailPage() {
       toast("No commission due for this DSR.", "info");
       return;
     }
-    setOrders(res.orders);
+    saveChanged(res.orders);
     upsertCommission(res.request);
     toast(`Commission request initiated for ${dsr.name}.`);
   }
@@ -94,7 +100,7 @@ export default function DSRDetailPage() {
       toast("No commission due for this DSR.", "info");
       return;
     }
-    setOrders(res.orders);
+    saveChanged(res.orders);
     upsertCommission(res.request);
     toast(`Commission paid to ${dsr.name}.`);
   }
