@@ -511,8 +511,10 @@ function SalesOverview({
   focus: "Ross 308" | "Tetra Super Harco";
   Tail: React.ComponentType<{ active: Order[]; scoped: Order[] }>;
 }) {
+  const router = useRouter();
   const [preset, setPreset] = useState<PeriodPreset>("month");
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const [q, setQ] = useState("");
   const today = todayISO();
   const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
 
@@ -559,12 +561,34 @@ function SalesOverview({
 
   return (
     <div className="space-y-5">
-      {/* Greeting left, period picker right */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Greeting left, a bare search pill centred, period picker right */}
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-lg font-bold text-ink">
           Hey {firstName} — <span className="font-normal text-muted">here&apos;s your sales overview</span>
         </h1>
-        <div className="flex flex-wrap items-center gap-2">
+        {/* Enter hands the query to the Orders page (?q= prefills its search).
+            order-last drops it to its own full row on small screens. */}
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            const s = q.trim();
+            if (s) router.push(`/orders?q=${encodeURIComponent(s)}`);
+          }}
+          className="order-last relative w-full min-w-0 lg:order-none lg:mx-auto lg:w-96"
+        >
+          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden>
+            <circle cx="9" cy="9" r="5.5" />
+            <path d="m13.5 13.5 3.5 3.5" />
+          </svg>
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search orders — client, phone…"
+            aria-label="Search orders"
+            className="h-10 w-full rounded-full border border-line bg-paper pl-10 pr-4 text-sm text-ink outline-none transition focus:border-gold"
+          />
+        </form>
+        <div className="ml-auto flex flex-wrap items-center gap-2 lg:ml-0">
           <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
             {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>

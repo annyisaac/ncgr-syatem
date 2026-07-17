@@ -76,7 +76,8 @@ function OrdersInner() {
   // Deep-link from a notification: show just that one order.
   const orderParam = search.get("order") ?? "";
 
-  const [query, setQuery] = useState("");
+  // ?q= prefills the search (the dashboard's search bar hands off to here).
+  const [query, setQuery] = useState(search.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(dateParam);
   const [modal, setModal] = useState<ModalState>(null);
