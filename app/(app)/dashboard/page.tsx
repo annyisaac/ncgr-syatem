@@ -492,13 +492,17 @@ function ZoneDashboard({
 
   return (
     <div className="space-y-5">
-      <AvailabilityPanel availability={availability} orders={orders} focus="Tetra Super Harco" />
-
-      <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-
-      <Card>
-        <DateRange value={range} onChange={setRange} />
+      {/* Slim filter strip: search + date range share one row, top-left. */}
+      <Card className="py-3">
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+          <div className="w-full min-w-0 sm:w-80">
+            <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
+          </div>
+          <DateRange value={range} onChange={setRange} />
+        </div>
       </Card>
+
+      <AvailabilityPanel availability={availability} orders={orders} focus="Tetra Super Harco" />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ZoneTile tone="gold" icon={ZICON.orders} value={String(newOrders)} label="Orders (new)" sub="New orders received" />
@@ -787,13 +791,17 @@ function RossDashboard({
 
   return (
     <div className="space-y-5">
-      <AvailabilityPanel availability={availability} orders={orders} focus="Ross 308" />
-
-      <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-
-      <Card>
-        <DateRange value={range} onChange={setRange} />
+      {/* Slim filter strip: search + date range share one row, top-left. */}
+      <Card className="py-3">
+        <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
+          <div className="w-full min-w-0 sm:w-80">
+            <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
+          </div>
+          <DateRange value={range} onChange={setRange} />
+        </div>
       </Card>
+
+      <AvailabilityPanel availability={availability} orders={orders} focus="Ross 308" />
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <ZoneTile tone="gold" icon={ZICON.orders} value={String(newOrders)} label="Orders (new)" sub="New orders received" />
