@@ -146,11 +146,11 @@ export default function LoginPage() {
         <div className="flex flex-1 flex-col justify-center rounded-[28px] bg-paper px-6 py-10 shadow-pop sm:px-10 lg:px-14">
           <div className="mx-auto w-full max-w-[520px]">
           <Image
-            src={COMPANY.logoPath}
+            src="/logo-running.jpg"
             alt={`${COMPANY.name} logo`}
-            width={420}
-            height={140}
-            className="mx-auto h-24 w-auto object-contain"
+            width={520}
+            height={302}
+            className="mx-auto h-auto w-full max-w-[360px] object-contain"
             priority
             unoptimized
           />
