@@ -52,10 +52,10 @@ export default function DashboardPage() {
     return <CheckerDashboard orders={visible} statements={statements} user={user} />;
   }
   if (user.role === "Ross Order Receiver") {
-    return <RossDashboard orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
+    return <RossDashboard user={user} orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
   }
   if (user.role === "Tetra Zone Manager") {
-    return <ZoneDashboard orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
+    return <ZoneDashboard user={user} orders={visible} availability={availability} dsrs={dsrs} routes={routes} />;
   }
 
   return (
@@ -427,21 +427,98 @@ function AdminDashboard({
 }
 
 // ---------------------------------------------------------------------------
-// Zone manager dashboard
+// Shared sales overview (Zone Manager & Ross): greeting + period picker,
+// stat strip, availability cards, then chart-left / metric-bars-right rows.
 // ---------------------------------------------------------------------------
 
-function ZoneDashboard({
+type PeriodPreset = "today" | "week" | "month" | "year" | "all" | "custom";
+
+const PERIODS: { value: PeriodPreset; label: string }[] = [
+  { value: "today", label: "Today" },
+  { value: "week", label: "This week" },
+  { value: "month", label: "This month" },
+  { value: "year", label: "This year" },
+  { value: "all", label: "All time" },
+  { value: "custom", label: "Custom range" },
+];
+
+const isoDay = (d: Date) =>
+  `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/**
+ * Presets span the WHOLE calendar period (month = 1st..last day), not
+ * "start..today": orders are placed for future delivery dates, and cutting at
+ * today would hide everything still coming.
+ */
+function presetToRange(p: PeriodPreset, custom: DateRangeValue, today: string): DateRangeValue {
+  const d = new Date(`${today}T00:00:00`);
+  switch (p) {
+    case "custom": return custom;
+    case "all": return ALL_TIME;
+    case "today": return { from: today, to: today };
+    case "week": {
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      const sunday = new Date(monday);
+      sunday.setDate(monday.getDate() + 6);
+      return { from: isoDay(monday), to: isoDay(sunday) };
+    }
+    case "month":
+      return { from: `${today.slice(0, 8)}01`, to: isoDay(new Date(d.getFullYear(), d.getMonth() + 1, 0)) };
+    case "year":
+      return { from: `${d.getFullYear()}-01-01`, to: `${d.getFullYear()}-12-31` };
+  }
+}
+
+/** Slim stat tile: tiny uppercase label over a big number. */
+function StatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-xl border border-line bg-paper px-4 py-3 shadow-card">
+      <p className="text-[0.6rem] font-bold uppercase tracking-[0.09em] text-muted">{label}</p>
+      <p className="mt-1 truncate text-[1.3rem] font-bold leading-tight text-ink tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+/** Label + number over a thin colored bar (width = value vs the card's max). */
+function MetricBar({ label, display, value, max, color }: {
+  label: string; display: string; value: number; max: number; color: string;
+}) {
+  const pct = max > 0 ? Math.round((value / max) * 100) : 0;
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 text-[0.8rem]">
+        <span className="text-ink">{label}</span>
+        <span className="font-semibold tabular-nums text-ink">{display}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-grey-bg">
+        <div className="h-full rounded-full" style={{ width: `${Math.max(value > 0 ? 3 : 0, pct)}%`, backgroundColor: color }} />
+      </div>
+    </div>
+  );
+}
+
+function SalesOverview({
+  user,
   orders,
   availability,
   dsrs,
   routes,
+  focus,
+  Tail,
 }: {
+  user: User;
   orders: Order[];
   availability: Availability[];
   dsrs: DSR[];
   routes: Route[];
+  focus: "Ross 308" | "Tetra Super Harco";
+  Tail: React.ComponentType<{ active: Order[]; scoped: Order[] }>;
 }) {
-  const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
+  const [preset, setPreset] = useState<PeriodPreset>("month");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const today = todayISO();
+  const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
 
   const scoped = useMemo(
     () => orders.filter((o) => (!range.from && !range.to ? true : inRange(o.date, range))),
@@ -449,26 +526,152 @@ function ZoneDashboard({
   );
   const active = useMemo(() => scoped.filter((o) => !isClosed(o)), [scoped]);
 
-  const newOrders = active.filter((o) => o.status === "pending").length;
-  const soldOrders = scoped.filter((o) => o.status === "fulfilled").length;
+  const chicks = active.reduce((s, o) => s + o.chicks, 0);
+  const totalValue = active.reduce((s, o) => s + orderTotal(o), 0);
   const collected = verifiedCollected(active);
   const owed = outstanding(active);
+  const recordedPaid = scoped.reduce((s, o) => s + paidAmount(o), 0);
 
-  const statusCounts = {
-    fulfilled: scoped.filter((o) => o.status === "fulfilled").length,
-    pending: scoped.filter((o) => o.status === "pending").length,
-    refunded: scoped.filter((o) => o.status === "refunded").length,
-    rejected: scoped.filter((o) => o.status === "rejected").length,
-  };
-  const donut = [
-    { label: "Fulfilled", value: statusCounts.fulfilled },
-    { label: "Pending", value: statusCounts.pending },
-    { label: "Refunded", value: statusCounts.refunded },
-    { label: "Rejected", value: statusCounts.rejected },
-  ];
-  const totalForPct = scoped.length || 1;
-  const pct = (v: number) => Math.round((v / totalForPct) * 100);
+  const pendingNew = scoped.filter((o) => o.status === "pending" && !o.confirmedOk).length;
+  const inProgress = scoped.filter((o) => o.status === "pending" && o.confirmedOk).length;
+  const completed = scoped.filter((o) => o.status === "fulfilled").length;
 
+  // Cumulative growth over the period's delivery dates.
+  const dates = useMemo(() => Array.from(new Set(scoped.map((o) => o.date))).sort(), [scoped]);
+  const ordersGrowth = useMemo(() => dates.map((d) => {
+    const upto = scoped.filter((o) => o.date <= d);
+    return {
+      label: formatDate(d),
+      pending: upto.filter((o) => o.status === "pending" && !o.confirmedOk).length,
+      inprogress: upto.filter((o) => o.status === "pending" && o.confirmedOk).length,
+      completed: upto.filter((o) => o.status === "fulfilled").length,
+    };
+  }), [dates, scoped]);
+  const salesGrowth = useMemo(() => dates.map((d) => ({
+    label: formatDate(d),
+    value: active.filter((o) => o.date <= d).reduce((s, o) => s + o.chicks, 0),
+  })), [dates, active]);
+  const revenueGrowth = useMemo(() => dates.map((d) => ({
+    label: formatDate(d),
+    value: scoped.filter((o) => o.date <= d).reduce((s, o) => s + paidAmount(o), 0),
+  })), [dates, scoped]);
+
+  const chicksToday = active.filter((o) => o.date === today).reduce((s, o) => s + o.chicks, 0);
+  const ordersMax = Math.max(pendingNew, inProgress, completed, scoped.length, 1);
+  const moneyMax = Math.max(recordedPaid, collected, owed, 1);
+  const firstName = user.name.split(" ")[0] || user.name;
+
+  return (
+    <div className="space-y-5">
+      {/* Greeting left, search + period picker right */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-bold text-ink">
+          Hey {firstName} — <span className="font-normal text-muted">here&apos;s your sales overview</span>
+        </h1>
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="w-full min-w-0 sm:w-72">
+            <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
+          </div>
+          <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
+            {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+          {preset === "custom" && (
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className={`${CTRL} w-auto`} />
+              <span className="text-muted">–</span>
+              <input type="date" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className={`${CTRL} w-auto`} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Slim stat strip */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <StatTile label="Total orders" value={String(scoped.length)} />
+        <StatTile label="Total chicks" value={chicks.toLocaleString()} />
+        <StatTile label="Total value" value={formatRWF(totalValue)} />
+        <StatTile label="Collected (verified)" value={formatRWF(collected)} />
+        <StatTile label="Pending orders" value={String(pendingNew + inProgress)} />
+      </div>
+
+      <AvailabilityPanel availability={availability} orders={orders} focus={focus} />
+
+      {/* Orders growth | orders metrics */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <SectionTitle label="Orders growth" />
+          <MultiLineChartView
+            data={ordersGrowth}
+            series={[
+              { key: "pending", name: "Pending", color: "#d4a017" },
+              { key: "inprogress", name: "In progress", color: "#2563eb" },
+              { key: "completed", name: "Completed", color: "#15803d" },
+            ]}
+          />
+        </Card>
+        <Card>
+          <SectionTitle label="Orders metrics" />
+          <div className="space-y-4 pt-1">
+            <MetricBar label="Pending (in period)" display={String(pendingNew)} value={pendingNew} max={ordersMax} color="#d4a017" />
+            <MetricBar label="In progress (in period)" display={String(inProgress)} value={inProgress} max={ordersMax} color="#2563eb" />
+            <MetricBar label="Completed (in period)" display={String(completed)} value={completed} max={ordersMax} color="#15803d" />
+            <MetricBar label="Total orders" display={String(scoped.length)} value={scoped.length} max={ordersMax} color="#7c3aed" />
+          </div>
+        </Card>
+      </div>
+
+      {/* Sales growth | sales metrics */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <SectionTitle label="Sales growth (chicks)" />
+          <LineChartView data={salesGrowth} color="#15803d" valueName="Chicks" />
+        </Card>
+        <Card>
+          <SectionTitle label="Sales metrics" />
+          <div className="space-y-4 pt-1">
+            <MetricBar label="Chicks in period" display={chicks.toLocaleString()} value={chicks} max={Math.max(chicks, 1)} color="#15803d" />
+            <MetricBar label="Chicks for today" display={chicksToday.toLocaleString()} value={chicksToday} max={Math.max(chicks, 1)} color="#d4a017" />
+          </div>
+        </Card>
+      </div>
+
+      {/* Revenue | revenue metrics */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <SectionTitle label="Revenue (amount paid)" />
+          <LineChartView data={revenueGrowth} color="#d97706" valueName="RWF" />
+        </Card>
+        <Card>
+          <SectionTitle label="Revenue metrics" />
+          <div className="space-y-4 pt-1">
+            <MetricBar label="Total paid (recorded)" display={formatRWF(recordedPaid)} value={recordedPaid} max={moneyMax} color="#d97706" />
+            <MetricBar label="Collected (verified)" display={formatRWF(collected)} value={collected} max={moneyMax} color="#15803d" />
+            <MetricBar label="Outstanding" display={formatRWF(owed)} value={owed} max={moneyMax} color="#b91c1c" />
+          </div>
+        </Card>
+      </div>
+
+      <Tail active={active} scoped={scoped} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Zone manager dashboard
+// ---------------------------------------------------------------------------
+
+function ZoneDashboard(props: {
+  user: User;
+  orders: Order[];
+  availability: Availability[];
+  dsrs: DSR[];
+  routes: Route[];
+}) {
+  return <SalesOverview {...props} focus="Tetra Super Harco" Tail={ZoneTail} />;
+}
+
+/** Zone tail: district + DSR performance tables under the shared overview. */
+function ZoneTail({ active }: { active: Order[]; scoped: Order[] }) {
   // District rollup: orders, chicks, collected vs total value.
   const districtRows = useMemo(() => {
     const m = new Map<string, { orders: number; chicks: number; sales: number; total: number }>();
@@ -491,51 +694,7 @@ function ZoneDashboard({
   }, [active]);
 
   return (
-    <div className="space-y-5">
-      {/* Slim filter strip: search + date range share one row, top-left. */}
-      <Card className="py-3">
-        <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-          <div className="w-full min-w-0 sm:w-80">
-            <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-          </div>
-          <DateRange value={range} onChange={setRange} />
-        </div>
-      </Card>
-
-      <AvailabilityPanel availability={availability} orders={orders} focus="Tetra Super Harco" />
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <ZoneTile tone="gold" icon={ZICON.orders} value={String(newOrders)} label="Orders (new)" sub="New orders received" />
-        <ZoneTile tone="ink" icon={ZICON.sold} value={String(soldOrders)} label="Orders sold" sub="Total orders completed" />
-        <ZoneTile tone="green" icon={ZICON.money} value={formatRWF(collected)} label="Collected (revenue)" sub="Total amount collected" />
-        <ZoneTile tone="red" icon={ZICON.alert} value={formatRWF(owed)} label="Outstanding" sub="Amount outstanding" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <SectionTitle label="Chicks per delivery date" />
-          <LineChartView data={chicksPerDate(active)} valueName="Chicks" />
-        </Card>
-
-        <Card>
-          <SectionTitle label="Orders by status" />
-          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2">
-            <DonutChartView
-              data={donut}
-              colors={["#15803d", "#d4a017", "#2563eb", "#b91c1c"]}
-              centerLabel={String(scoped.length)}
-              centerSub="Orders"
-            />
-            <div className="space-y-2.5 text-sm">
-              <LegendRow color="#15803d" label="Fulfilled" value={`${statusCounts.fulfilled} (${pct(statusCounts.fulfilled)}%)`} />
-              <LegendRow color="#d4a017" label="Pending" value={`${statusCounts.pending} (${pct(statusCounts.pending)}%)`} />
-              <LegendRow color="#2563eb" label="Refunded" value={`${statusCounts.refunded} (${pct(statusCounts.refunded)}%)`} />
-              <LegendRow color="#b91c1c" label="Rejected" value={`${statusCounts.rejected} (${pct(statusCounts.rejected)}%)`} />
-            </div>
-          </div>
-        </Card>
-      </div>
-
+    <>
       <Card>
         <SectionTitle label="District performance" />
         <TableWrap>
@@ -591,7 +750,7 @@ function ZoneDashboard({
           </tbody>
         </TableWrap>
       </Card>
-    </div>
+    </>
   );
 }
 
@@ -601,39 +760,6 @@ function SectionTitle({ label }: { label: string }) {
     <div className="mb-3 flex items-center gap-2">
       <span className="h-2.5 w-2.5 rounded-[3px] bg-gold" />
       <h3 className="text-[0.72rem] font-bold uppercase tracking-[0.08em] text-ink">{label}</h3>
-    </div>
-  );
-}
-
-const ZTONE: Record<string, { chip: string; bar: string }> = {
-  gold: { chip: "bg-gold-bg text-gold-dark", bar: "bg-gold" },
-  ink: { chip: "bg-grey-bg text-ink", bar: "bg-ink" },
-  green: { chip: "bg-green-bg text-green", bar: "bg-green" },
-  red: { chip: "bg-red-bg text-red", bar: "bg-red" },
-};
-
-const ZICON = {
-  orders: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M9 3h6a1 1 0 0 1 1 1v1H8V4a1 1 0 0 1 1-1Z" /><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M9 11h6M9 15h4" /></svg>,
-  sold: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M12 7v10M9.5 9.5a2.5 2.5 0 0 1 5 0c0 3-5 2-5 5a2.5 2.5 0 0 0 5 0" /></svg>,
-  money: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="6" width="20" height="12" rx="2" /><circle cx="12" cy="12" r="2.5" /><path d="M6 12h.01M18 12h.01" /></svg>,
-  alert: <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4l9 16H3L12 4Z" /><path d="M12 10v4M12 17h.01" /></svg>,
-};
-
-function ZoneTile({
-  tone, icon, value, label, sub,
-}: { tone: keyof typeof ZTONE; icon: React.ReactNode; value: string; label: string; sub: string }) {
-  const t = ZTONE[tone];
-  return (
-    <div className="overflow-hidden rounded-2xl border border-line bg-paper shadow-card">
-      <div className="flex items-center gap-3.5 p-4">
-        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${t.chip}`}>{icon}</span>
-        <div className="min-w-0">
-          <p className="truncate text-[1.35rem] font-bold leading-tight text-ink tabular-nums">{value}</p>
-          <p className="text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted">{label}</p>
-          <p className="text-[0.66rem] text-muted">{sub}</p>
-        </div>
-      </div>
-      <div className={`h-1 w-full ${t.bar}`} />
     </div>
   );
 }
@@ -730,45 +856,18 @@ function AvailabilityPanel({
 // Ross receiver dashboard
 // ---------------------------------------------------------------------------
 
-function RossDashboard({
-  orders,
-  availability,
-  dsrs,
-  routes,
-}: {
+function RossDashboard(props: {
+  user: User;
   orders: Order[];
   availability: Availability[];
   dsrs: DSR[];
   routes: Route[];
 }) {
-  const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
+  return <SalesOverview {...props} focus="Ross 308" Tail={RossTail} />;
+}
 
-  const scoped = useMemo(
-    () => orders.filter((o) => (!range.from && !range.to ? true : inRange(o.date, range))),
-    [orders, range]
-  );
-  const active = useMemo(() => scoped.filter((o) => !isClosed(o)), [scoped]);
-
-  const newOrders = active.filter((o) => o.status === "pending").length;
-  const chicks = active.reduce((s, o) => s + o.chicks, 0);
-  const collected = verifiedCollected(active);
-  const owed = outstanding(active);
-
-  const statusCounts = {
-    fulfilled: scoped.filter((o) => o.status === "fulfilled").length,
-    pending: scoped.filter((o) => o.status === "pending").length,
-    refunded: scoped.filter((o) => o.status === "refunded").length,
-    rejected: scoped.filter((o) => o.status === "rejected").length,
-  };
-  const donut = [
-    { label: "Fulfilled", value: statusCounts.fulfilled },
-    { label: "Pending", value: statusCounts.pending },
-    { label: "Refunded", value: statusCounts.refunded },
-    { label: "Rejected", value: statusCounts.rejected },
-  ];
-  const totalForPct = scoped.length || 1;
-  const pct = (v: number) => Math.round((v / totalForPct) * 100);
-
+/** Ross tail: district performance + recent orders under the shared overview. */
+function RossTail({ active, scoped }: { active: Order[]; scoped: Order[] }) {
   // District rollup: orders, chicks, collected vs total value.
   const districtRows = useMemo(() => {
     const m = new Map<string, { orders: number; chicks: number; sales: number; total: number }>();
@@ -790,45 +889,7 @@ function RossDashboard({
   const statusTone = (s: Order["status"]) => (s === "fulfilled" ? "fulfilled" : s === "refunded" || s === "rejected" ? "red" : "gold");
 
   return (
-    <div className="space-y-5">
-      {/* Slim filter strip: search + date range share one row, top-left. */}
-      <Card className="py-3">
-        <div className="flex flex-wrap items-start gap-x-6 gap-y-3">
-          <div className="w-full min-w-0 sm:w-80">
-            <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-          </div>
-          <DateRange value={range} onChange={setRange} />
-        </div>
-      </Card>
-
-      <AvailabilityPanel availability={availability} orders={orders} focus="Ross 308" />
-
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <ZoneTile tone="gold" icon={ZICON.orders} value={String(newOrders)} label="Orders (new)" sub="New orders received" />
-        <ZoneTile tone="ink" icon={ZICON.sold} value={chicks.toLocaleString()} label="Chicks ordered" sub="Total chicks this period" />
-        <ZoneTile tone="green" icon={ZICON.money} value={formatRWF(collected)} label="Collected (revenue)" sub="Total amount collected" />
-        <ZoneTile tone="red" icon={ZICON.alert} value={formatRWF(owed)} label="Outstanding" sub="Amount outstanding" />
-      </div>
-
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <Card>
-          <SectionTitle label="Chicks per delivery date" />
-          <LineChartView data={chicksPerDate(active)} valueName="Chicks" />
-        </Card>
-        <Card>
-          <SectionTitle label="Orders by status" />
-          <div className="grid grid-cols-1 items-center gap-3 sm:grid-cols-2">
-            <DonutChartView data={donut} colors={["#15803d", "#d4a017", "#2563eb", "#b91c1c"]} centerLabel={String(scoped.length)} centerSub="Orders" />
-            <div className="space-y-2.5 text-sm">
-              <LegendRow color="#15803d" label="Fulfilled" value={`${statusCounts.fulfilled} (${pct(statusCounts.fulfilled)}%)`} />
-              <LegendRow color="#d4a017" label="Pending" value={`${statusCounts.pending} (${pct(statusCounts.pending)}%)`} />
-              <LegendRow color="#2563eb" label="Refunded" value={`${statusCounts.refunded} (${pct(statusCounts.refunded)}%)`} />
-              <LegendRow color="#b91c1c" label="Rejected" value={`${statusCounts.rejected} (${pct(statusCounts.rejected)}%)`} />
-            </div>
-          </div>
-        </Card>
-      </div>
-
+    <>
       <Card>
         <SectionTitle label="District performance" />
         <TableWrap>
@@ -874,7 +935,7 @@ function RossDashboard({
           </tbody>
         </TableWrap>
       </Card>
-    </div>
+    </>
   );
 }
 
