@@ -143,7 +143,7 @@ export default function LoginPage() {
 
       {/* Form panel */}
       <div className="flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:h-screen">
-        <div className="my-auto w-full max-w-[440px] rounded-[28px] bg-paper p-6 shadow-pop sm:p-8">
+        <div className="my-auto w-full max-w-[440px] rounded-[28px] bg-paper px-6 py-5 shadow-pop sm:px-8 sm:py-6">
           <Image
             src={COMPANY.logoPath}
             alt={`${COMPANY.name} logo`}
@@ -154,15 +154,15 @@ export default function LoginPage() {
             unoptimized
           />
 
-          <h1 className="mt-4 text-center text-[2rem] font-bold tracking-tight text-ink">
+          <h1 className="mt-3 text-center text-[2rem] font-bold tracking-tight text-ink">
             Welcome back
           </h1>
-          <p className="mt-1.5 text-center text-[0.95rem] text-muted">
+          <p className="mt-1 text-center text-[0.95rem] text-muted">
             Sign in to access your secure workspace.
           </p>
-          <div className="mx-auto mt-4 h-[3px] w-14 rounded-full bg-gold" />
+          <div className="mx-auto mt-3 h-[3px] w-14 rounded-full bg-gold" />
 
-          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <form onSubmit={onSubmit} className="mt-5 space-y-3.5">
             <div className="space-y-2">
               <label htmlFor="email" className="block text-[0.7rem] font-bold uppercase tracking-wider text-muted">
                 Email
@@ -276,7 +276,7 @@ export default function LoginPage() {
             </button>
           </form>
 
-          <div className="mt-5 flex items-start gap-3 rounded-xl border border-gold/25 bg-gold-bg/60 p-4">
+          <div className="mt-4 flex items-start gap-3 rounded-xl border border-gold/25 bg-gold-bg/60 p-3.5">
             <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gold text-white">
               <Icon d={ICONS.shield} size={18} />
             </span>
@@ -289,8 +289,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <hr className="mt-5 border-line" />
-          <p className="mt-3 text-center text-[0.75rem] text-muted">
+          <hr className="mt-4 border-line" />
+          <p className="mt-3 text-center text-[0.7rem] text-muted">
             © {new Date().getFullYear()} {COMPANY.name}. All rights reserved.
           </p>
         </div>
