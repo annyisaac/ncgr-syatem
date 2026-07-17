@@ -76,56 +76,56 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen bg-[linear-gradient(135deg,#f6dc9f_0%,#f0c66f_55%,#ecbb5a_100%)] lg:h-screen lg:grid-cols-[52fr_48fr] lg:overflow-hidden">
+    <div className="grid min-h-screen bg-[linear-gradient(135deg,#f6e4b4_0%,#f1dfa6_38%,#e7e6c4_68%,#dde7cf_100%)] lg:grid-cols-2">
       {/* Brand panel — hidden on small screens */}
-      <div className="relative hidden flex-col justify-between overflow-hidden p-10 lg:flex lg:p-12">
+      <div className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex">
         <Image
           src="/tetra-chicks.jpeg"
           alt=""
           fill
-          sizes="52vw"
-          className="object-cover object-center"
+          sizes="50vw"
+          className="object-cover object-[18%_center]"
           priority
           aria-hidden
         />
-        {/* Light warm wash only — the photo's own blurred field is what carries
-            this panel, so the scrim lifts contrast for the copy without
-            bleaching the picture out. */}
+        {/* Warm scrim. The panel is portrait and the photo near-square, so
+            object-cover zooms in; anchoring left keeps the chicks to the right
+            and this wash keeps the copy legible where it crosses them. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[linear-gradient(100deg,rgba(255,248,230,0.78)_0%,rgba(255,248,230,0.52)_30%,rgba(255,251,238,0.22)_58%,rgba(255,255,255,0)_82%)]"
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(100deg,rgba(255,247,224,0.97)_0%,rgba(255,247,224,0.93)_30%,rgba(255,250,236,0.72)_55%,rgba(255,252,240,0.34)_78%,rgba(255,255,255,0.12)_100%)]"
         />
 
         <Image
           src={COMPANY.logoPath}
           alt={`${COMPANY.name} logo`}
-          width={420}
-          height={140}
-          className="relative z-10 h-28 w-auto object-contain"
+          width={300}
+          height={100}
+          className="relative z-10 h-20 w-auto object-contain"
           priority
           unoptimized
         />
 
         <div className="relative z-10 max-w-md">
-          <h2 className="text-[2.9rem] font-bold leading-[1.12] tracking-tight text-ink">
+          <h2 className="text-[2.6rem] font-bold leading-[1.1] tracking-tight text-ink">
             Empowering
             <br />
             Better Business
             <br />
             <span className="text-gold-dark">Decisions.</span>
           </h2>
-          <p className="mt-6 max-w-[19rem] text-[1.05rem] leading-relaxed text-ink/80">
+          <p className="mt-5 max-w-[22rem] text-[1rem] leading-relaxed text-ink/70">
             A secure digital platform built to help our team work smarter, faster
             and more efficiently.
           </p>
 
-          <ul className="mt-9 space-y-4">
+          <ul className="mt-8 space-y-3.5">
             {POINTS.map((p) => (
               <li key={p.label} className="flex items-center gap-4">
-                <span className="flex h-[52px] w-[52px] shrink-0 items-center justify-center rounded-2xl bg-white text-gold-dark shadow-card">
-                  <Icon d={ICONS[p.icon]} size={22} />
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-gold-dark shadow-card">
+                  <Icon d={ICONS[p.icon]} size={20} />
                 </span>
-                <span className="max-w-[12rem] text-[1rem] font-medium leading-snug text-ink">
+                <span className="max-w-[14rem] text-[0.95rem] font-medium leading-snug text-ink">
                   {p.label}
                 </span>
               </li>
@@ -133,44 +133,43 @@ export default function LoginPage() {
           </ul>
         </div>
 
-        <p className="relative z-10 inline-flex w-fit items-center gap-2.5 rounded-full bg-white/85 px-5 py-3 text-[0.85rem] font-medium text-ink shadow-card backdrop-blur">
+        <p className="relative z-10 inline-flex w-fit items-center gap-2 rounded-full bg-white/70 px-4 py-2.5 text-[0.8rem] font-medium text-ink backdrop-blur">
           <span className="text-gold-dark">
-            <Icon d={ICONS.pin} size={17} />
+            <Icon d={ICONS.pin} size={16} />
           </span>
-          {COMPANY.name} <span className="text-muted">•</span> {COMPANY.address}
+          {COMPANY.name} <span className="text-muted">·</span> {COMPANY.address}
         </p>
       </div>
 
-      {/* Form panel — a tall card inset over the warm page background */}
-      <div className="flex p-3 sm:p-5 lg:min-h-0">
-        <div className="flex flex-1 flex-col justify-center overflow-y-auto rounded-[28px] bg-paper px-6 py-6 shadow-pop sm:px-10 lg:px-14">
-          <div className="mx-auto w-full max-w-[520px]">
+      {/* Form panel */}
+      <div className="flex items-center justify-center p-4 sm:p-8">
+        <div className="w-full max-w-[520px] rounded-[28px] bg-paper p-8 shadow-pop sm:p-11">
           <Image
-            src="/logo-running.jpg"
+            src={COMPANY.logoPath}
             alt={`${COMPANY.name} logo`}
-            width={520}
-            height={302}
-            className="mx-auto h-auto w-full max-w-[260px] object-contain"
+            width={280}
+            height={94}
+            className="mx-auto h-16 w-auto object-contain"
             priority
             unoptimized
           />
 
-          <h1 className="mt-3 text-center text-[2.2rem] font-bold tracking-tight text-ink">
+          <h1 className="mt-6 text-center text-[2rem] font-bold tracking-tight text-ink">
             Welcome back
           </h1>
-          <p className="mt-1.5 text-center text-[1rem] text-muted">
+          <p className="mt-1.5 text-center text-[0.95rem] text-muted">
             Sign in to access your secure workspace.
           </p>
-          <div className="mx-auto mt-4 h-1 w-16 rounded-full bg-gold" />
+          <div className="mx-auto mt-5 h-[3px] w-14 rounded-full bg-gold" />
 
-          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+          <form onSubmit={onSubmit} className="mt-7 space-y-5">
             <div className="space-y-2">
-              <label htmlFor="email" className="block text-[0.75rem] font-bold uppercase tracking-[0.09em] text-muted">
+              <label htmlFor="email" className="block text-[0.7rem] font-bold uppercase tracking-wider text-muted">
                 Email
               </label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-muted">
-                  <Icon d={ICONS.mail} size={20} />
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
+                  <Icon d={ICONS.mail} />
                 </span>
                 <input
                   id="email"
@@ -180,18 +179,18 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="h-14 w-full rounded-xl border border-line bg-field pl-14 pr-4 text-[1.05rem] text-ink outline-none transition focus:border-gold"
+                  className="h-14 w-full rounded-xl border border-line bg-field pl-12 pr-4 text-[1rem] text-ink outline-none transition focus:border-gold"
                 />
               </div>
             </div>
 
             <div className="space-y-2">
-              <label htmlFor="password" className="block text-[0.75rem] font-bold uppercase tracking-[0.09em] text-muted">
+              <label htmlFor="password" className="block text-[0.7rem] font-bold uppercase tracking-wider text-muted">
                 Password
               </label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-5 top-1/2 -translate-y-1/2 text-muted">
-                  <Icon d={ICONS.lock} size={20} />
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
+                  <Icon d={ICONS.lock} />
                 </span>
                 <input
                   id="password"
@@ -201,7 +200,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-14 w-full rounded-xl border border-line bg-field pl-14 pr-14 text-[1.05rem] text-ink outline-none transition focus:border-gold"
+                  className="h-14 w-full rounded-xl border border-line bg-field pl-12 pr-12 text-[1rem] text-ink outline-none transition focus:border-gold"
                 />
                 <button
                   type="button"
@@ -224,7 +223,7 @@ export default function LoginPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="inline-flex cursor-pointer select-none items-center gap-3 text-[0.95rem] text-ink">
+              <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[0.85rem] text-ink">
                 <input
                   type="checkbox"
                   checked={remember}
@@ -244,7 +243,7 @@ export default function LoginPage() {
               <button
                 type="button"
                 onClick={() => setForgot((v) => !v)}
-                className="text-[0.95rem] font-semibold text-gold-dark hover:underline"
+                className="text-[0.85rem] font-semibold text-gold-dark hover:underline"
               >
                 Forgot password?
               </button>
@@ -270,31 +269,30 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-gold-dark text-[1.1rem] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-14 w-full items-center justify-center gap-2.5 rounded-xl bg-gold text-[1rem] font-bold text-ink transition hover:bg-gold-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Icon d={ICONS.lock} size={20} />
+              <Icon d={ICONS.lock} size={18} />
               {submitting ? "Signing in…" : "Sign in"}
             </button>
           </form>
 
-          <div className="mt-5 flex items-start gap-4 rounded-2xl border border-gold/25 bg-gold-bg/70 p-4">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold text-white">
-              <Icon d={ICONS.shield} size={20} />
+          <div className="mt-6 flex items-start gap-3 rounded-xl border border-gold/25 bg-gold-bg/60 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gold text-white">
+              <Icon d={ICONS.shield} size={18} />
             </span>
             <div>
-              <p className="text-[0.95rem] font-bold text-ink">Security Notice</p>
-              <p className="mt-1 text-[0.88rem] leading-relaxed text-muted">
+              <p className="text-[0.85rem] font-bold text-ink">Security Notice</p>
+              <p className="mt-0.5 text-[0.8rem] leading-relaxed text-muted">
                 Never share your password or verification code. Access is
                 restricted to authorized {COMPANY.name} personnel.
               </p>
             </div>
           </div>
 
-          <hr className="mt-5 border-line" />
-          <p className="mt-4 text-center text-[0.82rem] text-muted">
+          <hr className="mt-7 border-line" />
+          <p className="mt-4 text-center text-[0.75rem] text-muted">
             © {new Date().getFullYear()} {COMPANY.name}. All rights reserved.
           </p>
-          </div>
         </div>
       </div>
     </div>
