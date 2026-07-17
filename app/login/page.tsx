@@ -143,7 +143,7 @@ export default function LoginPage() {
 
       {/* Form panel */}
       <div className="flex items-center justify-center overflow-y-auto p-4 sm:p-6 lg:h-screen">
-        <div className="my-auto w-full max-w-[520px] rounded-[28px] bg-paper p-6 shadow-pop sm:p-8">
+        <div className="my-auto w-full max-w-[440px] rounded-[28px] bg-paper p-6 shadow-pop sm:p-8">
           <Image
             src={COMPANY.logoPath}
             alt={`${COMPANY.name} logo`}
@@ -168,8 +168,8 @@ export default function LoginPage() {
                 Email
               </label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
-                  <Icon d={ICONS.mail} />
+                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted">
+                  <Icon d={ICONS.mail} size={16} />
                 </span>
                 <input
                   id="email"
@@ -179,7 +179,7 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="h-14 w-full rounded-xl border border-line bg-field pl-12 pr-4 text-[1rem] text-ink outline-none transition focus:border-gold"
+                  className="h-12 w-full rounded-lg border border-line bg-field pl-10 pr-4 text-[0.9rem] text-ink outline-none transition focus:border-gold"
                 />
               </div>
             </div>
@@ -189,8 +189,8 @@ export default function LoginPage() {
                 Password
               </label>
               <div className="relative">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
-                  <Icon d={ICONS.lock} />
+                <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted">
+                  <Icon d={ICONS.lock} size={16} />
                 </span>
                 <input
                   id="password"
@@ -200,20 +200,20 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-14 w-full rounded-xl border border-line bg-field pl-12 pr-12 text-[1rem] text-ink outline-none transition focus:border-gold"
+                  className="h-12 w-full rounded-lg border border-line bg-field pl-10 pr-11 text-[0.9rem] text-ink outline-none transition focus:border-gold"
                 />
                 <button
                   type="button"
                   onClick={() => setShow((v) => !v)}
                   aria-label={show ? "Hide password" : "Show password"}
-                  className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted transition hover:bg-grey-bg hover:text-ink"
+                  className="absolute right-2.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-lg text-muted transition hover:bg-grey-bg hover:text-ink"
                 >
                   {show ? (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                       <path d="M3 3l14 14M8.2 8.3a2.5 2.5 0 0 0 3.5 3.5M6.1 6.2C4.3 7.3 2.9 9 2.5 10c.8 2 3.8 5 7.5 5 1.4 0 2.7-.4 3.8-1.1M11.5 5.2A7.6 7.6 0 0 0 10 5c-.5 0-1 .05-1.4.14M17.5 10c-.5-1.2-1.6-2.7-3.1-3.8" />
                     </svg>
                   ) : (
-                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                    <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
                       <path d="M2.5 10S5.5 5 10 5s7.5 5 7.5 5-3 5-7.5 5-7.5-5-7.5-5Z" />
                       <circle cx="10" cy="10" r="2.5" />
                     </svg>
@@ -269,9 +269,9 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex h-14 w-full items-center justify-center gap-2.5 rounded-xl bg-gold text-[1rem] font-bold text-ink transition hover:bg-gold-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-12 w-full items-center justify-center gap-2.5 rounded-lg bg-gold text-[0.95rem] font-bold text-ink transition hover:bg-gold-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
-              <Icon d={ICONS.lock} size={18} />
+              <Icon d={ICONS.lock} size={16} />
               {submitting ? "Signing in…" : "Sign in"}
             </button>
           </form>
