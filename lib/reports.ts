@@ -17,6 +17,7 @@ import {
   type Order,
 } from "./types";
 import type { DSRCommissionRow } from "./commission";
+import type { ClientRecord } from "./clients";
 
 // ---------------------------------------------------------------------------
 // Shared PDF header / footer
@@ -301,6 +302,36 @@ export async function exportOrdersExcel(orders: Order[]): Promise<void> {
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Orders");
   XLSX.writeFile(wb, `NCGR-Orders-${nowISO().slice(0, 10)}.xlsx`);
+}
+
+/**
+ * Client list export — one row per client, with their phone and the chicks they
+ * ordered. The caller passes clients already built from the selected date range,
+ * so the totals reflect exactly that period.
+ */
+export async function exportClientsExcel(
+  clients: ClientRecord[],
+  rangeLabel: string
+): Promise<void> {
+  const XLSX = await import("xlsx");
+  const rows = clients.map((c, i) => ({
+    "#": i + 1,
+    Client: c.name,
+    Phone: c.phone || "",
+    "Chicks Ordered": c.chicks,
+    "To Deliver": c.toDeliver,
+    Orders: c.ordersCount,
+    Paid: c.paid,
+    Balance: c.balance,
+    "District(s)": c.districts.join(", "),
+    "Sector(s)": c.sectors.join(", "),
+    "Last Order": c.lastOrder,
+  }));
+  const ws = XLSX.utils.json_to_sheet(rows);
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Clients");
+  const safe = rangeLabel.replace(/[^0-9A-Za-z]+/g, "_").replace(/^_+|_+$/g, "");
+  XLSX.writeFile(wb, `NCGR-Clients-${safe || "all"}.xlsx`);
 }
 
 /**
