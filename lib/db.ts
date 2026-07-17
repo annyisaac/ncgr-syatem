@@ -51,14 +51,23 @@ async function fetchCollection<T>(table: string): Promise<T[]> {
 }
 
 /**
- * Full replace of a collection: upsert every item, then delete rows that are
- * no longer in the list (e.g. removed bank statements, restored backups).
+ * Save a list of items (upsert only).
+ *
+ * DANGER — `prune`: when true this ALSO deletes every row missing from `items`,
+ * i.e. it makes the table match the caller's list exactly. A caller whose list
+ * is even slightly stale (e.g. another user created a row a second ago) would
+ * silently DELETE that row. It has caused real data loss, so `prune` is OFF by
+ * default and must only be used where "make the DB match this snapshot" is
+ * genuinely intended — currently only `replaceDatabase()` (backup restore).
+ *
+ * For everything else: upsert-only here, or a single-row upsert/delete below.
  */
 async function saveCollection<T>(
   table: string,
   pk: string,
   items: T[],
-  keyOf: (item: T) => string
+  keyOf: (item: T) => string,
+  prune = false
 ): Promise<void> {
   if (!inBrowser()) return;
   const sb = getSupabase();
@@ -74,7 +83,9 @@ async function saveCollection<T>(
     if (error) throw new Error(`Could not save ${table}: ${error.message}`);
   }
 
-  // Remove rows that are no longer present.
+  if (!prune) return;
+
+  // Remove rows that are no longer present (restore only).
   const { data: existing, error: readErr } = await sb.from(table).select(pk);
   if (readErr) throw new Error(`Could not check ${table}: ${readErr.message}`);
   const keep = new Set(items.map(keyOf));
@@ -102,14 +113,20 @@ export async function getDatabase(): Promise<Database> {
   return { users, dsrs, orders, commissions, statements };
 }
 
-/** Replace everything (backup restore). */
+/**
+ * Replace everything (backup restore).
+ *
+ * The only place `prune` is legitimate: restoring a backup genuinely means
+ * "make the database match this snapshot", so rows absent from the backup are
+ * meant to go. Every other caller upserts and never deletes by omission.
+ */
 export async function replaceDatabase(db: Database): Promise<void> {
   await Promise.all([
-    saveUsers(db.users),
-    saveDSRs(db.dsrs),
-    saveOrders(db.orders),
-    saveCommissions(db.commissions),
-    saveStatements(db.statements),
+    saveUsers(db.users, true),
+    saveDSRs(db.dsrs, true),
+    saveOrders(db.orders, true),
+    saveCommissions(db.commissions, true),
+    saveStatements(db.statements, true),
   ]);
 }
 
@@ -133,8 +150,8 @@ export async function getUsers(): Promise<User[]> {
   return fetchCollection<User>("users");
 }
 
-export async function saveUsers(users: User[]): Promise<void> {
-  return saveCollection("users", "email", users, (u) => u.email);
+export async function saveUsers(users: User[], prune = false): Promise<void> {
+  return saveCollection("users", "email", users, (u) => u.email, prune);
 }
 
 /** Fast single-user upsert (no full-collection scan). */
@@ -168,8 +185,8 @@ export async function getDSRs(): Promise<DSR[]> {
   return fetchCollection<DSR>("dsrs");
 }
 
-export async function saveDSRs(dsrs: DSR[]): Promise<void> {
-  return saveCollection("dsrs", "id", dsrs, (d) => d.id);
+export async function saveDSRs(dsrs: DSR[], prune = false): Promise<void> {
+  return saveCollection("dsrs", "id", dsrs, (d) => d.id, prune);
 }
 
 // ---------------------------------------------------------------------------
@@ -180,8 +197,8 @@ export async function getOrders(): Promise<Order[]> {
   return fetchCollection<Order>("orders");
 }
 
-export async function saveOrders(orders: Order[]): Promise<void> {
-  return saveCollection("orders", "id", orders, (o) => o.id);
+export async function saveOrders(orders: Order[], prune = false): Promise<void> {
+  return saveCollection("orders", "id", orders, (o) => o.id, prune);
 }
 
 // ---------------------------------------------------------------------------
@@ -193,9 +210,10 @@ export async function getCommissions(): Promise<CommissionRequest[]> {
 }
 
 export async function saveCommissions(
-  commissions: CommissionRequest[]
+  commissions: CommissionRequest[],
+  prune = false
 ): Promise<void> {
-  return saveCollection("commissions", "id", commissions, (c) => c.id);
+  return saveCollection("commissions", "id", commissions, (c) => c.id, prune);
 }
 
 // ---------------------------------------------------------------------------
@@ -207,9 +225,24 @@ export async function getStatements(): Promise<BankStatement[]> {
 }
 
 export async function saveStatements(
-  statements: BankStatement[]
+  statements: BankStatement[],
+  prune = false
 ): Promise<void> {
-  return saveCollection("statements", "id", statements, (s) => s.id);
+  return saveCollection("statements", "id", statements, (s) => s.id, prune);
+}
+
+/**
+ * Delete one bank statement.
+ *
+ * Removing a statement used to work by passing a filtered list to
+ * saveStatements() and letting the prune step notice the gap. That is the
+ * delete-by-omission pattern that cost us an order, so deletion is now
+ * explicit and targets exactly one row.
+ */
+export async function deleteStatementOne(id: string): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase().from("statements").delete().eq("id", id);
+  if (error) throw new Error(`Could not delete statement: ${error.message}`);
 }
 
 // ---------------------------------------------------------------------------

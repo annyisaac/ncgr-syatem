@@ -24,6 +24,7 @@ import type {
   User,
 } from "@/lib/types";
 import {
+  deleteStatementOne,
   getDatabase,
   newId,
   replaceDatabase,
@@ -58,6 +59,8 @@ interface DataContextValue {
   upsertCommission: (c: CommissionRequest) => Promise<void>;
 
   setStatements: (s: BankStatement[]) => Promise<void>;
+  /** Delete one statement (saving a filtered list no longer removes rows). */
+  removeStatement: (id: string) => Promise<void>;
 
   /** Full replace (backup restore). */
   replaceAll: (db: Database) => Promise<void>;
@@ -161,6 +164,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     setStatements: (statements) =>
       apply("statements", statements, saveStatements),
+    removeStatement: async (id) => {
+      setDb((prev) => ({ ...prev, statements: prev.statements.filter((s) => s.id !== id) }));
+      await deleteStatementOne(id);
+    },
 
     replaceAll: async (next) => {
       setDb(next);

@@ -35,7 +35,7 @@ interface Staged {
 
 export default function VerificationPage() {
   const { user } = useAuth();
-  const { orders, statements, setStatements, setOrders, newId } = useData();
+  const { orders, statements, setStatements, removeStatement: deleteStatement, setOrders, newId } = useData();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -102,8 +102,8 @@ export default function VerificationPage() {
     toast(`Added statement "${stmt.fileName}" (${rows.length} rows).`);
   }
 
-  function removeStatement(id: string) {
-    setStatements(statements.filter((s) => s.id !== id));
+  async function removeStatement(id: string) {
+    await deleteStatement(id);
     toast("Statement removed.");
   }
 
