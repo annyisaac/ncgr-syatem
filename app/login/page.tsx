@@ -4,10 +4,45 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { useAuth } from "@/components/AuthProvider";
-import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Select";
 import { COMPANY } from "@/lib/config";
 import { homeForRole } from "@/lib/permissions";
+
+/** Left-panel selling points. */
+const POINTS: { icon: keyof typeof ICONS; label: string }[] = [
+  { icon: "shield", label: "Enterprise-grade security" },
+  { icon: "people", label: "Access for authorized personnel only" },
+  { icon: "cloud", label: "Secure cloud platform" },
+  { icon: "bolt", label: "Fast and reliable performance" },
+];
+
+const ICONS = {
+  shield: "M10 2.5 4 5v4.6c0 3.6 2.5 6.9 6 7.9 3.5-1 6-4.3 6-7.9V5l-6-2.5Zm2.7 5.6-3.3 3.4-1.9-1.9",
+  people:
+    "M13.5 16v-1.3a2.7 2.7 0 0 0-2.7-2.7H5.9a2.7 2.7 0 0 0-2.7 2.7V16M8.3 9.3a2.7 2.7 0 1 0 0-5.3 2.7 2.7 0 0 0 0 5.3ZM17 16v-1.3a2.7 2.7 0 0 0-2-2.6M13.7 4.1a2.7 2.7 0 0 1 0 5.2",
+  cloud: "M14.5 14a3 3 0 0 0 .4-6 4.5 4.5 0 0 0-8.7-1.1A3.5 3.5 0 0 0 6.5 14h8Z",
+  bolt: "M11.5 2.5 4 11.5h5l-.5 6 7.5-9h-5l.5-6Z",
+  mail: "M3.5 5.5h13v9h-13v-9Zm0 .5 6.5 5 6.5-5",
+  lock: "M6 9V6.8a4 4 0 1 1 8 0V9M5 9h10v7.5H5V9Z",
+  pin: "M10 17.5s5.5-4.7 5.5-8.5a5.5 5.5 0 1 0-11 0c0 3.8 5.5 8.5 5.5 8.5Zm0-6.8a1.8 1.8 0 1 0 0-3.5 1.8 1.8 0 0 0 0 3.5Z",
+} as const;
+
+function Icon({ d, size = 18 }: { d: string; size?: number }) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 20 20"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d={d} />
+    </svg>
+  );
+}
 
 export default function LoginPage() {
   const { user, loading, login } = useAuth();
@@ -15,6 +50,9 @@ export default function LoginPage() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [show, setShow] = useState(false);
+  const [remember, setRemember] = useState(true);
+  const [forgot, setForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -31,128 +69,218 @@ export default function LoginPage() {
       return;
     }
     setSubmitting(true);
-    const res = await login(email.trim(), password);
+    const res = await login(email.trim(), password, remember);
     setSubmitting(false);
     if (!res.ok) setError(res.error ?? "Login failed.");
     // On success the effect above redirects to the role's home.
   }
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[1.05fr_1fr]">
+    <div className="grid min-h-screen bg-[linear-gradient(135deg,#f6e4b4_0%,#f1dfa6_38%,#e7e6c4_68%,#dde7cf_100%)] lg:grid-cols-2">
       {/* Brand panel — hidden on small screens */}
-      <div className="relative hidden overflow-hidden bg-onyx p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        {/* Decorative gold glows */}
-        <div aria-hidden className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-gold/25 blur-3xl" />
-        <div aria-hidden className="pointer-events-none absolute -bottom-32 -left-16 h-96 w-96 rounded-full bg-gold/10 blur-3xl" />
+      <div className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex">
+        {/* Warm field wash. Swap for a photo by setting a background-image here. */}
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_15%_10%,rgba(255,255,255,0.55)_0%,rgba(255,255,255,0)_55%),radial-gradient(90%_70%_at_85%_85%,rgba(214,158,46,0.22)_0%,rgba(255,255,255,0)_60%)]"
+        />
 
-        <div className="relative z-10 inline-flex w-fit items-center rounded-2xl bg-white px-4 py-3 shadow-pop">
-          <Image
-            src={COMPANY.logoPath}
-            alt={`${COMPANY.name} logo`}
-            width={190}
-            height={64}
-            className="h-14 w-auto object-contain"
-            priority
-            unoptimized
-          />
-        </div>
+        <Image
+          src={COMPANY.logoPath}
+          alt={`${COMPANY.name} logo`}
+          width={300}
+          height={100}
+          className="relative z-10 h-20 w-auto object-contain"
+          priority
+          unoptimized
+        />
 
         <div className="relative z-10 max-w-md">
-          <h2 className="text-[2.1rem] font-bold leading-tight tracking-tight">
-            Run your hatchery &amp; sales from one place.
+          <h2 className="text-[2.6rem] font-bold leading-[1.1] tracking-tight text-ink">
+            Empowering
+            <br />
+            Better Business
+            <br />
+            <span className="text-gold-dark">Decisions.</span>
           </h2>
-          <p className="mt-4 text-[1rem] leading-relaxed text-white/70">
-            Orders, deliveries, DSRs, incubation and inventory — every part of
-            {" "}{COMPANY.name} in a single, secure dashboard.
+          <p className="mt-5 max-w-[22rem] text-[1rem] leading-relaxed text-ink/70">
+            A secure digital platform built to help our team work smarter, faster
+            and more efficiently.
           </p>
-          <ul className="mt-7 space-y-3 text-[0.92rem] text-white/85">
-            {["Real-time orders & delivery planning", "Hatchery incubation & inventory tracking", "Role-based access for every team"].map((t) => (
-              <li key={t} className="flex items-center gap-3">
-                <span className="flex h-6 w-6 items-center justify-center rounded-full bg-gold/20 text-gold">
-                  <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 10l3.5 3.5L15 7" /></svg>
+
+          <ul className="mt-8 space-y-3.5">
+            {POINTS.map((p) => (
+              <li key={p.label} className="flex items-center gap-4">
+                <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-white text-gold-dark shadow-card">
+                  <Icon d={ICONS[p.icon]} size={20} />
                 </span>
-                {t}
+                <span className="max-w-[14rem] text-[0.95rem] font-medium leading-snug text-ink">
+                  {p.label}
+                </span>
               </li>
             ))}
           </ul>
         </div>
 
-        <p className="relative z-10 text-[0.75rem] text-white/45">
-          {COMPANY.name} · {COMPANY.address}
+        <p className="relative z-10 inline-flex w-fit items-center gap-2 rounded-full bg-white/70 px-4 py-2.5 text-[0.8rem] font-medium text-ink backdrop-blur">
+          <span className="text-gold-dark">
+            <Icon d={ICONS.pin} size={16} />
+          </span>
+          {COMPANY.name} <span className="text-muted">·</span> {COMPANY.address}
         </p>
       </div>
 
       {/* Form panel */}
-      <div className="flex items-center justify-center bg-cream px-4 py-10 sm:px-8">
-        <div className="w-full max-w-[400px]">
-          {/* Logo (shown when the brand panel is hidden) */}
-          <div className="mb-8 flex justify-center lg:hidden">
-            <Image
-              src={COMPANY.logoPath}
-              alt={`${COMPANY.name} logo`}
-              width={180}
-              height={60}
-              className="brand-logo h-14 w-auto object-contain"
-              priority
-              unoptimized
-            />
-          </div>
+      <div className="flex items-center justify-center p-4 sm:p-8">
+        <div className="w-full max-w-[520px] rounded-[28px] bg-paper p-8 shadow-pop sm:p-11">
+          <Image
+            src={COMPANY.logoPath}
+            alt={`${COMPANY.name} logo`}
+            width={280}
+            height={94}
+            className="mx-auto h-16 w-auto object-contain"
+            priority
+            unoptimized
+          />
 
-          <div className="mb-7">
-            <h1 className="text-[1.6rem] font-bold tracking-tight text-ink">Welcome back</h1>
-            <p className="mt-1 text-[0.92rem] text-muted">Sign in to continue to your dashboard.</p>
-          </div>
+          <h1 className="mt-6 text-center text-[2rem] font-bold tracking-tight text-ink">
+            Welcome back
+          </h1>
+          <p className="mt-1.5 text-center text-[0.95rem] text-muted">
+            Sign in to access your secure workspace.
+          </p>
+          <div className="mx-auto mt-5 h-[3px] w-14 rounded-full bg-gold" />
 
-          <form onSubmit={onSubmit} className="space-y-4">
-            <Field label="Email" htmlFor="email">
-              <Input
-                id="email"
-                type="email"
-                autoComplete="username"
-                placeholder="you@ncgrltd.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                className="py-3 text-[1rem]"
-              />
-            </Field>
+          <form onSubmit={onSubmit} className="mt-7 space-y-5">
+            <div className="space-y-2">
+              <label htmlFor="email" className="block text-[0.7rem] font-bold uppercase tracking-wider text-muted">
+                Email
+              </label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
+                  <Icon d={ICONS.mail} />
+                </span>
+                <input
+                  id="email"
+                  type="email"
+                  autoComplete="username"
+                  placeholder="name@ncgrltd.com"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  className="h-14 w-full rounded-xl border border-line bg-field pl-12 pr-4 text-[1rem] text-ink outline-none transition focus:border-gold"
+                />
+              </div>
+            </div>
 
-            <Field label="Password" htmlFor="password">
-              <Input
-                id="password"
-                type="password"
-                autoComplete="current-password"
-                placeholder="Enter your password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                className="py-3 text-[1rem]"
-              />
-            </Field>
+            <div className="space-y-2">
+              <label htmlFor="password" className="block text-[0.7rem] font-bold uppercase tracking-wider text-muted">
+                Password
+              </label>
+              <div className="relative">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-muted">
+                  <Icon d={ICONS.lock} />
+                </span>
+                <input
+                  id="password"
+                  type={show ? "text" : "password"}
+                  autoComplete="current-password"
+                  placeholder="Enter your password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  className="h-14 w-full rounded-xl border border-line bg-field pl-12 pr-12 text-[1rem] text-ink outline-none transition focus:border-gold"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShow((v) => !v)}
+                  aria-label={show ? "Hide password" : "Show password"}
+                  className="absolute right-3 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-lg text-muted transition hover:bg-grey-bg hover:text-ink"
+                >
+                  {show ? (
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M3 3l14 14M8.2 8.3a2.5 2.5 0 0 0 3.5 3.5M6.1 6.2C4.3 7.3 2.9 9 2.5 10c.8 2 3.8 5 7.5 5 1.4 0 2.7-.4 3.8-1.1M11.5 5.2A7.6 7.6 0 0 0 10 5c-.5 0-1 .05-1.4.14M17.5 10c-.5-1.2-1.6-2.7-3.1-3.8" />
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+                      <path d="M2.5 10S5.5 5 10 5s7.5 5 7.5 5-3 5-7.5 5-7.5-5-7.5-5Z" />
+                      <circle cx="10" cy="10" r="2.5" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[0.85rem] text-ink">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  className="peer sr-only"
+                />
+                {/* The tick lives inside this span, so it is not a sibling of the
+                    peer — reach it with a descendant variant, not peer-checked. */}
+                <span className="flex h-5 w-5 items-center justify-center rounded-md border border-line bg-field text-white transition peer-checked:border-gold peer-checked:bg-gold peer-checked:[&>svg]:opacity-100 peer-focus-visible:ring-2 peer-focus-visible:ring-gold/40">
+                  <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-0 transition" aria-hidden>
+                    <path d="M5 10l3.5 3.5L15 7" />
+                  </svg>
+                </span>
+                Remember me
+              </label>
+
+              <button
+                type="button"
+                onClick={() => setForgot((v) => !v)}
+                className="text-[0.85rem] font-semibold text-gold-dark hover:underline"
+              >
+                Forgot password?
+              </button>
+            </div>
+
+            {forgot && (
+              <p className="rounded-xl border border-line bg-grey-bg px-4 py-3 text-[0.82rem] leading-relaxed text-muted">
+                Password resets are approved by an administrator. Contact your
+                admin at{" "}
+                <a href={`mailto:${COMPANY.email}`} className="font-semibold text-gold-dark hover:underline">
+                  {COMPANY.email}
+                </a>{" "}
+                and they will set a new password for you.
+              </p>
+            )}
 
             {error && (
-              <p className="rounded-lg border border-red/20 bg-red-bg px-3 py-2.5 text-sm font-semibold text-red">
+              <p className="rounded-xl border border-red/20 bg-red-bg px-4 py-3 text-sm font-semibold text-red">
                 {error}
               </p>
             )}
 
-            <Button
+            <button
               type="submit"
-              className="w-full py-3 text-[1rem]"
               disabled={submitting}
+              className="flex h-14 w-full items-center justify-center gap-2.5 rounded-xl bg-gold text-[1rem] font-bold text-ink transition hover:bg-gold-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
             >
+              <Icon d={ICONS.lock} size={18} />
               {submitting ? "Signing in…" : "Sign in"}
-            </Button>
+            </button>
           </form>
 
-          <p className="mt-6 rounded-xl border border-line bg-paper px-4 py-3 text-[0.8rem] leading-relaxed text-muted">
-            <span className="font-semibold text-ink">DSRs:</span> sign in here with
-            your own email and password, then confirm your zone-manager code on a
-            new device.
-          </p>
+          <div className="mt-6 flex items-start gap-3 rounded-xl border border-gold/25 bg-gold-bg/60 p-4">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gold text-white">
+              <Icon d={ICONS.shield} size={18} />
+            </span>
+            <div>
+              <p className="text-[0.85rem] font-bold text-ink">Security Notice</p>
+              <p className="mt-0.5 text-[0.8rem] leading-relaxed text-muted">
+                Never share your password or verification code. Access is
+                restricted to authorized {COMPANY.name} personnel.
+              </p>
+            </div>
+          </div>
 
-          <p className="mt-6 text-center text-[0.72rem] text-muted">
-            {COMPANY.name} — {COMPANY.tagline}
+          <hr className="mt-7 border-line" />
+          <p className="mt-4 text-center text-[0.75rem] text-muted">
+            © {new Date().getFullYear()} {COMPANY.name}. All rights reserved.
           </p>
         </div>
       </div>

@@ -47,12 +47,35 @@ async function recordDevice(email: string, signedIn: boolean): Promise<void> {
   }
 }
 
+const REMEMBER_KEY = "ncgr.remember.v1";
+const ALIVE_KEY = "ncgr.session-alive.v1";
+
+/**
+ * "Remember me", for real.
+ *
+ * Supabase persists the session in storage that survives closing the browser,
+ * so unchecking the box has to be enforced by us. Each browser session drops a
+ * marker in sessionStorage (which does NOT survive a restart); finding a
+ * persisted login with no marker means the browser was closed and reopened, so
+ * a not-remembered session gets signed out before it is ever restored.
+ */
+function shouldDropPersistedSession(): boolean {
+  if (typeof window === "undefined") return false;
+  if (window.localStorage.getItem(REMEMBER_KEY) !== "0") return false;
+  return window.sessionStorage.getItem(ALIVE_KEY) === null;
+}
+
+function markSessionAlive(): void {
+  if (typeof window !== "undefined") window.sessionStorage.setItem(ALIVE_KEY, "1");
+}
+
 interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (
     email: string,
-    password: string
+    password: string,
+    remember?: boolean
   ) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   /** Re-read the current user's profile from storage. */
@@ -75,6 +98,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const sb = getSupabase();
     let active = true;
     (async () => {
+      // A session the user asked us not to remember, in a reopened browser.
+      if (shouldDropPersistedSession()) {
+        await sb.auth.signOut();
+        markSessionAlive();
+        if (active) {
+          setUser(null);
+          setLoading(false);
+        }
+        return;
+      }
+      markSessionAlive();
+
       const { data } = await sb.auth.getSession();
       const email = data.session?.user?.email;
       if (email) {
@@ -99,7 +134,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [loadProfile]);
 
   const login = useCallback(
-    async (email: string, password: string) => {
+    async (email: string, password: string, remember = true) => {
       const sb = getSupabase();
       const { data, error } = await sb.auth.signInWithPassword({
         email: email.trim(),
@@ -107,6 +142,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (error || !data.user?.email) {
         return { ok: false, error: "Wrong email or password." };
+      }
+      if (typeof window !== "undefined") {
+        window.localStorage.setItem(REMEMBER_KEY, remember ? "1" : "0");
+        markSessionAlive();
       }
       const profile = await loadProfile(data.user.email);
       if (!profile) {
