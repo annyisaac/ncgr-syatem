@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NCGR Ltd — Sales & Delivery",
+  title: "NCGR LTD",
   description: "Your Partner in Poultry Excellence",
 };
 
