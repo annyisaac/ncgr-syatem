@@ -367,8 +367,8 @@ export default function NewOrderPage() {
                 <Field label="Client name">
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
                 </Field>
-                <Field label="Phone">
-                  <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" />
+                <Field label="Phone" required>
+                  <Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" />
                 </Field>
                 <Field label="District">
                   <Select

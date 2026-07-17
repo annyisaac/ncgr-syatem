@@ -44,12 +44,15 @@ export function Field({
   htmlFor,
   hint,
   error,
+  required,
   children,
 }: {
   label: string;
   htmlFor?: string;
   hint?: string;
   error?: string;
+  /** Show a red asterisk after the label to mark the field as required. */
+  required?: boolean;
   children: React.ReactNode;
 }) {
   return (
@@ -59,6 +62,7 @@ export function Field({
         className="block text-[0.66rem] font-semibold uppercase tracking-wide text-muted"
       >
         {label}
+        {required && <span className="ml-0.5 text-red" aria-hidden>*</span>}
       </label>
       {children}
       {hint && !error && <p className="text-[0.73rem] text-muted">{hint}</p>}
