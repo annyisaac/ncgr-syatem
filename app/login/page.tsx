@@ -76,9 +76,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="grid min-h-screen bg-[linear-gradient(135deg,#f6dc9f_0%,#f0c66f_55%,#ecbb5a_100%)] lg:grid-cols-[52fr_48fr]">
+    <div className="grid min-h-screen bg-[linear-gradient(135deg,#f6dc9f_0%,#f0c66f_55%,#ecbb5a_100%)] lg:h-screen lg:grid-cols-[52fr_48fr] lg:overflow-hidden">
       {/* Brand panel — hidden on small screens */}
-      <div className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex lg:p-14">
+      <div className="relative hidden flex-col justify-between overflow-hidden p-10 lg:flex lg:p-12">
         <Image
           src="/tetra-chicks.jpeg"
           alt=""
@@ -142,29 +142,29 @@ export default function LoginPage() {
       </div>
 
       {/* Form panel — a tall card inset over the warm page background */}
-      <div className="flex p-4 sm:p-6">
-        <div className="flex flex-1 flex-col justify-center rounded-[28px] bg-paper px-6 py-10 shadow-pop sm:px-10 lg:px-14">
+      <div className="flex p-3 sm:p-5 lg:min-h-0">
+        <div className="flex flex-1 flex-col justify-center overflow-y-auto rounded-[28px] bg-paper px-6 py-6 shadow-pop sm:px-10 lg:px-14">
           <div className="mx-auto w-full max-w-[520px]">
           <Image
             src="/logo-running.jpg"
             alt={`${COMPANY.name} logo`}
             width={520}
             height={302}
-            className="mx-auto h-auto w-full max-w-[360px] object-contain"
+            className="mx-auto h-auto w-full max-w-[260px] object-contain"
             priority
             unoptimized
           />
 
-          <h1 className="mt-7 text-center text-[2.5rem] font-bold tracking-tight text-ink">
+          <h1 className="mt-3 text-center text-[2.2rem] font-bold tracking-tight text-ink">
             Welcome back
           </h1>
-          <p className="mt-2 text-center text-[1.05rem] text-muted">
+          <p className="mt-1.5 text-center text-[1rem] text-muted">
             Sign in to access your secure workspace.
           </p>
-          <div className="mx-auto mt-6 h-1 w-16 rounded-full bg-gold" />
+          <div className="mx-auto mt-4 h-1 w-16 rounded-full bg-gold" />
 
-          <form onSubmit={onSubmit} className="mt-8 space-y-5">
-            <div className="space-y-2.5">
+          <form onSubmit={onSubmit} className="mt-6 space-y-4">
+            <div className="space-y-2">
               <label htmlFor="email" className="block text-[0.75rem] font-bold uppercase tracking-[0.09em] text-muted">
                 Email
               </label>
@@ -180,12 +180,12 @@ export default function LoginPage() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   required
-                  className="h-16 w-full rounded-xl border border-line bg-field pl-14 pr-4 text-[1.05rem] text-ink outline-none transition focus:border-gold"
+                  className="h-14 w-full rounded-xl border border-line bg-field pl-14 pr-4 text-[1.05rem] text-ink outline-none transition focus:border-gold"
                 />
               </div>
             </div>
 
-            <div className="space-y-2.5">
+            <div className="space-y-2">
               <label htmlFor="password" className="block text-[0.75rem] font-bold uppercase tracking-[0.09em] text-muted">
                 Password
               </label>
@@ -201,7 +201,7 @@ export default function LoginPage() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   required
-                  className="h-16 w-full rounded-xl border border-line bg-field pl-14 pr-14 text-[1.05rem] text-ink outline-none transition focus:border-gold"
+                  className="h-14 w-full rounded-xl border border-line bg-field pl-14 pr-14 text-[1.05rem] text-ink outline-none transition focus:border-gold"
                 />
                 <button
                   type="button"
@@ -270,14 +270,14 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex h-16 w-full items-center justify-center gap-3 rounded-xl bg-gold-dark text-[1.15rem] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-14 w-full items-center justify-center gap-3 rounded-xl bg-gold-dark text-[1.1rem] font-bold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Icon d={ICONS.lock} size={20} />
               {submitting ? "Signing in…" : "Sign in"}
             </button>
           </form>
 
-          <div className="mt-6 flex items-start gap-4 rounded-2xl border border-gold/25 bg-gold-bg/70 p-5">
+          <div className="mt-5 flex items-start gap-4 rounded-2xl border border-gold/25 bg-gold-bg/70 p-4">
             <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gold text-white">
               <Icon d={ICONS.shield} size={20} />
             </span>
@@ -290,8 +290,8 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <hr className="mt-8 border-line" />
-          <p className="mt-5 text-center text-[0.82rem] text-muted">
+          <hr className="mt-5 border-line" />
+          <p className="mt-4 text-center text-[0.82rem] text-muted">
             © {new Date().getFullYear()} {COMPANY.name}. All rights reserved.
           </p>
           </div>
