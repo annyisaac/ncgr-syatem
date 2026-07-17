@@ -101,7 +101,7 @@ export default function LoginPage() {
           alt={`${COMPANY.name} logo`}
           width={300}
           height={100}
-          className="relative z-10 h-40 w-auto object-contain"
+          className="relative z-10 h-20 w-auto object-contain"
           priority
           unoptimized
         />
