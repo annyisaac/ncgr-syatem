@@ -51,10 +51,12 @@ export default function ClientsPage() {
 
   if (!user) return null;
 
+  const isAdmin = user.role === "Admin";
   const totalChicks = clients.reduce((s, c) => s + c.chicks, 0);
   const totalBalance = clients.reduce((s, c) => s + c.balance, 0);
 
   async function downloadClients() {
+    if (user?.role !== "Admin") return; // download is Admin-only
     if (filtered.length === 0) {
       toast("No clients to download for this selection.", "info");
       return;
@@ -86,12 +88,14 @@ export default function ClientsPage() {
         <CardHeader
           title="Client list"
           action={
-            <Button size="sm" onClick={downloadClients} disabled={downloading}>
-              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5">
-                <path d="M10 3v9m0 0 3.5-3.5M10 12 6.5 8.5M4 15h12" />
-              </svg>
-              {downloading ? "Preparing…" : "Download"}
-            </Button>
+            isAdmin ? (
+              <Button size="sm" onClick={downloadClients} disabled={downloading}>
+                <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5">
+                  <path d="M10 3v9m0 0 3.5-3.5M10 12 6.5 8.5M4 15h12" />
+                </svg>
+                {downloading ? "Preparing…" : "Download"}
+              </Button>
+            ) : undefined
           }
         />
         {/* Time range for the client totals + the download. */}
