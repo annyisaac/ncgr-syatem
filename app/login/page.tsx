@@ -79,10 +79,21 @@ export default function LoginPage() {
     <div className="grid min-h-screen bg-[linear-gradient(135deg,#f6e4b4_0%,#f1dfa6_38%,#e7e6c4_68%,#dde7cf_100%)] lg:grid-cols-2">
       {/* Brand panel — hidden on small screens */}
       <div className="relative hidden flex-col justify-between overflow-hidden p-12 lg:flex">
-        {/* Warm field wash. Swap for a photo by setting a background-image here. */}
+        <Image
+          src="/tetra-chicks.jpeg"
+          alt=""
+          fill
+          sizes="50vw"
+          className="object-cover object-[18%_center]"
+          priority
+          aria-hidden
+        />
+        {/* Warm scrim. The panel is portrait and the photo near-square, so
+            object-cover zooms in; anchoring left keeps the chicks to the right
+            and this wash keeps the copy legible where it crosses them. */}
         <div
           aria-hidden
-          className="pointer-events-none absolute inset-0 bg-[radial-gradient(120%_90%_at_15%_10%,rgba(255,255,255,0.55)_0%,rgba(255,255,255,0)_55%),radial-gradient(90%_70%_at_85%_85%,rgba(214,158,46,0.22)_0%,rgba(255,255,255,0)_60%)]"
+          className="pointer-events-none absolute inset-0 bg-[linear-gradient(100deg,rgba(255,247,224,0.97)_0%,rgba(255,247,224,0.93)_30%,rgba(255,250,236,0.72)_55%,rgba(255,252,240,0.34)_78%,rgba(255,255,255,0.12)_100%)]"
         />
 
         <Image
