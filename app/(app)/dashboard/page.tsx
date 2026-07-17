@@ -492,15 +492,9 @@ function ZoneDashboard({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="section-heading text-lg">Dashboard</h1>
-          <p className="text-sm text-muted">Welcome back! Here&apos;s what&apos;s happening with your operations today.</p>
-        </div>
-        <div className="w-full sm:max-w-md">
-          <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-        </div>
-      </div>
+      <AvailabilityPanel availability={availability} orders={orders} focus="Tetra Super Harco" />
+
+      <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
 
       <Card>
         <DateRange value={range} onChange={setRange} />
@@ -537,8 +531,6 @@ function ZoneDashboard({
           </div>
         </Card>
       </div>
-
-      <AvailabilityPanel availability={availability} orders={orders} focus="Tetra Super Harco" />
 
       <Card>
         <SectionTitle label="District performance" />
@@ -765,15 +757,9 @@ function RossDashboard({
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="section-heading text-lg">Dashboard</h1>
-          <p className="text-sm text-muted">Welcome back! Here&apos;s your Ross 308 sales today.</p>
-        </div>
-        <div className="w-full sm:max-w-md">
-          <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-        </div>
-      </div>
+      <AvailabilityPanel availability={availability} orders={orders} focus="Ross 308" />
+
+      <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
 
       <Card>
         <DateRange value={range} onChange={setRange} />
@@ -804,8 +790,6 @@ function RossDashboard({
           </div>
         </Card>
       </div>
-
-      <AvailabilityPanel availability={availability} orders={orders} focus="Ross 308" />
 
       <Card>
         <SectionTitle label="District performance" />
