@@ -1,5 +1,18 @@
 /** Date / display helpers (pure). */
 
+/**
+ * Is this a valid email address?
+ *
+ * One shared rule so every "enter an email" form agrees. Requires a single `@`
+ * with non-space, non-`@` text on both sides and a dotted domain. Deliberately
+ * strict about spaces — a stray space is the most common invalid input, and a
+ * looser `/.+@.+\..+/` would accept "a b@c .d".
+ */
+export function isValidEmail(email: string): boolean {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+}
+
+
 const MONTHS = [
   "Jan", "Feb", "Mar", "Apr", "May", "Jun",
   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",

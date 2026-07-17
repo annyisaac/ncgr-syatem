@@ -16,7 +16,7 @@ import { GmailLink } from "@/components/ui/GmailLink";
 import type { Role, User, Zone } from "@/lib/types";
 import { ROLES } from "@/lib/types";
 import { ZONES } from "@/lib/config";
-import { nowISO, formatDate, formatDateTime } from "@/lib/format";
+import { nowISO, formatDate, formatDateTime, isValidEmail } from "@/lib/format";
 import { adminCreateUser, adminSetPassword } from "@/lib/adminApi";
 
 export default function UsersPage() {
@@ -51,7 +51,7 @@ export default function UsersPage() {
     e.preventDefault();
     setErr(null);
     if (name.trim().length < 2) return setErr("Enter the user's name.");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return setErr("Enter a valid email.");
+    if (!isValidEmail(email)) return setErr("Enter a valid email.");
     if (users.some((u) => u.email.toLowerCase() === email.toLowerCase()))
       return setErr("A user with that email already exists.");
     if (password.length < 6) return setErr("Password must be at least 6 characters.");

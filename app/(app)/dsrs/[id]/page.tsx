@@ -14,7 +14,7 @@ import { Field, Input } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import { formatRWF } from "@/lib/config";
-import { formatDate, todayISO, nowISO } from "@/lib/format";
+import { formatDate, todayISO, nowISO, isValidEmail } from "@/lib/format";
 import { balance, paidAmount, orderTotal } from "@/lib/types";
 import type { DSR, Order } from "@/lib/types";
 import { adminCreateUser, adminSetPassword } from "@/lib/adminApi";
@@ -111,7 +111,7 @@ export default function DSRDetailPage() {
     const email = loginEmail.trim().toLowerCase();
     const password = loginPassword;
     setAuthErr(null);
-    if (!/.+@.+\..+/.test(email)) return setAuthErr("Enter a valid email address.");
+    if (!isValidEmail(email)) return setAuthErr("Enter a valid email address.");
     if (password.length < 6) return setAuthErr("Password must be at least 6 characters.");
     setBusy(true);
     try {
