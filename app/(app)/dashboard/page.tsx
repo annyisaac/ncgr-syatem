@@ -563,15 +563,16 @@ function SalesOverview({
 
   return (
     <div className="space-y-5">
-      {/* Greeting left, search + period picker right */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {/* Greeting left, search centred on the same line, period picker right */}
+      <div className="flex flex-wrap items-center gap-3">
         <h1 className="text-lg font-bold text-ink">
           Hey {firstName} — <span className="font-normal text-muted">here&apos;s your sales overview</span>
         </h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="w-full min-w-0 sm:w-72">
-            <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
-          </div>
+        {/* order-last drops the search to its own full row on small screens */}
+        <div className="order-last w-full min-w-0 lg:order-none lg:mx-auto lg:w-96">
+          <GlobalSearch orders={scoped} dsrs={dsrs} routes={routes} />
+        </div>
+        <div className="ml-auto flex flex-wrap items-center gap-2 lg:ml-0">
           <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
             {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
           </select>
