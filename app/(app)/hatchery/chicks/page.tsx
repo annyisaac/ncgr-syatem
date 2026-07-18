@@ -82,7 +82,6 @@ export default function ChickInventoryPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Chick Inventory</h1>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
         <Kpi label="Available chicks" value={totals.total.toLocaleString()} tone="gold" />

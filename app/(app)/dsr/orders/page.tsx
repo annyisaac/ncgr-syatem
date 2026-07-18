@@ -42,7 +42,6 @@ export default function DsrOrdersPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Orders in {myDsr.zone}</h1>
         <Link href="/dsr/order" className="rounded-[10px] bg-gold px-4 py-2.5 text-[0.82rem] font-bold text-[#231b04] transition hover:brightness-[1.05]">
           + New order
         </Link>

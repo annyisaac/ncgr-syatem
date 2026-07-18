@@ -163,7 +163,6 @@ export default function MachinesPage() {
   return (
     <div className="space-y-5 pb-24">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Machines</h1>
       </div>
 
       {/* Search + filter */}

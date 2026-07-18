@@ -50,7 +50,6 @@ export default function AvailabilityPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Ordering Availability</h1>
       <p className="-mt-2 text-sm text-muted">
         Open the delivery dates on which orders can be placed and set how many chicks are available per product.
         Zone managers see the remaining numbers; DSRs only see that a date is open.

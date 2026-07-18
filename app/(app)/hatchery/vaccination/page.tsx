@@ -100,7 +100,6 @@ export default function VaccinationPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Vaccination</h1>
       <p className="-mt-2 text-sm text-muted">Vaccinate the batch and record any culls removed during vaccination, per flock — the remaining chicks are the final saleable number.</p>
 
       {canVax && (

@@ -93,7 +93,6 @@ export default function ProfilePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="section-heading text-lg">My Account</h1>
 
       {/* Profile picture */}
       <Card>

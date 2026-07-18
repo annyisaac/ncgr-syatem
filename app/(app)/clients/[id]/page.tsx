@@ -55,7 +55,6 @@ export default function ClientDetailPage() {
 
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="section-heading text-lg">{client.name}</h1>
           <p className="text-sm text-muted">
             {client.phone || "no phone"}
             {client.districts.length ? ` · ${client.districts.join(", ")}` : ""}

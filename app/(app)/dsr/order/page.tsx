@@ -121,7 +121,6 @@ export default function DsrOrderPage() {
 
   return (
     <div className="space-y-4">
-      <h1 className="section-heading text-lg">New Order</h1>
 
       <form onSubmit={submit} className="space-y-4">
         <Card>

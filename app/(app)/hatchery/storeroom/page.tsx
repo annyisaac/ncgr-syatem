@@ -56,7 +56,6 @@ export default function StoreRoomPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Store Room</h1>
 
       <Card>
         <CardHeader title={`Eggs in store (${stored.length})`} />

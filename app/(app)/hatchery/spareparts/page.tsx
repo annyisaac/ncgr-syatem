@@ -126,7 +126,6 @@ export default function SparePartsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Spare Parts</h1>
         {canManage && <Button onClick={() => setShowAdd((v) => !v)}>{showAdd ? "Hide" : "Record part"}</Button>}
       </div>
 

@@ -96,7 +96,6 @@ export default function ReceptionPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Egg Reception</h1>
         <div className="flex flex-wrap gap-2">
           {canManageFarms && (
             <Button variant="secondary" onClick={() => setShowFarms((v) => !v)}>

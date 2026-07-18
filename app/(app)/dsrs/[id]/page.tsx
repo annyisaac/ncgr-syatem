@@ -152,7 +152,6 @@ export default function DSRDetailPage() {
       </Link>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">{dsr.name}</h1>
         {dsr.active ? (
           <Pill tone="fulfilled">Active</Pill>
         ) : (

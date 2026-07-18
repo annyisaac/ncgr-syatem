@@ -20,12 +20,9 @@ export default function AttendantHome() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="section-heading text-2xl">
-          {operator ? `Hello, ${operator.name}` : "Hatchery attendant"}
-        </h1>
-        <p className="mt-1 text-muted">Choose what you want to record.</p>
-      </div>
+      <p className="text-muted">
+        {operator ? `Hello, ${operator.name} — choose what you want to record.` : "Choose what you want to record."}
+      </p>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {TILES.map((t) => (

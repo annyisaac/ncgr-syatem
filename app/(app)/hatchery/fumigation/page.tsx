@@ -80,7 +80,6 @@ export default function FumigationPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Fumigation</h1>
 
       {canAdd && (
         <Card>

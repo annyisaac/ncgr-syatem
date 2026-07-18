@@ -84,7 +84,6 @@ export default function DsrOrderDetailPage() {
       <Link href="/dsr/orders" className="text-sm text-gold-dark underline">← Back to orders</Link>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">{order.name}</h1>
         <Pill tone={orderStage(order).tone}>{orderStage(order).label}</Pill>
       </div>
 

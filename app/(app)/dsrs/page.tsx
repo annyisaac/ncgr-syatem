@@ -171,10 +171,7 @@ export default function DSRsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">
-          {isZoneManager ? "My DSRs" : "DSR Registry"}
-        </h1>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <Button onClick={() => setShowForm((v) => !v)}>
           {showForm ? "Hide form" : "Register new DSR"}
         </Button>

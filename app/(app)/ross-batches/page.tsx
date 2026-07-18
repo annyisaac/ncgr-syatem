@@ -66,7 +66,6 @@ export default function RossBatchesPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="section-heading text-lg">Ross 308 Batches</h1>
         <p className="text-sm text-muted">Live view of Ross production from the hatchery — eggs set, what stage each batch is at, and chicks still available to sell.</p>
       </div>
 

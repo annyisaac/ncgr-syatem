@@ -158,7 +158,6 @@ export default function CandlingPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Candling</h1>
       <p className="-mt-2 text-sm text-muted">Candling is done flock by flock. Each row is one flock inside its batch.</p>
 
       <div className="flex flex-wrap gap-2">

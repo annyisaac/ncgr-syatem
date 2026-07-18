@@ -242,7 +242,6 @@ export default function VerificationPage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="section-heading text-lg">Payment Verification</h1>
 
       {/* Statements — Admin uploads; checkers can see the list to verify against. */}
       <Card>

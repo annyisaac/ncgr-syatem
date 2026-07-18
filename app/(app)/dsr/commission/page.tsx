@@ -31,7 +31,6 @@ export default function DsrCommissionPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">My Commission</h1>
 
       <div className="grid grid-cols-3 gap-3">
         <Kpi label="Total earned" value={formatRWF(total)} />

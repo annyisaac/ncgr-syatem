@@ -76,7 +76,6 @@ export default function DsrVisitsPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Farm visits</h1>
       <p className="-mt-2 text-sm text-muted">Log the farms you visit so your work is tracked.</p>
 
       <Card>

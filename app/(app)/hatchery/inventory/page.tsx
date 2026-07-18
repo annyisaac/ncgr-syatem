@@ -135,7 +135,6 @@ export default function InventoryPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Inventory</h1>
         {canManage && <Button onClick={() => setShowAdd((v) => !v)}>{showAdd ? "Hide" : "Add item"}</Button>}
       </div>
 

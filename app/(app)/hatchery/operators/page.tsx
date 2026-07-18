@@ -64,7 +64,6 @@ export default function OperatorsPage() {
   return (
     <div className="space-y-5">
       <div>
-        <h1 className="section-heading text-lg">Hatchery Attendants</h1>
         <p className="mt-1 text-sm text-muted">
           Attendants share one tablet login. Register each person here; they enter their code on the tablet to prove who they are, and everything they record is logged under their name.
         </p>

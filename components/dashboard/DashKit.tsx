@@ -9,6 +9,60 @@
  */
 
 import type { ReactNode } from "react";
+import { PERIODS, type PeriodPreset } from "@/lib/period";
+import type { DateRangeValue } from "@/components/ui/DateRange";
+
+const CTRL = "h-10 rounded-lg border border-line bg-paper px-3 text-sm text-ink outline-none focus:border-gold";
+
+/**
+ * The standard "search + time filter" bar — a rounded search pill on the left
+ * and a period dropdown (This month / …) on the right — used on every page that
+ * has both, so they read identically.
+ */
+export function SearchTimeBar({
+  q,
+  setQ,
+  placeholder,
+  preset,
+  setPreset,
+  custom,
+  setCustom,
+}: {
+  q: string;
+  setQ: (v: string) => void;
+  placeholder: string;
+  preset: PeriodPreset;
+  setPreset: (p: PeriodPreset) => void;
+  custom: DateRangeValue;
+  setCustom: (v: DateRangeValue) => void;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-0 flex-1 sm:max-w-md">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden>
+          <circle cx="9" cy="9" r="5.5" />
+          <path d="m13.5 13.5 3.5 3.5" />
+        </svg>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder={placeholder}
+          className="h-10 w-full rounded-full border border-line bg-paper pl-10 pr-4 text-sm text-ink outline-none transition focus:border-gold"
+        />
+      </div>
+      <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
+        {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+      </select>
+      {preset === "custom" && (
+        <div className="flex items-center gap-1.5">
+          <input type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className={`${CTRL} w-auto`} />
+          <span className="text-muted">–</span>
+          <input type="date" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className={`${CTRL} w-auto`} />
+        </div>
+      )}
+    </div>
+  );
+}
 
 /** "Hey {first name} — {subtitle}", with an optional right-hand slot. */
 export function GreetingHeader({

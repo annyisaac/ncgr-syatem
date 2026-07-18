@@ -207,7 +207,6 @@ export default function DayPlanPage() {
       <Link href="/planning" className="text-sm text-gold-dark underline">← Back to calendar</Link>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
-          <h1 className="section-heading text-lg">Delivery plan — {dateLabel}</h1>
           <p className="text-sm text-muted">
             {dayTotal.toLocaleString()} chicks · {dayOrders.length} stop(s)
             {deliveredCount > 0 && <span className="text-green"> · {deliveredCount} delivered</span>}

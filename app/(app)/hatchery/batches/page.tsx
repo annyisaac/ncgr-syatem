@@ -165,7 +165,6 @@ export default function BatchesPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Batches / Setting</h1>
 
       {canSet && (
         <Card>

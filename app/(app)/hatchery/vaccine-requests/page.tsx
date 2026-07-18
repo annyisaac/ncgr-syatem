@@ -75,7 +75,6 @@ export default function VaccineRequestsPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Vaccine Requests</h1>
       <p className="-mt-2 text-sm text-muted">
         The vet requests a vaccine → the Operations Manager confirms → the Hatchery Manager receives it and adds it to inventory.
       </p>

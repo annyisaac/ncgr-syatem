@@ -75,7 +75,6 @@ export default function BoxesPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Box making</h1>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Stat label="Unassembled in stock" value={unassembled.toLocaleString()} tone={unassembled < boxesNeededThisWeek ? "warn" : "ok"} />

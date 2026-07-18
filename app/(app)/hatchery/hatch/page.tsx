@@ -134,7 +134,6 @@ export default function HatchPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Hatch</h1>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">

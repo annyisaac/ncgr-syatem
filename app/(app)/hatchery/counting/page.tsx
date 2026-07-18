@@ -86,7 +86,6 @@ export default function CountingPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Counting &amp; boxing</h1>
       <p className="-mt-2 text-sm text-muted">Count each flock&apos;s hatched chicks box by box (saleable), then the culls. A Production Technician verifies on the Hatch page.</p>
 
       {canCount && (

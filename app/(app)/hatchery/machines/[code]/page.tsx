@@ -65,7 +65,6 @@ export default function MachineDetailPage() {
       <Link href="/hatchery/machines" className="text-sm text-gold-dark underline">← Back to machines</Link>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Machine {machineCode}</h1>
         {machine && <Pill tone={machine.type === "setter" ? "info" : "purple"}>{machine.type} · cap {machine.capacity.toLocaleString()}</Pill>}
       </div>
 

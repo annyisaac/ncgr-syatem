@@ -97,7 +97,6 @@ export default function CommissionPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Commission</h1>
         <Button variant="secondary" onClick={downloadPDF}>Download PDF report</Button>
       </div>
 

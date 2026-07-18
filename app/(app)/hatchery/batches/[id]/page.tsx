@@ -77,7 +77,6 @@ export default function BatchDetailPage() {
       <Link href="/hatchery/batches" className="text-sm text-gold-dark underline">← Back to batches</Link>
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex flex-wrap items-center gap-2">
-          <h1 className="section-heading text-lg">{batch.batchNo}</h1>
           {canEditCode && <Button variant="ghost" size="sm" onClick={openEdit}>Edit code</Button>}
         </div>
         <Pill tone={batch.status === "inactive" ? "neutral" : batch.status === "delivered" ? "fulfilled" : batch.status === "dispatched" ? "gold" : "info"}>{batch.status}</Pill>

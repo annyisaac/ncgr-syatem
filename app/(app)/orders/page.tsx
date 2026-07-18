@@ -307,10 +307,7 @@ function OrdersInner() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">
-          {role === "Tetra Zone Manager" ? "Zone Orders" : "Orders"}
-        </h1>
+      <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex gap-2">
           <Button
             variant="secondary"

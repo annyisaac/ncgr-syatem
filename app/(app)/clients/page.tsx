@@ -7,14 +7,14 @@ import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Input } from "@/components/ui/Select";
-import { DateRange, ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { Kpi } from "@/components/dashboard/Kpi";
+import { StatTile, SearchTimeBar } from "@/components/dashboard/DashKit";
 import { useToast } from "@/components/ui/Toast";
 import { visibleOrders } from "@/lib/permissions";
 import { formatRWF } from "@/lib/config";
-import { formatDate } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { buildClients } from "@/lib/clients";
 import { exportClientsExcel } from "@/lib/reports";
 
@@ -31,7 +31,9 @@ export default function ClientsPage() {
   const { orders } = useData();
   const { toast } = useToast();
   const [q, setQ] = useState("");
-  const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const range = presetToRange(preset, custom, todayISO());
   const [downloading, setDownloading] = useState(false);
 
   // Clients are built from the orders in the selected delivery-date range, so
@@ -75,13 +77,21 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-5">
-      <h1 className="section-heading text-lg">Clients</h1>
+      <SearchTimeBar
+        q={q}
+        setQ={setQ}
+        placeholder="Search clients — name, phone, district…"
+        preset={preset}
+        setPreset={setPreset}
+        custom={custom}
+        setCustom={setCustom}
+      />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Clients" value={String(clients.length)} />
-        <Kpi label="Chicks ordered" value={totalChicks.toLocaleString()} />
-        <Kpi label="Outstanding balance" value={formatRWF(totalBalance)} tone={totalBalance > 0 ? "red" : "default"} />
-        <Kpi label="Orders" value={String(clients.reduce((s, c) => s + c.ordersCount, 0))} />
+        <StatTile label="Clients" value={String(clients.length)} />
+        <StatTile label="Chicks ordered" value={totalChicks.toLocaleString()} />
+        <StatTile label="Outstanding balance" value={formatRWF(totalBalance)} tone={totalBalance > 0 ? "red" : undefined} />
+        <StatTile label="Orders" value={String(clients.reduce((s, c) => s + c.ordersCount, 0))} />
       </div>
 
       <Card>
@@ -98,12 +108,7 @@ export default function ClientsPage() {
             ) : undefined
           }
         />
-        {/* Time range for the client totals + the download. */}
-        <div className="mb-3">
-          <DateRange value={range} onChange={setRange} />
-        </div>
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search clients — name, phone, district…" />
-        <div className="mt-3">
+        <div className="mt-1">
           <TableWrap>
             <thead>
               <tr>

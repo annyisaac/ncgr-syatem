@@ -65,7 +65,6 @@ export default function FarmVisitsPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Farm Visits</h1>
         {canAdd && <Button onClick={() => setShow((v) => !v)}>{show ? "Hide form" : "Record visit"}</Button>}
       </div>
 
