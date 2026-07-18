@@ -213,11 +213,24 @@ export default function VerificationPage() {
   // Admin's final say on payments a checker couldn't match to a statement.
   function adminApprove(order: Order, payIndex: number) {
     const p0 = order.payments[payIndex];
-    const ref = (p0.pendingApproval?.refs ?? []).join(" + ") || p0.ref;
+    const refs = p0.pendingApproval?.refs ?? [];
+    const wasRequested = !!p0.pendingApproval;
+    // If it was never sent for approval, fall back to the payment's own ref and
+    // note it — either way the payment is verified, and the trigger notifies the
+    // verifier that it was verified.
+    const ref = refs.join(" + ") || p0.checkedRef || p0.ref;
     patchPayment(order, payIndex,
-      { verified: true, verifiedBy: user!.email, verifiedOn: nowISO(), checkedRef: ref, comment: `Approved by Admin${p0.pendingApproval?.note ? ` — ${p0.pendingApproval.note}` : ""}`, flag: undefined, pendingApproval: undefined },
-      `Admin approved payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — ${formatRWF(p0.amt)}`);
-    toast("Payment approved.");
+      {
+        verified: true,
+        verifiedBy: user!.email,
+        verifiedOn: nowISO(),
+        checkedRef: ref,
+        comment: `Approved by Admin${p0.pendingApproval?.note ? ` — ${p0.pendingApproval.note}` : wasRequested ? "" : " (not requested)"}`,
+        flag: undefined,
+        pendingApproval: undefined,
+      },
+      `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)}`);
+    toast("Payment approved and verified.");
   }
   function adminReject(order: Order, payIndex: number) {
     const p0 = order.payments[payIndex];
