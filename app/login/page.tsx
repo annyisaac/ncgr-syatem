@@ -51,6 +51,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
+  const [remember, setRemember] = useState(true);
   const [forgot, setForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [idleNotice, setIdleNotice] = useState(false);
@@ -235,9 +236,22 @@ export default function LoginPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-[0.8rem] text-muted">
-                Signs out after 30 min of inactivity.
-              </span>
+              <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[0.85rem] text-ink">
+                <input
+                  type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
+                  className="peer sr-only"
+                />
+                {/* The tick lives inside this span, so it is not a sibling of the
+                    peer — reach it with a descendant variant, not peer-checked. */}
+                <span className="flex h-5 w-5 items-center justify-center rounded-md border border-line bg-field text-white transition peer-checked:border-gold peer-checked:bg-gold peer-checked:[&>svg]:opacity-100 peer-focus-visible:ring-2 peer-focus-visible:ring-gold/40">
+                  <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-0 transition" aria-hidden>
+                    <path d="M5 10l3.5 3.5L15 7" />
+                  </svg>
+                </span>
+                Remember me
+              </label>
 
               <button
                 type="button"
@@ -250,8 +264,8 @@ export default function LoginPage() {
 
             {idleNotice && (
               <p className="rounded-xl border border-gold/25 bg-gold-bg/60 px-4 py-3 text-[0.82rem] leading-relaxed text-ink">
-                You were signed out after 30 minutes of inactivity. Please sign in
-                again to continue.
+                You were signed out due to inactivity. Please sign in again to
+                continue.
               </p>
             )}
 
