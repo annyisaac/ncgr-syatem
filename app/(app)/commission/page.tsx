@@ -9,10 +9,12 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { DateRange, ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { SearchTimeBar } from "@/components/dashboard/DashKit";
 
 import { formatRWF } from "@/lib/config";
-import { formatDate } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { visibleOrders } from "@/lib/permissions";
 import { commissionByDSR } from "@/lib/commission";
 import {
@@ -29,7 +31,10 @@ export default function CommissionPage() {
   const { orders, commissions, upsertOrder, upsertCommission, newId } = useData();
   const { toast } = useToast();
 
-  const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
+  const [q, setQ] = useState("");
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const range = presetToRange(preset, custom, todayISO());
 
   const isAdmin = user?.role === "Admin";
   const canInitiate =
@@ -42,7 +47,11 @@ export default function CommissionPage() {
     return vis.filter((o) => inRange(o.date, range));
   }, [orders, user, range]);
 
-  const rows = useMemo(() => commissionByDSR(rangeOrders), [rangeOrders]);
+  const allRows = useMemo(() => commissionByDSR(rangeOrders), [rangeOrders]);
+  const rows = useMemo(() => {
+    const s = q.trim().toLowerCase();
+    return s ? allRows.filter((r) => r.dsrName.toLowerCase().includes(s) || r.district.toLowerCase().includes(s)) : allRows;
+  }, [allRows, q]);
   const rangeLabel = range.from || range.to ? `${range.from || "start"} to ${range.to || "today"}` : "All time";
 
   const pendingRequests = useMemo(
@@ -95,20 +104,18 @@ export default function CommissionPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <SearchTimeBar q={q} setQ={setQ} placeholder="Search DSR — name or district…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
+        </div>
         <Button variant="secondary" onClick={downloadPDF}>Download PDF report</Button>
       </div>
 
-      <Card>
-        <CardHeader title="Period" />
-        <DateRange value={range} onChange={setRange} />
-        <p className="mt-2 text-xs text-ink/60">
-          Rates: 100 RWF per delivered Tetra chick · 20 RWF per Ross 308 chick.
-          Commission is due when delivered, or in advance when fully paid before
-          delivery.
-        </p>
-      </Card>
+      <p className="text-xs text-ink/60">
+        Rates: 100 RWF per delivered Tetra chick · 20 RWF per Ross 308 chick.
+        Commission is due when delivered, or in advance when fully paid before delivery.
+      </p>
 
       {/* Admin: pending requests */}
       {isAdmin && (

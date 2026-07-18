@@ -3,8 +3,8 @@
 import { useAuth } from "@/components/AuthProvider";
 import { ProductBatchesView } from "@/components/hatchery/ProductBatchesView";
 
-export default function RossBatchesPage() {
+export default function TetraBatchesPage() {
   const { user } = useAuth();
   if (!user) return null;
-  return <ProductBatchesView product="Ross 308" />;
+  return <ProductBatchesView product="Tetra Super Harco" />;
 }

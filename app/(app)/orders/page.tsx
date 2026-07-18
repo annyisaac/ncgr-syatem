@@ -14,6 +14,9 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ActionsDropdown, type DropdownAction } from "@/components/ui/Dropdown";
+import { SearchTimeBar } from "@/components/dashboard/DashKit";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
 
 import type { Order, Payment, User } from "@/lib/types";
 import {
@@ -25,7 +28,7 @@ import {
   toDeliver,
 } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
-import { formatDate, nowISO } from "@/lib/format";
+import { formatDate, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { clientKey } from "@/lib/clients";
 import { ordersPDF, invoicePDF, paymentProofPDF } from "@/lib/reports";
@@ -80,6 +83,9 @@ function OrdersInner() {
   const [query, setQuery] = useState(search.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(dateParam);
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const range = presetToRange(preset, custom, todayISO());
   const [modal, setModal] = useState<ModalState>(null);
 
   // Keep the date filter in sync when arriving from the Deliveries calendar
@@ -120,8 +126,10 @@ function OrdersInner() {
 
     if (statusFilter !== "all") list = list.filter((o) => o.status === statusFilter);
 
-    // Delivery-date filter (set when opened from the Deliveries calendar).
+    // Delivery-date filter (a single date, set when opened from the Deliveries
+    // calendar). The period dropdown filters by range when no single date is set.
     if (dateFilter) list = list.filter((o) => o.date === dateFilter);
+    else if (range.from || range.to) list = list.filter((o) => inRange(o.date, range));
 
     const q = query.trim().toLowerCase();
     if (q) {
@@ -146,7 +154,7 @@ function OrdersInner() {
               ? -1
               : a.plan - b.plan
       );
-  }, [orders, user, isChecker, tile, statusFilter, dateFilter, query, orderParam]);
+  }, [orders, user, isChecker, tile, statusFilter, dateFilter, range, query, orderParam]);
 
   if (!user) return null;
 
@@ -355,43 +363,24 @@ function OrdersInner() {
         </div>
       )}
 
-      <Card>
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="grow">
-            <Field label="Search (client, phone, or transaction ID)">
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Type to search…"
-              />
-            </Field>
-          </div>
-          <div className="w-44">
-            <Field label="Status">
-              <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                options={[
-                  { value: "all", label: "All statuses" },
-                  { value: "pending", label: "Pending" },
-                  { value: "fulfilled", label: "Fulfilled" },
-                  { value: "refunded", label: "Refunded" },
-                  { value: "rejected", label: "Rejected" },
-                ]}
-              />
-            </Field>
-          </div>
-          <div className="w-44">
-            <Field label="Delivery date">
-              <Input
-                type="date"
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-              />
-            </Field>
-          </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
         </div>
-      </Card>
+        <div className="w-44">
+          <Select
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+            options={[
+              { value: "all", label: "All statuses" },
+              { value: "pending", label: "Pending" },
+              { value: "fulfilled", label: "Fulfilled" },
+              { value: "refunded", label: "Refunded" },
+              { value: "rejected", label: "Rejected" },
+            ]}
+          />
+        </div>
+      </div>
 
       <Card>
         <CardHeader title={`${rows.length} order(s)`} />
