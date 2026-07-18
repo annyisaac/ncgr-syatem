@@ -13,6 +13,7 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { LineChartView, MultiLineChartView } from "@/components/charts/Charts";
+import { StatTile, SectionTitle } from "@/components/dashboard/DashKit";
 
 import type { Order, BankStatement, User, Availability } from "@/lib/types";
 import { PRODUCTS } from "@/lib/types";
@@ -509,21 +510,6 @@ function presetToRange(p: PeriodPreset, custom: DateRangeValue, today: string): 
   }
 }
 
-/** Slim stat tile: tiny uppercase label over a big number; clickable if onClick. */
-function StatTile({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
-  const cls = "rounded-xl border border-line bg-paper px-4 py-3 shadow-card";
-  const body = (
-    <>
-      <p className="text-[0.6rem] font-bold uppercase tracking-[0.09em] text-muted">{label}</p>
-      <p className="mt-1 truncate text-[1.3rem] font-bold leading-tight text-ink tabular-nums">{value}</p>
-    </>
-  );
-  if (onClick) {
-    return <button type="button" onClick={onClick} className={`${cls} text-left transition hover:border-gold`}>{body}</button>;
-  }
-  return <div className={cls}>{body}</div>;
-}
-
 /** Label + number over a thin colored bar (width = value vs the card's max). */
 function MetricBar({ label, display, value, max, color }: {
   label: string; display: string; value: number; max: number; color: string;
@@ -832,19 +818,6 @@ function ZoneTail({ active }: { active: Order[]; scoped: Order[] }) {
         </TableWrap>
       </Card>
     </>
-  );
-}
-
-/** Small colour-chip section heading, with an optional right-side action. */
-function SectionTitle({ label, action }: { label: string; action?: React.ReactNode }) {
-  return (
-    <div className="mb-3 flex items-center justify-between gap-2">
-      <div className="flex items-center gap-2">
-        <span className="h-2.5 w-2.5 rounded-[3px] bg-gold" />
-        <h3 className="text-[0.72rem] font-bold uppercase tracking-[0.08em] text-ink">{label}</h3>
-      </div>
-      {action}
-    </div>
   );
 }
 

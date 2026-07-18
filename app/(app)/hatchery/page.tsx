@@ -6,15 +6,22 @@ import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
-import { Kpi } from "@/components/dashboard/Kpi";
+import { GreetingHeader, StatTile, SectionTitle } from "@/components/dashboard/DashKit";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { computeKpis, stepLabel, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
 import { visibleOrders } from "@/lib/permissions";
 import { PRODUCTS, balance, isFullyPaid, type Order, type User } from "@/lib/types";
 import type { Batch } from "@/lib/hatchery/types";
+
+const HATCHERY_SUBTITLE: Partial<Record<string, string>> = {
+  "Hatchery Veterinary": "here's health & vaccination today",
+  "Maintenance Technician": "here's machines & maintenance today",
+  "Hatchery Sales & Coordination Officer": "here's sales coordination today",
+  "Production Technician": "here's the production floor today",
+};
 
 export default function HatcheryDashboard() {
   const { user } = useAuth();
@@ -24,10 +31,7 @@ export default function HatcheryDashboard() {
   const role = user.role;
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Hatchery</h1>
-        <Pill tone="gold">{role}</Pill>
-      </div>
+      <GreetingHeader name={user.name} subtitle={HATCHERY_SUBTITLE[role] ?? "here's the hatchery today"} right={<Pill tone="gold">{role}</Pill>} />
 
       {loading ? (
         <Card><p className="text-sm text-muted">Loading hatchery data…</p></Card>
@@ -58,7 +62,7 @@ function BatchesCard({ batches, title = "Batches" }: { batches: Batch[]; title?:
     s === "delivered" ? "fulfilled" : s === "dispatched" ? "gold" : s === "inactive" ? "neutral" : "info";
   return (
     <Card>
-      <CardHeader title={title} />
+      <SectionTitle label={title} />
       <TableWrap>
         <thead>
           <tr>
@@ -96,7 +100,7 @@ function OverTempCard() {
   if (alerts.length === 0) return null;
   return (
     <Card>
-      <CardHeader title="Recent over-temperature readings" />
+      <SectionTitle label="Recent over-temperature readings" />
       <div className="space-y-1.5 text-sm">
         {alerts.map((r) => (
           <div key={r.id} className="flex flex-wrap justify-between gap-2 rounded-md border border-red/30 bg-red-bg px-3 py-2">
@@ -140,19 +144,19 @@ function ManagerView({ user }: { user: User }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <Kpi label="Active batches" value={String(kpis.activeBatches)} />
-        <Kpi label="Eggs set" value={kpis.eggsSet.toLocaleString()} />
-        <Kpi label="Chicks hatched" value={kpis.chicksHatched.toLocaleString()} tone="green" />
-        <Kpi label="Hatchability" value={`${kpis.hatchability.toFixed(0)}%`} tone="gold" />
-        <Kpi label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
+        <StatTile label="Active batches" value={String(kpis.activeBatches)} />
+        <StatTile label="Eggs set" value={kpis.eggsSet.toLocaleString()} />
+        <StatTile label="Chicks hatched" value={kpis.chicksHatched.toLocaleString()} tone="green" />
+        <StatTile label="Hatchability" value={`${kpis.hatchability.toFixed(0)}%`} tone="gold" />
+        <StatTile label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
       </div>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <Kpi label="Chicks to deliver" value={demand.toLocaleString()} tone={demand ? "gold" : "default"} />
-        <Kpi label="Orders awaiting" value={String(toDeliver.length)} />
-        <Kpi label="Pending allocations" value={String(pendingAlloc)} tone={pendingAlloc ? "gold" : "default"} />
-        <Kpi label="In transit" value={String(inTransit)} />
-        <Kpi label="Downtime (h)" value={downtime.toFixed(1)} tone={downtime > 0 ? "red" : "default"} />
-        <Kpi label="Low / pending parts" value={`${lowStock} / ${pendingParts}`} tone={lowStock || pendingParts ? "gold" : "default"} />
+        <StatTile label="Chicks to deliver" value={demand.toLocaleString()} tone={demand ? "gold" : "default"} />
+        <StatTile label="Orders awaiting" value={String(toDeliver.length)} />
+        <StatTile label="Pending allocations" value={String(pendingAlloc)} tone={pendingAlloc ? "gold" : "default"} />
+        <StatTile label="In transit" value={String(inTransit)} />
+        <StatTile label="Downtime (h)" value={downtime.toFixed(1)} tone={downtime > 0 ? "red" : "default"} />
+        <StatTile label="Low / pending parts" value={`${lowStock} / ${pendingParts}`} tone={lowStock || pendingParts ? "gold" : "default"} />
       </div>
       <OverTempCard />
       <BatchesCard batches={batches} />
@@ -170,11 +174,11 @@ function ProductionView() {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <Kpi label="Active batches" value={String(kpis.activeBatches)} />
-        <Kpi label="Eggs set" value={kpis.eggsSet.toLocaleString()} />
-        <Kpi label="Chicks hatched" value={kpis.chicksHatched.toLocaleString()} tone="green" />
-        <Kpi label="Hatchability" value={`${kpis.hatchability.toFixed(0)}%`} tone="gold" />
-        <Kpi label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
+        <StatTile label="Active batches" value={String(kpis.activeBatches)} />
+        <StatTile label="Eggs set" value={kpis.eggsSet.toLocaleString()} />
+        <StatTile label="Chicks hatched" value={kpis.chicksHatched.toLocaleString()} tone="green" />
+        <StatTile label="Hatchability" value={`${kpis.hatchability.toFixed(0)}%`} tone="gold" />
+        <StatTile label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
       </div>
       <OverTempCard />
       <BatchesCard batches={batches} />
@@ -194,10 +198,10 @@ function TechView() {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Batches to candle" value={String(toCandle.length)} tone={toCandle.length ? "gold" : "default"} />
-        <Kpi label="In hatchers" value={String(inHatchers.length)} />
-        <Kpi label="Counts to verify" value={String(toVerify)} tone={toVerify ? "gold" : "default"} />
-        <Kpi label="Active batches" value={String(batches.filter((b) => b.status === "active").length)} />
+        <StatTile label="Batches to candle" value={String(toCandle.length)} tone={toCandle.length ? "gold" : "default"} />
+        <StatTile label="In hatchers" value={String(inHatchers.length)} />
+        <StatTile label="Counts to verify" value={String(toVerify)} tone={toVerify ? "gold" : "default"} />
+        <StatTile label="Active batches" value={String(batches.filter((b) => b.status === "active").length)} />
       </div>
       <OverTempCard />
       <BatchesCard batches={batches.filter((b) => b.status === "active")} title="Active pipeline" />
@@ -216,14 +220,14 @@ function VetView() {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label="Batches to vaccinate" value={String(toVax.length)} tone={toVax.length ? "gold" : "default"} />
-        <Kpi label="Pending vaccine requests" value={String(pendingReq.length)} tone={pendingReq.length ? "gold" : "default"} />
-        <Kpi label="Farm visits logged" value={String(farmVisits.length)} />
-        <Kpi label="Biosecurity logs" value={String(biosecurity.length)} />
+        <StatTile label="Batches to vaccinate" value={String(toVax.length)} tone={toVax.length ? "gold" : "default"} />
+        <StatTile label="Pending vaccine requests" value={String(pendingReq.length)} tone={pendingReq.length ? "gold" : "default"} />
+        <StatTile label="Farm visits logged" value={String(farmVisits.length)} />
+        <StatTile label="Biosecurity logs" value={String(biosecurity.length)} />
       </div>
 
       <Card>
-        <CardHeader title={`Batches awaiting vaccination (${toVax.length})`} />
+        <SectionTitle label={`Batches awaiting vaccination (${toVax.length})`} />
         <TableWrap>
           <thead><tr><Th>Batch</Th><Th>Product</Th><Th className="text-right">Counted</Th><Th className="text-right">Culls</Th></tr></thead>
           <tbody>
@@ -240,7 +244,7 @@ function VetView() {
       </Card>
 
       <Card>
-        <CardHeader title={`Vaccine requests to act on (${pendingReq.length})`} />
+        <SectionTitle label={`Vaccine requests to act on (${pendingReq.length})`} />
         <TableWrap>
           <thead><tr><Th>Vaccine</Th><Th className="text-right">Qty</Th><Th>Status</Th></tr></thead>
           <tbody>
@@ -272,16 +276,16 @@ function MaintenanceView() {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Kpi label="Over-temp readings" value={String(alerts)} tone={alerts ? "red" : "default"} />
-        <Kpi label="Downtime (h)" value={downtime.toFixed(1)} tone={downtime > 0 ? "red" : "default"} />
-        <Kpi label="Machines" value={String(machines.length)} />
-        <Kpi label="Parts out of stock" value={String(lowParts.length)} tone={lowParts.length ? "gold" : "default"} />
-        <Kpi label="Part requests" value={String(pendingReq.length)} tone={pendingReq.length ? "gold" : "default"} />
+        <StatTile label="Over-temp readings" value={String(alerts)} tone={alerts ? "red" : "default"} />
+        <StatTile label="Downtime (h)" value={downtime.toFixed(1)} tone={downtime > 0 ? "red" : "default"} />
+        <StatTile label="Machines" value={String(machines.length)} />
+        <StatTile label="Parts out of stock" value={String(lowParts.length)} tone={lowParts.length ? "gold" : "default"} />
+        <StatTile label="Part requests" value={String(pendingReq.length)} tone={pendingReq.length ? "gold" : "default"} />
       </div>
       <OverTempCard />
 
       <Card>
-        <CardHeader title="Spare parts needing attention" />
+        <SectionTitle label="Spare parts needing attention" />
         <TableWrap>
           <thead><tr><Th>Part</Th><Th>Location</Th><Th className="text-right">In stock</Th></tr></thead>
           <tbody>
@@ -293,7 +297,7 @@ function MaintenanceView() {
       </Card>
 
       <Card>
-        <CardHeader title="Recent maintenance" />
+        <SectionTitle label="Recent maintenance" />
         <TableWrap>
           <thead><tr><Th>When</Th><Th>Area</Th><Th>Note</Th><Th className="text-right">Downtime (h)</Th></tr></thead>
           <tbody>
@@ -331,14 +335,14 @@ function CoordinationView({ user }: { user: User }) {
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
-        <Kpi label="Chicks available" value={totalAvail.toLocaleString()} tone="green" />
-        {PRODUCTS.map((p) => <Kpi key={p} label={`${p} available`} value={availBy(p).toLocaleString()} />)}
-        <Kpi label="Pending allocations" value={String(pendingAlloc)} tone={pendingAlloc ? "gold" : "default"} />
-        <Kpi label="In transit" value={String(inTransit)} />
+        <StatTile label="Chicks available" value={totalAvail.toLocaleString()} tone="green" />
+        {PRODUCTS.map((p) => <StatTile key={p} label={`${p} available`} value={availBy(p).toLocaleString()} />)}
+        <StatTile label="Pending allocations" value={String(pendingAlloc)} tone={pendingAlloc ? "gold" : "default"} />
+        <StatTile label="In transit" value={String(inTransit)} />
       </div>
 
       <Card>
-        <CardHeader title={`Chicks to deliver — delivery plan (${toDeliver.length})`} />
+        <SectionTitle label={`Chicks to deliver — delivery plan (${toDeliver.length})`} />
         <TableWrap>
           <thead>
             <tr><Th>Delivery date</Th><Th>Client</Th><Th>Product</Th><Th className="text-right">Chicks</Th><Th>Payment</Th><Th className="text-right">Balance</Th></tr>

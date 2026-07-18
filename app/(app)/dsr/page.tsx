@@ -5,8 +5,8 @@ import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
-import { Card, CardHeader } from "@/components/ui/Card";
-import { Kpi } from "@/components/dashboard/Kpi";
+import { Card } from "@/components/ui/Card";
+import { GreetingHeader, StatTile, SectionTitle } from "@/components/dashboard/DashKit";
 import { formatRWF } from "@/lib/config";
 import { balance, toDeliver } from "@/lib/types";
 import { formatDate, todayISO } from "@/lib/format";
@@ -48,8 +48,8 @@ export default function DsrHome() {
     : [];
 
   return (
-    <div className="space-y-6">
-      <h1 className="section-heading text-2xl">Hello, {myDsr.name}</h1>
+    <div className="space-y-5">
+      <GreetingHeader name={myDsr.name} subtitle={`here's your ${myDsr.zone} today`} />
 
       {/* Search the zone's orders/customers */}
       <Card>
@@ -57,7 +57,7 @@ export default function DsrHome() {
           value={q}
           onChange={(e) => setQ(e.target.value)}
           placeholder="Search a customer by name or phone…"
-          className="w-full rounded-[10px] border border-line bg-field px-4 py-3 text-[0.95rem] text-ink focus:outline-none focus-visible:border-gold"
+          className="w-full rounded-full border border-line bg-field px-4 py-2.5 text-[0.95rem] text-ink focus:outline-none focus-visible:border-gold"
         />
         {s && (
           <div className="mt-3 space-y-1.5">
@@ -73,9 +73,16 @@ export default function DsrHome() {
         )}
       </Card>
 
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <StatTile label={`Orders in ${myDsr.zone}`} value={String(zoneActive.length)} />
+        <StatTile label="Zone chicks" value={zoneChicks.toLocaleString()} />
+        <StatTile label="My chicks this month" value={monthChicks.toLocaleString()} tone="gold" />
+        <StatTile label="My orders" value={String(myActive.length)} />
+      </div>
+
       {target > 0 && (
         <Card>
-          <CardHeader title="This month's target" />
+          <SectionTitle label="This month's target" />
           <div className="mb-2 flex flex-wrap items-end justify-between gap-2 text-sm">
             <span><strong className="text-ink">{monthChicks.toLocaleString()}</strong> <span className="text-muted">of {target.toLocaleString()} chicks</span></span>
             <span className={pct >= 100 ? "font-bold text-green" : "font-semibold text-gold-dark"}>{pct}%{pct >= 100 ? " — target met" : ` · ${Math.max(0, target - monthChicks).toLocaleString()} to go`}</span>
@@ -86,13 +93,6 @@ export default function DsrHome() {
         </Card>
       )}
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <Kpi label={`Orders in ${myDsr.zone}`} value={String(zoneActive.length)} icon="orders" />
-        <Kpi label="Zone chicks" value={zoneChicks.toLocaleString()} icon="chicks" />
-        <Kpi label="My chicks this month" value={monthChicks.toLocaleString()} tone="gold" icon="check" />
-        <Kpi label="My orders" value={String(myActive.length)} icon="orders" />
-      </div>
-
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         {TILES.map((t) => (
           <Link key={t.href} href={t.href} className="group flex min-h-[110px] flex-col justify-between rounded-2xl border border-line bg-paper p-5 shadow-card transition hover:-translate-y-0.5 hover:border-gold hover:shadow-pop">
@@ -101,7 +101,6 @@ export default function DsrHome() {
           </Link>
         ))}
       </div>
-
     </div>
   );
 }
