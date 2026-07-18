@@ -19,6 +19,13 @@ import { ZONES } from "@/lib/config";
 import { nowISO, formatDate, formatDateTime, isValidEmail } from "@/lib/format";
 import { adminCreateUser, adminSetPassword } from "@/lib/adminApi";
 
+/** Roles that carry a zone: the Tetra Zone Manager, and the Tetra Payment
+ *  Checker who also acts as a zone manager (its zone scopes its DSRs, requests
+ *  and farm visits). */
+function needsZone(role: Role): boolean {
+  return role === "Tetra Zone Manager" || role === "Tetra Payment Checker";
+}
+
 export default function UsersPage() {
   const { user, refresh } = useAuth();
   const { users, upsertUser, reload } = useData();
@@ -60,7 +67,7 @@ export default function UsersPage() {
       name: name.trim(),
       email: email.trim().toLowerCase(),
       role,
-      zone: role === "Tetra Zone Manager" ? zone : undefined,
+      zone: needsZone(role) ? zone : undefined,
       password: "",
       active: true,
       created: nowISO(),
@@ -132,7 +139,7 @@ export default function UsersPage() {
                 options={ROLES.map((r) => ({ value: r, label: r }))}
               />
             </Field>
-            {role === "Tetra Zone Manager" && (
+            {needsZone(role) && (
               <Field label="Zone">
                 <Select
                   value={zone}
@@ -288,7 +295,7 @@ export default function UsersPage() {
                 ...target,
                 name: n,
                 role: r,
-                zone: r === "Tetra Zone Manager" ? z : undefined,
+                zone: needsZone(r) ? z : undefined,
               });
               if (newPassword) await adminSetPassword(target.email, newPassword);
               if (target.email === user!.email) await refresh();
@@ -396,7 +403,7 @@ function EditUserModal({
             options={ROLES.map((r) => ({ value: r, label: r }))}
           />
         </Field>
-        {role === "Tetra Zone Manager" && (
+        {needsZone(role) && (
           <Field label="Zone">
             <Select
               value={zone}
