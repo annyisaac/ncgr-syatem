@@ -78,6 +78,8 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Users", href: "/users" },
     { label: "DSRs", href: "/dsrs" },
     { label: "Clients", href: "/clients" },
+    { label: "Requests", href: "/requests" },
+    { label: "Farm visits", href: "/farm-visits" },
     { label: "Availability", href: "/availability" },
     { label: "Commission", href: "/commission" },
     { label: "Verification", href: "/verification" },
@@ -89,6 +91,8 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/dashboard" },
     { label: "My DSRs", href: "/dsrs" },
     { label: "Clients", href: "/clients" },
+    { label: "Requests", href: "/requests" },
+    { label: "Farm visits", href: "/farm-visits" },
     { label: "Commission", href: "/commission" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Zone Orders", href: "/orders" },
@@ -101,12 +105,18 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
   ],
+  // Also acts as the zone manager for its zone (set the account's zone), so it
+  // carries the zone-manager pages on top of payment verification.
   "Tetra Payment Checker": [
     { label: "Dashboard", href: "/dashboard" },
+    { label: "My DSRs", href: "/dsrs" },
     { label: "Clients", href: "/clients" },
+    { label: "Requests", href: "/requests" },
+    { label: "Farm visits", href: "/farm-visits" },
     { label: "Verification", href: "/verification" },
+    { label: "Commission", href: "/commission" },
     { label: "Delivery planning", href: "/planning" },
-    { label: "Orders", href: "/orders" },
+    { label: "Zone Orders", href: "/orders" },
   ],
   "Ross Payment Checker": [
     { label: "Dashboard", href: "/dashboard" },
@@ -121,6 +131,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Home", href: "/dsr" },
     { label: "Orders", href: "/dsr/orders" },
     { label: "Farm visits", href: "/dsr/visits" },
+    { label: "My requests", href: "/requests" },
     { label: "Commission", href: "/dsr/commission" },
   ],
 

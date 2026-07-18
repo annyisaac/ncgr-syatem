@@ -429,6 +429,11 @@ function randomToken(): string {
 }
 
 /** Return an existing active link for the driver, or create one. Yields the token. */
+/** All delivery links (so the planning page can show a driver's link on load). */
+export async function listDeliveryLinks(): Promise<DeliveryLink[]> {
+  return fetchCollection<DeliveryLink>("delivery_links");
+}
+
 export async function ensureDriverLink(driver: string, by: string): Promise<string> {
   if (!inBrowser()) throw new Error("Not in browser");
   const sb = getSupabase();

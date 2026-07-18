@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
@@ -15,7 +15,7 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { visibleOrders } from "@/lib/permissions";
 import { COMPANY, formatRWF } from "@/lib/config";
-import { ensureDriverLink } from "@/lib/db";
+import { ensureDriverLink, listDeliveryLinks } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
 import { canAllocate, fulfillOrder, rescheduleOrder, withHistory } from "@/lib/orders";
 import { deliveryPaymentPDF } from "@/lib/reports";
@@ -83,6 +83,25 @@ export default function DayPlanPage() {
   const [allocFor, setAllocFor] = useState<Order | null>(null);
   const [rescheduleFor, setRescheduleFor] = useState<Order | null>(null);
   const [driverLinks, setDriverLinks] = useState<Record<string, string>>({});
+
+  // Show each driver's existing link on load, so it stays visible for the whole
+  // delivery — it doesn't vanish once stops are delivered or after a refresh.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const links = await listDeliveryLinks();
+        if (!active) return;
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const map: Record<string, string> = {};
+        for (const l of links) if (l.active) map[l.driver] = `${origin}/deliver/${l.token}`;
+        setDriverLinks(map);
+      } catch {
+        /* links stay hidden until generated manually */
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const role = user?.role;
   const canEdit = !!role && CAN_EDIT.includes(role);
