@@ -28,7 +28,7 @@ import { formatRWF } from "@/lib/config";
 import { formatDate, nowISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { clientKey } from "@/lib/clients";
-import { ordersPDF } from "@/lib/reports";
+import { ordersPDF, invoicePDF, paymentProofPDF } from "@/lib/reports";
 import {
   approveDebt,
   canAddPayment,
@@ -177,6 +177,12 @@ function OrdersInner() {
   function buildActions(o: Order): DropdownAction[] {
     if (!canAct) return [];
     const acts: DropdownAction[] = [];
+
+    // Documents — a branded invoice for any order, and a proof for its most
+    // recent verified payment. Available to every role that reaches this menu.
+    acts.push({ label: "Download invoice", onClick: () => void invoicePDF(o) });
+    const lastVerified = [...o.payments].reverse().find((p) => p.verified);
+    if (lastVerified) acts.push({ label: "Payment proof", onClick: () => void paymentProofPDF(o, lastVerified) });
 
     if (!o.confirmedOk && !isClosed(o)) {
       const r = canConfirm(o, isAdmin);

@@ -47,13 +47,47 @@ interface DocBundle {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   autoTable: any;
   startY: number;
+  logo: string | null;
 }
 
-async function brandedDoc(title: string, metaLines: string[]): Promise<DocBundle> {
+/**
+ * Stamp the logo faintly across the centre of every page, then save. Called at
+ * the very end so it covers pages autoTable added. This is what puts the
+ * company logo — as a watermark — on every page of every generated document.
+ */
+function finalizeAndSave(doc: DocBundle["doc"], logo: string | null, fileName: string) {
+  if (logo) {
+    const pw = doc.internal.pageSize.getWidth();
+    const ph = doc.internal.pageSize.getHeight();
+    const w = Math.min(pw * 0.6, 420);
+    const h = w / 3; // logo is a ~3:1 banner
+    const x = (pw - w) / 2;
+    const y = (ph - h) / 2;
+    const pages = doc.internal.getNumberOfPages();
+    for (let p = 1; p <= pages; p++) {
+      doc.setPage(p);
+      try {
+        doc.saveGraphicsState();
+        doc.setGState(doc.GState({ opacity: 0.06 }));
+        doc.addImage(logo, "PNG", x, y, w, h);
+        doc.restoreGraphicsState();
+      } catch {
+        /* ignore watermark errors */
+      }
+    }
+  }
+  doc.save(fileName);
+}
+
+async function brandedDoc(
+  title: string,
+  metaLines: string[],
+  orientation: "landscape" | "portrait" = "landscape"
+): Promise<DocBundle> {
   const { jsPDF } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
 
-  const doc = new jsPDF({ orientation: "landscape", unit: "pt", format: "a4" });
+  const doc = new jsPDF({ orientation, unit: "pt", format: "a4" });
   const logo = await loadLogoDataUrl();
   if (logo) {
     try {
@@ -99,7 +133,7 @@ async function brandedDoc(title: string, metaLines: string[]): Promise<DocBundle
     doc.text(line, 40, y);
   }
 
-  return { doc, autoTable, startY: y + 14 };
+  return { doc, autoTable, startY: y + 14, logo };
 }
 
 function addSignatures(doc: DocBundle["doc"]) {
@@ -126,7 +160,7 @@ export async function deliveryPaymentPDF(
   orders: Order[],
   dateLabel: string
 ): Promise<void> {
-  const { doc, autoTable, startY } = await brandedDoc(
+  const { doc, autoTable, startY, logo } = await brandedDoc(
     "Delivery & Payment Report",
     [`Delivery date: ${dateLabel}`, `Orders: ${orders.length}`]
   );
@@ -174,7 +208,7 @@ export async function deliveryPaymentPDF(
   });
 
   addSignatures(doc);
-  doc.save(`NCGR-Delivery-Payment-${dateLabel.replace(/\s+/g, "_")}.pdf`);
+  finalizeAndSave(doc, logo, `NCGR-Delivery-Payment-${dateLabel.replace(/\s+/g, "_")}.pdf`);
 }
 
 // ---------------------------------------------------------------------------
@@ -182,7 +216,7 @@ export async function deliveryPaymentPDF(
 // ---------------------------------------------------------------------------
 
 export async function ordersPDF(orders: Order[], filterLabel: string): Promise<void> {
-  const { doc, autoTable, startY } = await brandedDoc("Orders Report", [
+  const { doc, autoTable, startY, logo } = await brandedDoc("Orders Report", [
     `Filter: ${filterLabel}`,
     `Orders: ${orders.length}`,
   ]);
@@ -214,7 +248,7 @@ export async function ordersPDF(orders: Order[], filterLabel: string): Promise<v
   });
 
   addSignatures(doc);
-  doc.save(`NCGR-Orders-${filterLabel.replace(/\s+/g, "_")}.pdf`);
+  finalizeAndSave(doc, logo, `NCGR-Orders-${filterLabel.replace(/\s+/g, "_")}.pdf`);
 }
 
 // ---------------------------------------------------------------------------
@@ -225,7 +259,7 @@ export async function commissionPDF(
   rows: DSRCommissionRow[],
   rangeLabel: string
 ): Promise<void> {
-  const { doc, autoTable, startY } = await brandedDoc("DSR Commission Report", [
+  const { doc, autoTable, startY, logo } = await brandedDoc("DSR Commission Report", [
     `Period: ${rangeLabel}`,
     `DSRs: ${rows.length}`,
   ]);
@@ -260,7 +294,102 @@ export async function commissionPDF(
   });
 
   addSignatures(doc);
-  doc.save(`NCGR-Commission-${rangeLabel.replace(/\s+/g, "_")}.pdf`);
+  finalizeAndSave(doc, logo, `NCGR-Commission-${rangeLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Invoice (one order) and Payment proof (one verified payment)
+// ---------------------------------------------------------------------------
+
+/** A short two-column key/value block, returns the y after it. */
+function labelledBlock(
+  doc: DocBundle["doc"],
+  rows: [string, string][],
+  startY: number
+): number {
+  doc.setFontSize(10);
+  let y = startY;
+  for (const [k, v] of rows) {
+    doc.setFont("helvetica", "bold");
+    doc.setTextColor(...INK);
+    doc.text(k, 40, y);
+    doc.setFont("helvetica", "normal");
+    doc.text(String(v), 190, y);
+    y += 16;
+  }
+  return y;
+}
+
+export async function invoicePDF(order: Order): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc(
+    `Invoice — ${order.name}`,
+    [`Order: ${order.id}`, `Delivery date: ${formatDate(order.date)}`],
+    "portrait"
+  );
+
+  const afterInfo = labelledBlock(doc, [
+    ["Client", order.name],
+    ["Phone", order.phone],
+    ["District / Sector", `${order.district} · ${order.sector}`],
+    ["Product", order.product],
+    ["DSR", order.dsr ?? "—"],
+  ], startY);
+
+  autoTable(doc, {
+    startY: afterInfo + 6,
+    head: [["Description", "Qty", "Unit price", "Amount"]],
+    body: [
+      [`${order.product} chicks`, order.chicks, order.price, orderTotal(order)],
+      [`2% extra (free)`, extra2(order), 0, 0],
+      [`Compensation (free)`, order.comp, 0, 0],
+    ],
+    foot: [
+      ["Total", order.chicks, "", orderTotal(order)],
+      ["Paid", "", "", paidAmount(order)],
+      ["Balance", "", "", balance(order)],
+    ],
+    styles: { fontSize: 10, cellPadding: 5 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Invoice-${order.name.replace(/\s+/g, "_")}.pdf`);
+}
+
+export async function paymentProofPDF(
+  order: Order,
+  payment: Order["payments"][number]
+): Promise<void> {
+  const { doc, startY, logo } = await brandedDoc(
+    `Payment Proof — ${order.name}`,
+    [`Order: ${order.id}`],
+    "portrait"
+  );
+
+  const y = labelledBlock(doc, [
+    ["Client", order.name],
+    ["Phone", order.phone],
+    ["Product", order.product],
+    ["Transaction ID", payment.checkedRef || payment.ref],
+    ["Amount", formatRWF(payment.amt)],
+    ["Recorded on", formatDateTime(payment.on)],
+    ["Verified", payment.verified ? "Yes" : "No"],
+    ["Verified by", payment.verifiedBy ?? "—"],
+    ["Verified on", payment.verifiedOn ? formatDateTime(payment.verifiedOn) : "—"],
+    ["Order total", formatRWF(orderTotal(order))],
+    ["Total paid", formatRWF(paidAmount(order))],
+    ["Balance", formatRWF(balance(order))],
+  ], startY);
+
+  doc.setFont("helvetica", "italic");
+  doc.setFontSize(9);
+  doc.setTextColor(...INK);
+  doc.text("This proof confirms the payment recorded against the order above.", 40, y + 8);
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Payment-Proof-${order.name.replace(/\s+/g, "_")}.pdf`);
 }
 
 // ---------------------------------------------------------------------------
