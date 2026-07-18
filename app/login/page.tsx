@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { useAuth } from "@/components/AuthProvider";
+import { useAuth, SIGNED_OUT_REASON_KEY } from "@/components/AuthProvider";
 import { COMPANY } from "@/lib/config";
 import { homeForRole } from "@/lib/permissions";
 
@@ -51,15 +51,27 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [show, setShow] = useState(false);
-  const [remember, setRemember] = useState(true);
   const [forgot, setForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [idleNotice, setIdleNotice] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   // Already logged in → go to the role's home.
   useEffect(() => {
     if (!loading && user) router.replace(homeForRole(user.role));
   }, [loading, user, router]);
+
+  // Explain an automatic sign-out after inactivity, then clear the flag.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (window.sessionStorage.getItem(SIGNED_OUT_REASON_KEY) === "idle") {
+      // Reading a browser-storage flag once on mount is exactly what an effect is
+      // for; the notice can't be derived during render without a hydration split.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setIdleNotice(true);
+      window.sessionStorage.removeItem(SIGNED_OUT_REASON_KEY);
+    }
+  }, []);
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -69,7 +81,7 @@ export default function LoginPage() {
       return;
     }
     setSubmitting(true);
-    const res = await login(email.trim(), password, remember);
+    const res = await login(email.trim(), password);
     setSubmitting(false);
     if (!res.ok) setError(res.error ?? "Login failed.");
     // On success the effect above redirects to the role's home.
@@ -223,22 +235,9 @@ export default function LoginPage() {
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <label className="inline-flex cursor-pointer select-none items-center gap-2.5 text-[0.85rem] text-ink">
-                <input
-                  type="checkbox"
-                  checked={remember}
-                  onChange={(e) => setRemember(e.target.checked)}
-                  className="peer sr-only"
-                />
-                {/* The tick lives inside this span, so it is not a sibling of the
-                    peer — reach it with a descendant variant, not peer-checked. */}
-                <span className="flex h-5 w-5 items-center justify-center rounded-md border border-line bg-field text-white transition peer-checked:border-gold peer-checked:bg-gold peer-checked:[&>svg]:opacity-100 peer-focus-visible:ring-2 peer-focus-visible:ring-gold/40">
-                  <svg width="12" height="12" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" className="opacity-0 transition" aria-hidden>
-                    <path d="M5 10l3.5 3.5L15 7" />
-                  </svg>
-                </span>
-                Remember me
-              </label>
+              <span className="text-[0.8rem] text-muted">
+                Signs out after 30 min of inactivity.
+              </span>
 
               <button
                 type="button"
@@ -248,6 +247,13 @@ export default function LoginPage() {
                 Forgot password?
               </button>
             </div>
+
+            {idleNotice && (
+              <p className="rounded-xl border border-gold/25 bg-gold-bg/60 px-4 py-3 text-[0.82rem] leading-relaxed text-ink">
+                You were signed out after 30 minutes of inactivity. Please sign in
+                again to continue.
+              </p>
+            )}
 
             {forgot && (
               <p className="rounded-xl border border-line bg-grey-bg px-4 py-3 text-[0.82rem] leading-relaxed text-muted">
