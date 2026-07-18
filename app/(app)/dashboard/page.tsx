@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -11,10 +11,8 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { DateRange, ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
-import { Kpi } from "@/components/dashboard/Kpi";
-import { LineChartView, PieChartView, DonutChartView, MultiLineChartView } from "@/components/charts/Charts";
-import { GlobalSearch } from "@/components/sales/GlobalSearch";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { LineChartView, MultiLineChartView } from "@/components/charts/Charts";
 
 import type { Order, BankStatement, User, Availability } from "@/lib/types";
 import { PRODUCTS } from "@/lib/types";
@@ -34,20 +32,12 @@ import {
 export default function DashboardPage() {
   const { user } = useAuth();
   const { orders, replaceAll, setOrders, users, dsrs, commissions, statements, routes, availability, dsrVisits } = useData();
-  const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
 
   const visible = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
-  const scoped = useMemo(() => {
-    if (!user) return [];
-    const vis = visibleOrders(orders, user);
-    if (!range.from && !range.to) return vis;
-    return vis.filter((o) => inRange(o.date, range));
-  }, [orders, user, range]);
-
   if (!user) return null;
 
-  // Payment checkers get a dedicated, self-contained dashboard (own filters).
+  // Each role gets a dedicated, self-contained dashboard sharing one look.
   if (user.role === "Tetra Payment Checker" || user.role === "Ross Payment Checker") {
     return <CheckerDashboard orders={visible} statements={statements} user={user} />;
   }
@@ -57,44 +47,28 @@ export default function DashboardPage() {
   if (user.role === "Tetra Zone Manager") {
     return <ZoneDashboard user={user} orders={visible} availability={availability} />;
   }
+  if (user.role === "Admin") {
+    return (
+      <AdminDashboard
+        user={user}
+        orders={visible}
+        db={{ users, dsrs, orders, commissions, statements, routes, availability, dsrVisits }}
+        replaceAll={replaceAll}
+        setOrders={setOrders}
+      />
+    );
+  }
 
+  // Any other role that lands here has its work on its department pages.
+  const firstName = user.name.split(" ")[0] || user.name;
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h1 className="section-heading text-lg">Dashboard</h1>
-        <Pill tone="gold">{user.role}</Pill>
-      </div>
-
-      <GlobalSearch orders={visible} dsrs={dsrs} routes={routes} />
-
-      {/* Ordering is gated to Admin-opened dates — warn when none are open. */}
-      {user.role === "Admin" && !availability.some((a) => a.date >= todayISO() && (a.ross > 0 || a.tetra > 0)) && (
-        <Card className="border-gold bg-gold-bg/40">
-          <p className="text-sm">
-            <strong className="text-ink">No upcoming ordering dates are open.</strong>{" "}
-            <span className="text-muted">New orders can&apos;t be placed until you open a date on </span>
-            <Link href="/availability" className="font-semibold text-gold-dark underline">Availability</Link>.
-          </p>
-        </Card>
-      )}
-
-      {/* Admin sees everything waiting for their approval, before anything else. */}
-      {user.role === "Admin" && (
-        <ApprovalsCard users={users} orders={orders} commissions={commissions} />
-      )}
-
+    <div className="space-y-5">
+      <h1 className="text-lg font-bold text-ink">
+        Hey {firstName} — <span className="font-normal text-muted">welcome back</span>
+      </h1>
       <Card>
-        <DateRange value={range} onChange={setRange} />
+        <p className="text-sm text-muted">Use the menu to open your department&apos;s pages.</p>
       </Card>
-
-      {user.role === "Admin" && (
-        <AdminDashboard
-          orders={scoped}
-          db={{ users, dsrs, orders, commissions, statements, routes, availability, dsrVisits }}
-          replaceAll={replaceAll}
-          setOrders={setOrders}
-        />
-      )}
     </div>
   );
 }
@@ -237,15 +211,6 @@ function salesPerProduct(orders: Order[]) {
   }));
 }
 
-function statusPie(orders: Order[]) {
-  return [
-    { label: "Pending", value: orders.filter((o) => o.status === "pending").length },
-    { label: "Fulfilled", value: orders.filter((o) => o.status === "fulfilled").length },
-    { label: "Refunded", value: orders.filter((o) => o.status === "refunded").length },
-    { label: "Rejected", value: orders.filter((o) => o.status === "rejected").length },
-  ];
-}
-
 function ProductSummary({ orders }: { orders: Order[] }) {
   return (
     <Card>
@@ -325,11 +290,13 @@ function DSRPerformance({ orders }: { orders: Order[] }) {
 // ---------------------------------------------------------------------------
 
 function AdminDashboard({
+  user,
   orders,
   db,
   replaceAll,
   setOrders,
 }: {
+  user: User;
   orders: Order[];
   db: import("@/lib/types").Database;
   replaceAll: (db: import("@/lib/types").Database) => Promise<void>;
@@ -339,6 +306,38 @@ function AdminDashboard({
   const { toast } = useToast();
   const backupRef = useRef<HTMLInputElement>(null);
   const excelRef = useRef<HTMLInputElement>(null);
+
+  const [preset, setPreset] = useState<PeriodPreset>("month");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const today = todayISO();
+  const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
+  const scoped = useMemo(
+    () => orders.filter((o) => (!range.from && !range.to ? true : inRange(o.date, range))),
+    [orders, range]
+  );
+  const active = useMemo(() => scoped.filter((o) => !isClosed(o)), [scoped]);
+
+  const pending = scoped.filter((o) => o.status === "pending").length;
+  const fulfilled = scoped.filter((o) => o.status === "fulfilled").length;
+  const refunded = scoped.filter((o) => o.status === "refunded").length;
+  const rejected = scoped.filter((o) => o.status === "rejected").length;
+  const collected = verifiedCollected(active);
+  const owed = outstanding(active);
+  const sold = chicksSold(scoped);
+  const statusMax = Math.max(pending, fulfilled, refunded, rejected, 1);
+
+  const dates = useMemo(() => Array.from(new Set(scoped.map((o) => o.date))).sort(), [scoped]);
+  const ordersGrowth = useMemo(() => dates.map((d) => {
+    const upto = scoped.filter((o) => o.date <= d);
+    return {
+      label: formatDate(d),
+      pending: upto.filter((o) => o.status === "pending" && !o.confirmedOk).length,
+      inprogress: upto.filter((o) => o.status === "pending" && o.confirmedOk).length,
+      completed: upto.filter((o) => o.status === "fulfilled").length,
+    };
+  }), [dates, scoped]);
+  const productRows = salesPerProduct(scoped);
+  const productMax = Math.max(...productRows.map((r) => r.value), 1);
 
   const go = (tile: string) => router.push(`/orders?tile=${tile}`);
 
@@ -377,38 +376,78 @@ function AdminDashboard({
   }
 
   return (
-    <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <Kpi label="Orders" value={String(orders.length)} icon="orders" onClick={() => go("all")} />
-        <Kpi label="Pending" value={String(orders.filter((o) => o.status === "pending").length)} tone="gold" icon="pending" onClick={() => go("pending")} />
-        <Kpi label="Fulfilled" value={String(orders.filter((o) => o.status === "fulfilled").length)} tone="green" icon="check" onClick={() => go("fulfilled")} />
-        <Kpi label="Chicks sold" value={chicksSold(orders).toLocaleString()} icon="chicks" onClick={() => go("all")} />
-        <Kpi label="Collected (verified)" value={formatRWF(verifiedCollected(orders))} tone="green" icon="money" onClick={() => go("collected")} />
-        <Kpi label="Outstanding" value={formatRWF(outstanding(orders))} tone="red" icon="alert" onClick={() => go("outstanding")} />
-      </div>
+    <div className="space-y-5">
+      <DashboardHeader user={user} subtitle="here's the whole operation" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
-        <Card>
-          <CardHeader title="Orders by status" />
-          <PieChartView data={statusPie(orders)} />
+      {/* Ordering is gated to Admin-opened dates — warn when none are open. */}
+      {!db.availability.some((a) => a.date >= today && (a.ross > 0 || a.tetra > 0)) && (
+        <Card className="border-gold bg-gold-bg/40">
+          <p className="text-sm">
+            <strong className="text-ink">No upcoming ordering dates are open.</strong>{" "}
+            <span className="text-muted">New orders can&apos;t be placed until you open a date on </span>
+            <Link href="/availability" className="font-semibold text-gold-dark underline">Availability</Link>.
+          </p>
         </Card>
-        <Card>
-          <CardHeader title="Chicks per delivery date" />
-          <LineChartView data={chicksPerDate(orders)} valueName="Chicks" />
-        </Card>
-        <Card>
-          <CardHeader title="Sales per product" />
-          <LineChartView data={salesPerProduct(orders)} color="#1565c0" valueName="RWF" />
-        </Card>
+      )}
+
+      <ApprovalsCard users={db.users} orders={db.orders} commissions={db.commissions} />
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <StatTile label="Orders" value={String(scoped.length)} onClick={() => go("all")} />
+        <StatTile label="Pending" value={String(pending)} onClick={() => go("pending")} />
+        <StatTile label="Fulfilled" value={String(fulfilled)} onClick={() => go("fulfilled")} />
+        <StatTile label="Chicks sold" value={sold.toLocaleString()} onClick={() => go("all")} />
+        <StatTile label="Collected" value={formatRWF(collected)} onClick={() => go("collected")} />
+        <StatTile label="Outstanding" value={formatRWF(owed)} onClick={() => go("outstanding")} />
       </div>
 
       <AvailabilityPanel availability={db.availability} orders={db.orders} focus="both" />
 
-      <ProductSummary orders={orders} />
-      <DSRPerformance orders={orders} />
+      {/* Orders growth | orders-by-status metrics */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <SectionTitle label="Orders growth" />
+          <MultiLineChartView
+            data={ordersGrowth}
+            series={[
+              { key: "pending", name: "Pending", color: "#d4a017" },
+              { key: "inprogress", name: "In progress", color: "#2563eb" },
+              { key: "completed", name: "Completed", color: "#15803d" },
+            ]}
+          />
+        </Card>
+        <Card>
+          <SectionTitle label="Orders by status" />
+          <div className="space-y-4 pt-1">
+            <MetricBar label="Pending" display={String(pending)} value={pending} max={statusMax} color="#d4a017" />
+            <MetricBar label="Fulfilled" display={String(fulfilled)} value={fulfilled} max={statusMax} color="#15803d" />
+            <MetricBar label="Refunded" display={String(refunded)} value={refunded} max={statusMax} color="#2563eb" />
+            <MetricBar label="Rejected" display={String(rejected)} value={rejected} max={statusMax} color="#b91c1c" />
+          </div>
+        </Card>
+      </div>
+
+      {/* Chicks per date | sales-per-product metrics */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <SectionTitle label="Chicks per delivery date" />
+          <LineChartView data={chicksPerDate(scoped)} valueName="Chicks" />
+        </Card>
+        <Card>
+          <SectionTitle label="Sales per product" />
+          <div className="space-y-4 pt-1">
+            {productRows.map((r) => (
+              <MetricBar key={r.label} label={r.label} display={formatRWF(r.value)} value={r.value} max={productMax} color="#d97706" />
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      <ProductSummary orders={scoped} />
+      <DSRPerformance orders={scoped} />
 
       <Card>
-        <CardHeader title="Data & backups" />
+        <SectionTitle label="Data & backups" />
         <p className="mb-3 text-sm text-ink/60">
           Download a full JSON backup regularly (weekly recommended). You can
           also export/import all orders as Excel.
@@ -422,7 +461,7 @@ function AdminDashboard({
           <input ref={excelRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onImportExcel} />
         </div>
       </Card>
-    </>
+    </div>
   );
 }
 
@@ -470,14 +509,19 @@ function presetToRange(p: PeriodPreset, custom: DateRangeValue, today: string): 
   }
 }
 
-/** Slim stat tile: tiny uppercase label over a big number. */
-function StatTile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-line bg-paper px-4 py-3 shadow-card">
+/** Slim stat tile: tiny uppercase label over a big number; clickable if onClick. */
+function StatTile({ label, value, onClick }: { label: string; value: string; onClick?: () => void }) {
+  const cls = "rounded-xl border border-line bg-paper px-4 py-3 shadow-card";
+  const body = (
+    <>
       <p className="text-[0.6rem] font-bold uppercase tracking-[0.09em] text-muted">{label}</p>
       <p className="mt-1 truncate text-[1.3rem] font-bold leading-tight text-ink tabular-nums">{value}</p>
-    </div>
+    </>
   );
+  if (onClick) {
+    return <button type="button" onClick={onClick} className={`${cls} text-left transition hover:border-gold`}>{body}</button>;
+  }
+  return <div className={cls}>{body}</div>;
 }
 
 /** Label + number over a thin colored bar (width = value vs the card's max). */
@@ -498,6 +542,70 @@ function MetricBar({ label, display, value, max, color }: {
   );
 }
 
+/**
+ * Shared dashboard header: "Hey {name} — {subtitle}", a bare search pill in the
+ * middle (Enter → Orders search), and the period picker on the right. Every
+ * role's dashboard opens with this, so they all read the same.
+ */
+function DashboardHeader({
+  user,
+  subtitle,
+  preset,
+  setPreset,
+  custom,
+  setCustom,
+}: {
+  user: User;
+  subtitle: string;
+  preset: PeriodPreset;
+  setPreset: (p: PeriodPreset) => void;
+  custom: DateRangeValue;
+  setCustom: (v: DateRangeValue) => void;
+}) {
+  const router = useRouter();
+  const [q, setQ] = useState("");
+  const firstName = user.name.split(" ")[0] || user.name;
+  return (
+    <div className="flex flex-wrap items-center gap-3">
+      <h1 className="text-lg font-bold text-ink">
+        Hey {firstName} — <span className="font-normal text-muted">{subtitle}</span>
+      </h1>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          const s = q.trim();
+          if (s) router.push(`/orders?q=${encodeURIComponent(s)}`);
+        }}
+        className="order-last relative w-full min-w-0 lg:order-none lg:mx-auto lg:w-96"
+      >
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden>
+          <circle cx="9" cy="9" r="5.5" />
+          <path d="m13.5 13.5 3.5 3.5" />
+        </svg>
+        <input
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Search orders — client, phone…"
+          aria-label="Search orders"
+          className="h-10 w-full rounded-full border border-line bg-paper pl-10 pr-4 text-sm text-ink outline-none transition focus:border-gold"
+        />
+      </form>
+      <div className="ml-auto flex flex-wrap items-center gap-2 lg:ml-0">
+        <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
+          {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+        </select>
+        {preset === "custom" && (
+          <div className="flex items-center gap-1.5">
+            <input type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className={`${CTRL} w-auto`} />
+            <span className="text-muted">–</span>
+            <input type="date" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className={`${CTRL} w-auto`} />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SalesOverview({
   user,
   orders,
@@ -511,10 +619,8 @@ function SalesOverview({
   focus: "Ross 308" | "Tetra Super Harco";
   Tail: React.ComponentType<{ active: Order[]; scoped: Order[] }>;
 }) {
-  const router = useRouter();
   const [preset, setPreset] = useState<PeriodPreset>("month");
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
-  const [q, setQ] = useState("");
   const today = todayISO();
   const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
 
@@ -557,50 +663,10 @@ function SalesOverview({
   const chicksToday = active.filter((o) => o.date === today).reduce((s, o) => s + o.chicks, 0);
   const ordersMax = Math.max(pendingNew, inProgress, completed, scoped.length, 1);
   const moneyMax = Math.max(recordedPaid, collected, owed, 1);
-  const firstName = user.name.split(" ")[0] || user.name;
 
   return (
     <div className="space-y-5">
-      {/* Greeting left, a bare search pill centred, period picker right */}
-      <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-lg font-bold text-ink">
-          Hey {firstName} — <span className="font-normal text-muted">here&apos;s your sales overview</span>
-        </h1>
-        {/* Enter hands the query to the Orders page (?q= prefills its search).
-            order-last drops it to its own full row on small screens. */}
-        <form
-          onSubmit={(e) => {
-            e.preventDefault();
-            const s = q.trim();
-            if (s) router.push(`/orders?q=${encodeURIComponent(s)}`);
-          }}
-          className="order-last relative w-full min-w-0 lg:order-none lg:mx-auto lg:w-96"
-        >
-          <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" aria-hidden>
-            <circle cx="9" cy="9" r="5.5" />
-            <path d="m13.5 13.5 3.5 3.5" />
-          </svg>
-          <input
-            value={q}
-            onChange={(e) => setQ(e.target.value)}
-            placeholder="Search orders — client, phone…"
-            aria-label="Search orders"
-            className="h-10 w-full rounded-full border border-line bg-paper pl-10 pr-4 text-sm text-ink outline-none transition focus:border-gold"
-          />
-        </form>
-        <div className="ml-auto flex flex-wrap items-center gap-2 lg:ml-0">
-          <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
-            {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
-          </select>
-          {preset === "custom" && (
-            <div className="flex items-center gap-1.5">
-              <input type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className={`${CTRL} w-auto`} />
-              <span className="text-muted">–</span>
-              <input type="date" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className={`${CTRL} w-auto`} />
-            </div>
-          )}
-        </div>
-      </div>
+      <DashboardHeader user={user} subtitle="here's your sales overview" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
 
       {/* Slim stat strip */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
@@ -769,12 +835,15 @@ function ZoneTail({ active }: { active: Order[]; scoped: Order[] }) {
   );
 }
 
-/** Small colour-chip section heading, e.g. "▪ DISTRICT PERFORMANCE". */
-function SectionTitle({ label }: { label: string }) {
+/** Small colour-chip section heading, with an optional right-side action. */
+function SectionTitle({ label, action }: { label: string; action?: React.ReactNode }) {
   return (
-    <div className="mb-3 flex items-center gap-2">
-      <span className="h-2.5 w-2.5 rounded-[3px] bg-gold" />
-      <h3 className="text-[0.72rem] font-bold uppercase tracking-[0.08em] text-ink">{label}</h3>
+    <div className="mb-3 flex items-center justify-between gap-2">
+      <div className="flex items-center gap-2">
+        <span className="h-2.5 w-2.5 rounded-[3px] bg-gold" />
+        <h3 className="text-[0.72rem] font-bold uppercase tracking-[0.08em] text-ink">{label}</h3>
+      </div>
+      {action}
     </div>
   );
 }
@@ -957,247 +1026,129 @@ function RossTail({ active, scoped }: { active: Order[]; scoped: Order[] }) {
 // ---------------------------------------------------------------------------
 
 function CheckerDashboard({ orders, statements, user }: { orders: Order[]; statements: BankStatement[]; user: User }) {
-  const router = useRouter();
-  const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
-  const [region, setRegion] = useState<string>("all");
-  const [now, setNow] = useState<Date>(() => new Date());
-  useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
-  }, []);
-
+  const [preset, setPreset] = useState<PeriodPreset>("month");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const today = todayISO();
+  const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
   const product = user.role.includes("Tetra") ? "Tetra Super Harco" : "Ross 308";
-  const regions = useMemo(() => Array.from(new Set(orders.map((o) => o.province).filter(Boolean))).sort(), [orders]);
 
-  const scoped = useMemo(() => {
-    const inR = (d: string) => (!range.from && !range.to ? true : inRange(d, range));
-    return orders.filter((o) => inR(o.date) && (region === "all" || o.province === region));
-  }, [orders, range, region]);
+  const scoped = useMemo(
+    () => orders.filter((o) => (!range.from && !range.to ? true : inRange(o.date, range))),
+    [orders, range]
+  );
   const active = useMemo(() => scoped.filter((o) => o.status !== "rejected" && o.status !== "refunded"), [scoped]);
 
-  const payments = active.flatMap((o) => o.payments);
-  const verified = payments.filter((p) => p.verified);
-  const unverified = payments.filter((p) => !p.verified);
+  const paymentsAll = active.flatMap((o) => o.payments);
+  const verified = paymentsAll.filter((p) => p.verified);
+  const unverified = paymentsAll.filter((p) => !p.verified);
   const amountReceived = verified.reduce((s, p) => s + p.amt, 0);
   const totalValue = active.reduce((s, o) => s + orderTotal(o), 0);
   const amountPending = active.reduce((s, o) => s + Math.max(0, balance(o)), 0);
   const receivedOrders = active.filter((o) => o.payments.some((p) => p.verified)).length;
-  const pendingOrders = active.filter((o) => balance(o) > 0).length;
   const paymentRate = totalValue > 0 ? (amountReceived / totalValue) * 100 : 0;
   const rejected = scoped.filter((o) => o.status === "rejected").length;
 
-  // Previous equal-length period, for the trend badge.
-  let deltaPct: number | null = null;
-  if (range.from && range.to) {
-    const from = new Date(range.from).getTime(), to = new Date(range.to).getTime();
-    const iso = (t: number) => new Date(t).toISOString().slice(0, 10);
-    const prevTo = from - 86_400_000, prevFrom = prevTo - (to - from);
-    const prev = orders.filter((o) => (region === "all" || o.province === region) && o.status !== "rejected" && o.status !== "refunded" && o.date >= iso(prevFrom) && o.date <= iso(prevTo));
-    const prevVal = prev.reduce((s, o) => s + orderTotal(o), 0);
-    if (prevVal > 0) deltaPct = ((totalValue - prevVal) / prevVal) * 100;
-  }
+  const dates = useMemo(() => Array.from(new Set(active.map((o) => o.date))).sort(), [active]);
+  const collectionsGrowth = useMemo(() => dates.map((d) => ({
+    label: formatDate(d),
+    value: active
+      .filter((o) => o.date <= d)
+      .reduce((s, o) => s + o.payments.filter((p) => p.verified).reduce((a, p) => a + p.amt, 0), 0),
+  })), [dates, active]);
 
-  // Cumulative orders vs payments-received over the delivery dates in range.
-  const dates = Array.from(new Set(active.map((o) => o.date))).sort();
-  const perDate = dates.map((d) => {
-    const day = active.filter((o) => o.date === d);
-    return { d, orders: day.length, received: day.filter((o) => o.payments.some((p) => p.verified)).length };
-  });
-  const chartData = perDate.map((row, i) => {
-    const upto = perDate.slice(0, i + 1);
-    return { label: formatDate(row.d), orders: upto.reduce((a, x) => a + x.orders, 0), received: upto.reduce((a, x) => a + x.received, 0) };
-  });
-
-  const donut = [
-    { label: "Received", value: amountReceived },
-    { label: "Pending", value: amountPending },
-  ];
-  const donutTotal = amountReceived + amountPending;
-  const pct = (v: number) => (donutTotal > 0 ? ((v / donutTotal) * 100).toFixed(1) : "0");
-
-  const toReceive = active.filter((o) => balance(o) > 0).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.plan - b.plan));
-  const recentStatements = statements.slice().sort((a, b) => (a.uploadedOn < b.uploadedOn ? 1 : -1)).slice(0, 5);
+  const toReceive = useMemo(
+    () => active.filter((o) => balance(o) > 0).sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.plan - b.plan)),
+    [active]
+  );
+  const recentStatements = useMemo(() => statements.slice().sort((a, b) => (a.uploadedOn < b.uploadedOn ? 1 : -1)).slice(0, 6), [statements]);
   const statementsBalance = statements.reduce((s, st) => s + st.rows.reduce((a, r) => a + (Number(r.amt) || 0), 0), 0);
 
+  const moneyMax = Math.max(totalValue, amountReceived, amountPending, 1);
+  const payMax = Math.max(paymentsAll.length, 1);
+
   return (
-    <div className="space-y-4">
-      {/* Filter bar */}
-      <div className="rounded-2xl border border-line bg-paper p-4 shadow-card">
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1.7fr_1fr_1fr_auto] lg:items-end">
-          <FilterField label="Delivery date range">
-            <div className="flex items-center gap-1.5">
-              <input type="date" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} className={CTRL} />
-              <span className="shrink-0 text-muted">–</span>
-              <input type="date" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} className={CTRL} />
-            </div>
-          </FilterField>
-          <FilterField label="Product">
-            <div className={`${CTRL} flex items-center bg-cream/40 text-muted`}>{product}</div>
-          </FilterField>
-          <FilterField label="Region">
-            <select value={region} onChange={(e) => setRegion(e.target.value)} className={CTRL}>
-              <option value="all">All regions</option>
-              {regions.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
-          </FilterField>
-          <Button variant="ghost" className="h-10" onClick={() => { setRange(ALL_TIME); setRegion("all"); }}>↺ Reset</Button>
-        </div>
-      </div>
+    <div className="space-y-5">
+      <DashboardHeader user={user} subtitle={`here's your ${product} payments overview`} preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
 
-      {/* KPI cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
-        <Kpi label="Total orders" value={String(scoped.length)} tone="gold" icon="orders" sub="This period" onClick={() => router.push("/orders")} />
-        <Kpi label="Payments received" value={String(receivedOrders)} tone="green" icon="check" sub="Verified orders" onClick={() => router.push("/verification")} />
-        <Kpi label="Amount received" value={formatRWF(amountReceived)} tone="red" icon="money" sub="Total received" />
-        <Kpi label="Amount pending" value={formatRWF(amountPending)} tone="blue" icon="alert" sub="Total pending" />
-        <Kpi label="Total value" value={formatRWF(totalValue)} tone="purple" icon="chart" sub="Total order value" />
+        <StatTile label="Total orders" value={String(scoped.length)} />
+        <StatTile label="Paid orders" value={String(receivedOrders)} />
+        <StatTile label="Amount received" value={formatRWF(amountReceived)} />
+        <StatTile label="Amount pending" value={formatRWF(amountPending)} />
+        <StatTile label="Total value" value={formatRWF(totalValue)} />
       </div>
 
-      {/* Overview + donut */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
-          <CardHeader title="Orders overview" />
-          <MultiLineChartView
-            data={chartData}
-            series={[{ key: "orders", name: "Total Orders", color: "#d4a017" }, { key: "received", name: "Payments Received", color: "#1c1a16" }]}
-          />
-          <div className="mt-3 grid grid-cols-2 gap-2 rounded-xl border border-line bg-cream/30 p-3 text-center sm:grid-cols-4">
-            <Metric label="Total Orders" value={String(scoped.length)} />
-            <Metric label="Payments Received" value={String(receivedOrders)} />
-            <Metric label="Pending Orders" value={String(pendingOrders)} />
-            <Metric label="Payment Rate" value={`${paymentRate.toFixed(1)}%`} tone="green" />
-          </div>
+      {/* Collections growth | collections metrics */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <SectionTitle label="Collections (verified, cumulative)" />
+          <LineChartView data={collectionsGrowth} color="#15803d" valueName="RWF" />
         </Card>
-
-        <Card className="lg:col-span-2">
-          <CardHeader title="Collections" />
-          <DonutChartView data={donut} colors={["#15803d", "#d4a017"]} centerLabel={formatRWF(totalValue)} centerSub="Total value" />
-          <div className="space-y-2 text-sm">
-            <LegendRow color="#15803d" label="Received" value={`${formatRWF(amountReceived)} (${pct(amountReceived)}%)`} />
-            <LegendRow color="#d4a017" label="Pending" value={`${formatRWF(amountPending)} (${pct(amountPending)}%)`} />
+        <Card>
+          <SectionTitle label="Collections metrics" />
+          <div className="space-y-4 pt-1">
+            <MetricBar label="Amount received" display={formatRWF(amountReceived)} value={amountReceived} max={moneyMax} color="#15803d" />
+            <MetricBar label="Amount pending" display={formatRWF(amountPending)} value={amountPending} max={moneyMax} color="#d4a017" />
+            <MetricBar label="Payment rate" display={`${paymentRate.toFixed(1)}%`} value={paymentRate} max={100} color="#2563eb" />
           </div>
-          {deltaPct !== null && (
-            <div className="mt-3 rounded-xl border border-line bg-cream/30 p-3 text-center text-sm">
-              <span className={deltaPct >= 0 ? "font-bold text-green" : "font-bold text-red"}>{deltaPct >= 0 ? "↗ +" : "↘ "}{deltaPct.toFixed(1)}%</span>
-              <span className="text-muted"> vs previous period</span>
-            </div>
-          )}
         </Card>
       </div>
 
-      {/* Payments to receive + right column */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-        <Card className="lg:col-span-3">
-          <CardHeader title="Payments to receive" action={<Link href="/verification" className="text-sm font-semibold text-gold-dark">View all →</Link>} />
+      {/* Payments to receive | verification metrics */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
+        <Card className="xl:col-span-2">
+          <SectionTitle label="Payments to receive" action={<Link href="/verification" className="text-sm font-semibold text-gold-dark">View all →</Link>} />
           <TableWrap>
             <thead>
-              <tr><Th>Delivery date</Th><Th>Client</Th><Th>Product</Th><Th className="text-right">Pending amount</Th><Th>Status</Th><Th></Th></tr>
+              <tr><Th>Delivery date</Th><Th>Client</Th><Th>Product</Th><Th className="text-right">Pending amount</Th><Th>Status</Th></tr>
             </thead>
             <tbody>
               {toReceive.length === 0 ? (
-                <EmptyRow colSpan={6} text="No pending payments — all collected." />
-              ) : toReceive.slice(0, 12).map((o) => (
+                <EmptyRow colSpan={5} text="No pending payments — all collected." />
+              ) : toReceive.slice(0, 10).map((o) => (
                 <tr key={o.id}>
                   <Td>{formatDate(o.date)}</Td>
                   <Td>{o.name}</Td>
-                  <Td>{o.product}</Td>
+                  <Td className="text-muted">{o.product}</Td>
                   <Td className="text-right font-semibold">{formatRWF(balance(o))}</Td>
                   <Td><Pill tone="gold">{paidAmount(o) > 0 ? "Partial" : "Pending"}</Pill></Td>
-                  <Td className="text-right"><Link href="/verification" className="text-xs font-semibold text-gold-dark underline">View</Link></Td>
                 </tr>
               ))}
             </tbody>
           </TableWrap>
           <p className="mt-2 text-sm">Total pending amount: <strong className="text-red">{formatRWF(amountPending)}</strong></p>
         </Card>
-
-        <div className="space-y-4 lg:col-span-2">
-          <Card>
-            <CardHeader title="Bank statements" action={<Link href="/verification" className="text-xs font-semibold text-gold-dark">View all</Link>} />
-            <TableWrap>
-              <thead><tr><Th>File</Th><Th>By</Th><Th className="text-right">Rows</Th></tr></thead>
-              <tbody>
-                {recentStatements.length === 0 ? (
-                  <EmptyRow colSpan={3} text="No statements uploaded." />
-                ) : recentStatements.map((s) => (
-                  <tr key={s.id}>
-                    <Td className="font-medium">{s.fileName}</Td>
-                    <Td className="text-muted">{s.uploadedBy}</Td>
-                    <Td className="text-right">{s.rows.length.toLocaleString()}</Td>
-                  </tr>
-                ))}
-              </tbody>
-            </TableWrap>
-            <p className="mt-2 text-sm">Statement total: <strong className="text-green">{formatRWF(statementsBalance)}</strong></p>
-          </Card>
-
-          <Card>
-            <CardHeader title="Verification progress" />
-            <div className="flex items-center justify-around py-2">
-              <ProgressCircle tone="green" value={verified.length} label="Verified" />
-              <ProgressCircle tone="gold" value={unverified.length} label="Pending" />
-              <ProgressCircle tone="red" value={rejected} label="Rejected" />
-            </div>
-          </Card>
-        </div>
+        <Card>
+          <SectionTitle label="Verification" />
+          <div className="space-y-4 pt-1">
+            <MetricBar label="Verified payments" display={String(verified.length)} value={verified.length} max={payMax} color="#15803d" />
+            <MetricBar label="Pending payments" display={String(unverified.length)} value={unverified.length} max={payMax} color="#d4a017" />
+            <MetricBar label="Rejected orders" display={String(rejected)} value={rejected} max={Math.max(scoped.length, 1)} color="#b91c1c" />
+          </div>
+        </Card>
       </div>
 
-      {/* Footer bar */}
-      <div className="grid grid-cols-2 gap-3 rounded-2xl border border-line bg-paper p-4 shadow-card text-sm sm:grid-cols-4">
-        <FooterItem label="Today" value={formatDate(todayISO())} />
-        <FooterItem label="Current time" value={now.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })} />
-        <FooterItem label="Logged in as" value={user.name} />
-        <FooterItem label="Region" value={region === "all" ? "All regions" : region} />
-      </div>
+      <Card>
+        <SectionTitle label="Bank statements" action={<Link href="/verification" className="text-sm font-semibold text-gold-dark">View all →</Link>} />
+        <TableWrap>
+          <thead><tr><Th>File</Th><Th>Uploaded by</Th><Th className="text-right">Rows</Th></tr></thead>
+          <tbody>
+            {recentStatements.length === 0 ? (
+              <EmptyRow colSpan={3} text="No statements uploaded." />
+            ) : recentStatements.map((s) => (
+              <tr key={s.id}>
+                <Td className="font-medium">{s.fileName}</Td>
+                <Td className="text-muted">{s.uploadedBy}</Td>
+                <Td className="text-right">{s.rows.length.toLocaleString()}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+        <p className="mt-2 text-sm">Statement total: <strong className="text-green">{formatRWF(statementsBalance)}</strong></p>
+      </Card>
     </div>
   );
 }
 
-function Metric({ label, value, tone }: { label: string; value: string; tone?: "green" }) {
-  return (
-    <div>
-      <p className={`text-base font-bold ${tone === "green" ? "text-green" : "text-ink"}`}>{value}</p>
-      <p className="text-[0.66rem] text-muted">{label}</p>
-    </div>
-  );
-}
-
-// Uniform filter-bar control + labelled field.
+// Uniform select control used by the dashboard header's period picker.
 const CTRL = "h-10 w-full rounded-lg border border-line bg-paper px-3 text-sm text-ink outline-none focus:border-gold";
-function FilterField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-[0.08em] text-muted">{label}</p>
-      {children}
-    </div>
-  );
-}
-
-function LegendRow({ color, label, value }: { color: string; label: string; value: string }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
-      <span className="text-muted">{label}</span>
-      <span className="ml-auto font-medium text-ink">{value}</span>
-    </div>
-  );
-}
-
-function ProgressCircle({ tone, value, label }: { tone: "green" | "gold" | "red" | "blue"; value: number; label: string }) {
-  const cls = tone === "green" ? "border-green/40 text-green" : tone === "gold" ? "border-gold text-gold-dark" : tone === "blue" ? "border-blue/40 text-blue" : "border-red/40 text-red";
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      <span className={`flex h-14 w-14 items-center justify-center rounded-full border-2 ${cls} text-lg font-bold`}>{value}</span>
-      <span className="text-xs text-muted">{label}</span>
-    </div>
-  );
-}
-
-function FooterItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
-      <p className="font-medium text-ink">{value}</p>
-    </div>
-  );
-}
