@@ -97,6 +97,8 @@ function OrdersInner() {
   // Payment checkers now get the same order privileges as a seller (add + edit).
   const canSell = isSales || isChecker;
   const canAct = isAdmin || canSell;
+  // Roles that see more than one zone need each order's zone spelled out.
+  const showZone = isAdmin || role === "Tetra Payment Checker";
 
   const rows = useMemo(() => {
     if (!user) return [];
@@ -403,6 +405,7 @@ function OrdersInner() {
               <Th>Product</Th>
               <Th>Client</Th>
               <Th>District / Sector</Th>
+              {showZone && <Th>Zone</Th>}
               <Th>DSR</Th>
               <Th className="text-right">Chicks</Th>
               <Th className="text-right">To deliver</Th>
@@ -416,7 +419,7 @@ function OrdersInner() {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={13} text="No orders match." />
+              <EmptyRow colSpan={showZone ? 14 : 13} text="No orders match." />
             ) : (
               rows.map((o) => {
                 const cs = paymentCheckState(o);
@@ -437,6 +440,7 @@ function OrdersInner() {
                       {o.district}
                       <div className="text-xs text-ink/50">{o.sector}</div>
                     </Td>
+                    {showZone && <Td><Pill tone={o.zone === "Zone 2" ? "gold" : "info"}>{o.zone}</Pill></Td>}
                     <Td>{o.dsr ?? "—"}</Td>
                     <Td className="text-right">{o.chicks.toLocaleString()}</Td>
                     <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
