@@ -44,13 +44,16 @@ export default function DSRsPage() {
   const [showForm, setShowForm] = useState(false);
 
   const isZoneManager = user?.role === "Tetra Zone Manager";
+  // The Tetra Payment Checker also manages a zone, so it is zone-scoped too.
+  const isZoneScoped = isZoneManager || user?.role === "Tetra Payment Checker";
 
-  // DSRs visible to this user.
+  // DSRs visible to this user — zone-private for zone staff (RLS enforces the
+  // same at the data level), everything for Admin.
   const myDSRs = useMemo(() => {
     if (!user) return [];
-    if (isZoneManager) return dsrs.filter((d) => d.zone === user.zone);
+    if (isZoneScoped) return dsrs.filter((d) => d.zone === user.zone);
     return dsrs;
-  }, [dsrs, user, isZoneManager]);
+  }, [dsrs, user, isZoneScoped]);
 
   // Orders visible to this user (for analytics).
   const myOrders = useMemo(
@@ -61,9 +64,9 @@ export default function DSRsPage() {
   // Provinces available for registration (zone-limited for zone managers).
   const provinceOptions = useMemo(() => {
     const list =
-      isZoneManager && user?.zone ? zoneProvinces(user.zone) : PROVINCES;
+      isZoneScoped && user?.zone ? zoneProvinces(user.zone) : PROVINCES;
     return list.map((p) => ({ value: p, label: p }));
-  }, [isZoneManager, user]);
+  }, [isZoneScoped, user]);
 
   const {
     register,
@@ -81,11 +84,11 @@ export default function DSRsPage() {
   const districtOptions = useMemo(() => {
     if (!province) return [];
     const list =
-      isZoneManager && user?.zone
+      isZoneScoped && user?.zone
         ? zoneDistricts(user.zone, province)
         : DISTRICTS_BY_PROVINCE[province];
     return list.map((d) => ({ value: d, label: d }));
-  }, [province, isZoneManager, user]);
+  }, [province, isZoneScoped, user]);
 
   function onSubmit(values: FormValues) {
     const zone = zoneOfDistrict(values.district);
