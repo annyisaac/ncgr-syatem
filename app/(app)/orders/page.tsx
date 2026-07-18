@@ -28,7 +28,7 @@ import {
   toDeliver,
 } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
-import { formatDate, nowISO, todayISO } from "@/lib/format";
+import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { clientKey } from "@/lib/clients";
 import { ordersPDF, invoicePDF, paymentProofPDF } from "@/lib/reports";
@@ -411,7 +411,10 @@ function OrdersInner() {
                 const cs = paymentCheckState(o);
                 return (
                   <tr key={o.id}>
-                    <Td>{formatDate(o.date)}</Td>
+                    <Td>
+                      {formatDate(o.date)}
+                      <div className="text-xs text-ink/50">Ordered {formatDateTime(o.createdAt)}</div>
+                    </Td>
                     <Td>{o.product}</Td>
                     <Td>
                       <Link

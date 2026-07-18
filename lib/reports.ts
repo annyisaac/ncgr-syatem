@@ -59,8 +59,17 @@ function finalizeAndSave(doc: DocBundle["doc"], logo: string | null, fileName: s
   if (logo) {
     const pw = doc.internal.pageSize.getWidth();
     const ph = doc.internal.pageSize.getHeight();
-    const w = Math.min(pw * 0.6, 420);
-    const h = w / 3; // logo is a ~3:1 banner
+    // Match the company's Word watermark: the full logo (its own aspect ratio,
+    // not squished), large and centred, faded to a light-grey wash on every page.
+    let ratio = 549 / 454; // logo.png intrinsic ratio, overridden below if readable
+    try {
+      const props = doc.getImageProperties(logo);
+      if (props?.width && props?.height) ratio = props.width / props.height;
+    } catch {
+      /* fall back to the known logo ratio */
+    }
+    const w = pw * 0.72;
+    const h = w / ratio;
     const x = (pw - w) / 2;
     const y = (ph - h) / 2;
     const pages = doc.internal.getNumberOfPages();
@@ -68,7 +77,7 @@ function finalizeAndSave(doc: DocBundle["doc"], logo: string | null, fileName: s
       doc.setPage(p);
       try {
         doc.saveGraphicsState();
-        doc.setGState(doc.GState({ opacity: 0.06 }));
+        doc.setGState(doc.GState({ opacity: 0.09 }));
         doc.addImage(logo, "PNG", x, y, w, h);
         doc.restoreGraphicsState();
       } catch {
@@ -104,8 +113,9 @@ async function brandedDoc(
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
-  doc.text(COMPANY.address, 98, 58);
-  doc.text(COMPANY.email, 98, 70);
+  doc.text(COMPANY.address, 98, 56);
+  doc.text(`${COMPANY.email}  ·  Tel: ${COMPANY.tel}`, 98, 67);
+  doc.text(`TIN: ${COMPANY.tin}`, 98, 78);
 
   doc.setFont("helvetica", "italic");
   doc.setTextColor(...GOLD);
@@ -222,6 +232,7 @@ export async function ordersPDF(orders: Order[], filterLabel: string): Promise<v
   ]);
 
   const body = orders.map((o) => [
+    formatDateTime(o.createdAt),
     formatDate(o.date),
     o.product,
     o.name,
@@ -235,15 +246,26 @@ export async function ordersPDF(orders: Order[], filterLabel: string): Promise<v
     o.status,
   ]);
 
+  const sum = (fn: (o: Order) => number) => orders.reduce((s, o) => s + fn(o), 0);
+
   autoTable(doc, {
     startY,
     head: [[
-      "Date", "Product", "Client", "Phone", "District", "DSR",
+      "Ordered", "Delivery", "Product", "Client", "Phone", "District", "DSR",
       "Chicks", "Total", "Paid", "Balance", "Status",
     ]],
     body,
+    foot: [[
+      "Totals", "", "", "", "", "", "",
+      sum((o) => o.chicks),
+      sum((o) => orderTotal(o)),
+      sum((o) => paidAmount(o)),
+      sum((o) => balance(o)),
+      "",
+    ]],
     styles: { fontSize: 8, cellPadding: 3 },
     headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
     theme: "grid",
   });
 
@@ -323,7 +345,11 @@ function labelledBlock(
 export async function invoicePDF(order: Order): Promise<void> {
   const { doc, autoTable, startY, logo } = await brandedDoc(
     `Invoice — ${order.name}`,
-    [`Order: ${order.id}`, `Delivery date: ${formatDate(order.date)}`],
+    [
+      `Order: ${order.id}`,
+      `Ordered: ${formatDateTime(order.createdAt)}`,
+      `Delivery date: ${formatDate(order.date)}`,
+    ],
     "portrait"
   );
 

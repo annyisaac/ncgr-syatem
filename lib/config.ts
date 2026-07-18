@@ -15,6 +15,8 @@ export const COMPANY = {
   name: "NCGR LTD",
   address: "Rwamagana – Gishari, Eastern Province, Rwanda",
   email: "info@ncgrltd.com",
+  tel: "250781398821",
+  tin: "108493553",
   tagline: "Your Partner in Poultry Excellence",
   logoPath: "/logo.png",
 } as const;
