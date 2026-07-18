@@ -10,7 +10,7 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { formatRWF } from "@/lib/config";
 import { formatDate } from "@/lib/format";
-import { balance, paidAmount, toDeliver } from "@/lib/types";
+import { balance, paidAmount, toDeliver, isFullyPaid, allVerified } from "@/lib/types";
 import { orderStage } from "@/lib/orders";
 
 export default function DsrOrdersPage() {
@@ -61,12 +61,19 @@ export default function DsrOrdersPage() {
           <thead>
             <tr>
               <Th>Delivery date</Th><Th>Client</Th><Th>DSR</Th><Th>Product</Th>
-              <Th className="text-right">Chicks</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Status</Th><Th></Th>
+              <Th className="text-right">Chicks</Th><Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Payment</Th><Th>Status</Th><Th></Th>
             </tr>
           </thead>
           <tbody>
-            {shown.length === 0 ? <EmptyRow colSpan={9} text="No matching orders." /> : shown.map((o) => {
+            {shown.length === 0 ? <EmptyRow colSpan={10} text="No matching orders." /> : shown.map((o) => {
               const t = orderStage(o);
+              const pay = isFullyPaid(o)
+                ? { label: allVerified(o) ? "Paid ✓" : "Paid", tone: "green" as const }
+                : o.debtOk
+                  ? { label: "On debt", tone: "info" as const }
+                  : paidAmount(o) > 0
+                    ? { label: "Partial", tone: "gold" as const }
+                    : { label: "Unpaid", tone: "red" as const };
               return (
                 <tr key={o.id} className="cursor-pointer hover:bg-gold-bg">
                   <Td>{formatDate(o.date)}</Td>
@@ -79,6 +86,7 @@ export default function DsrOrdersPage() {
                   <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
                   <Td className="text-right">{formatRWF(paidAmount(o))}</Td>
                   <Td className={`text-right ${balance(o) > 0 ? "font-semibold text-red" : ""}`}>{formatRWF(balance(o))}</Td>
+                  <Td><Pill tone={pay.tone}>{pay.label}</Pill></Td>
                   <Td><Pill tone={t.tone}>{t.label}</Pill></Td>
                   <Td>
                     <Link href={`/dsr/orders/${o.id}`} className="inline-block rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-ink transition hover:border-gold hover:bg-gold-bg">
