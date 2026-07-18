@@ -40,7 +40,7 @@ export default function DashboardPage() {
 
   // Each role gets a dedicated, self-contained dashboard sharing one look.
   if (user.role === "Tetra Payment Checker" || user.role === "Ross Payment Checker") {
-    return <CheckerDashboard orders={visible} statements={statements} user={user} />;
+    return <CheckerDashboard orders={visible} statements={statements} availability={availability} user={user} />;
   }
   if (user.role === "Ross Order Receiver") {
     return <RossDashboard user={user} orders={visible} availability={availability} />;
@@ -998,7 +998,7 @@ function RossTail({ active, scoped }: { active: Order[]; scoped: Order[] }) {
 // Payment checker dashboard
 // ---------------------------------------------------------------------------
 
-function CheckerDashboard({ orders, statements, user }: { orders: Order[]; statements: BankStatement[]; user: User }) {
+function CheckerDashboard({ orders, statements, availability, user }: { orders: Order[]; statements: BankStatement[]; availability: Availability[]; user: User }) {
   const [preset, setPreset] = useState<PeriodPreset>("month");
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
   const today = todayISO();
@@ -1050,6 +1050,8 @@ function CheckerDashboard({ orders, statements, user }: { orders: Order[]; state
         <StatTile label="Amount pending" value={formatRWF(amountPending)} />
         <StatTile label="Total value" value={formatRWF(totalValue)} />
       </div>
+
+      <AvailabilityPanel availability={availability} orders={orders} focus={product} />
 
       {/* Collections growth | collections metrics */}
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">

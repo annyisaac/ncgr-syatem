@@ -17,13 +17,13 @@ export function canSee(order: Order, user: User): boolean {
     case "Admin":
       return true;
     case "Tetra Zone Manager":
-      // Only Tetra orders in the manager's own zone.
+    case "Tetra Payment Checker":
+      // Tetra orders in this staff member's own zone (the checker manages a
+      // zone too). Different zones are not shared.
       return order.product === "Tetra Super Harco" && order.zone === user.zone;
     case "Ross Order Receiver":
-      return order.product === "Ross 308";
-    case "Tetra Payment Checker":
-      return order.product === "Tetra Super Harco";
     case "Ross Payment Checker":
+      // Ross 308 is one product handled across both zones.
       return order.product === "Ross 308";
     default:
       // Hatchery coordination/oversight roles see all orders for allocation.
