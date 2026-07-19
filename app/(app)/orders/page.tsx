@@ -71,7 +71,7 @@ const CHECK_LABEL: Record<string, string> = {
 
 function OrdersInner() {
   const { user } = useAuth();
-  const { orders, upsertOrder, removeOrder } = useData();
+  const { orders, availability, upsertOrder, removeOrder } = useData();
   const { toast } = useToast();
   const search = useSearchParams();
   const tile = search.get("tile") ?? "all";
@@ -182,6 +182,18 @@ function OrdersInner() {
               : 0
       );
   }, [orders, user, role, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
+
+  // Delivery dates the Admin has opened, for the delivery-date filter.
+  const deliveryDateOptions = useMemo(
+    () => [
+      { value: "", label: "All delivery dates" },
+      ...availability
+        .slice()
+        .sort((a, b) => (a.id < b.id ? -1 : 1))
+        .map((a) => ({ value: a.id, label: formatDate(a.date) })),
+    ],
+    [availability]
+  );
 
   if (!user) return null;
 
@@ -422,6 +434,13 @@ function OrdersInner() {
               { value: "unpaid", label: "Payment: Unpaid" },
               { value: "debt", label: "Payment: On debt" },
             ]}
+          />
+        </div>
+        <div className="w-48">
+          <Select
+            value={dateFilter}
+            onChange={(e) => setDateFilter(e.target.value)}
+            options={deliveryDateOptions}
           />
         </div>
       </div>
