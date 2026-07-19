@@ -17,6 +17,7 @@ import {
   PROVINCES,
   ALL_DISTRICTS,
   formatRWF,
+  sectorsOfDistrict,
   zoneDistricts,
   zoneOfDistrict,
   zoneProvinces,
@@ -93,6 +94,16 @@ export default function NewOrderPage() {
   const sectorOptions = useMemo(
     () => (selectedDsr ? selectedDsr.sectors.map((s) => ({ value: s, label: s })) : []),
     [selectedDsr]
+  );
+  // Official sectors of the chosen district — for the Ross order sector and the
+  // client's own sector.
+  const orderSectorOptions = useMemo(
+    () => sectorsOfDistrict(district).map((s) => ({ value: s, label: s })),
+    [district]
+  );
+  const clientSectorOptions = useMemo(
+    () => sectorsOfDistrict(clientDistrict).map((s) => ({ value: s, label: s })),
+    [clientDistrict]
   );
 
   // Customer de-duplication: a phone number already in the system is an existing
@@ -323,14 +334,17 @@ export default function NewOrderPage() {
                     onChange={(e) => {
                       setDistrict(e.target.value);
                       setDsrId("");
+                      setSector("");
                     }}
                   />
                 </Field>
-                <Field label="Sector / pickup point">
-                  <Input
+                <Field label="Sector">
+                  <Select
                     value={sector}
+                    placeholder={district ? "Select sector" : "Choose district first"}
+                    options={orderSectorOptions}
+                    disabled={!district}
                     onChange={(e) => setSector(e.target.value)}
-                    placeholder="Free text, e.g. Kabuga market"
                   />
                 </Field>
                 <Field label="DSR (optional)">
@@ -374,11 +388,20 @@ export default function NewOrderPage() {
                     value={clientDistrict}
                     placeholder="Select district"
                     options={ALL_DISTRICTS.map((d) => ({ value: d, label: d }))}
-                    onChange={(e) => setClientDistrict(e.target.value)}
+                    onChange={(e) => {
+                      setClientDistrict(e.target.value);
+                      setClientSector("");
+                    }}
                   />
                 </Field>
                 <Field label="Sector">
-                  <Input value={clientSector} onChange={(e) => setClientSector(e.target.value)} placeholder="Client's sector" />
+                  <Select
+                    value={clientSector}
+                    placeholder={clientDistrict ? "Select sector" : "Choose district first"}
+                    options={clientSectorOptions}
+                    disabled={!clientDistrict}
+                    onChange={(e) => setClientSector(e.target.value)}
+                  />
                 </Field>
                 <Field label="Chicks ordered">
                   <Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} />
