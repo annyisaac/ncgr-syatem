@@ -394,21 +394,15 @@ function OrdersInner() {
               <Th>Product</Th>
               <Th>Client</Th>
               <Th>District / Sector</Th>
-              {showZone && <Th>Zone</Th>}
-              <Th>DSR</Th>
               <Th className="text-right">Chicks</Th>
-              <Th className="text-right">To deliver</Th>
-              <Th className="text-right">Total</Th>
-              <Th className="text-right">Paid</Th>
-              <Th className="text-right">Balance</Th>
+              <Th className="text-right">Amount</Th>
               <Th>Status</Th>
-              <Th>Payment Check</Th>
               <Th>Actions</Th>
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={showZone ? 14 : 13} text="No orders match." />
+              <EmptyRow colSpan={8} text="No orders match." />
             ) : (
               rows.map((o) => {
                 const cs = paymentCheckState(o);
@@ -418,7 +412,11 @@ function OrdersInner() {
                       {formatDate(o.date)}
                       <div className="text-xs text-ink/50">Ordered {formatDateTime(o.createdAt)}</div>
                     </Td>
-                    <Td>{o.product}</Td>
+                    <Td>
+                      <Pill tone={o.product === "Ross 308" ? "info" : "gold"}>
+                        {o.product === "Ross 308" ? "Ross" : "Tetra"}
+                      </Pill>
+                    </Td>
                     <Td>
                       <Link
                         href={`/clients/${encodeURIComponent(clientKey(o))}`}
@@ -427,18 +425,25 @@ function OrdersInner() {
                         {o.name}
                       </Link>
                       <div className="text-xs text-ink/50">{o.phone}</div>
+                      {o.dsr && <div className="text-xs text-ink/50">DSR: {o.dsr}</div>}
                     </Td>
                     <Td>
-                      {o.district}
+                      <div className="flex items-center gap-1.5">
+                        <span>{o.district}</span>
+                        {showZone && <Pill tone={o.zone === "Zone 2" ? "gold" : "info"}>{o.zone}</Pill>}
+                      </div>
                       <div className="text-xs text-ink/50">{o.sector}</div>
                     </Td>
-                    {showZone && <Td><Pill tone={o.zone === "Zone 2" ? "gold" : "info"}>{o.zone}</Pill></Td>}
-                    <Td>{o.dsr ?? "—"}</Td>
-                    <Td className="text-right">{o.chicks.toLocaleString()}</Td>
-                    <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
-                    <Td className="text-right">{formatRWF(orderTotal(o))}</Td>
-                    <Td className="text-right">{formatRWF(paidAmount(o))}</Td>
-                    <Td className="text-right">{formatRWF(balance(o))}</Td>
+                    <Td className="whitespace-nowrap text-right">
+                      {o.chicks.toLocaleString()}
+                      <div className="text-xs text-ink/50">→ {toDeliver(o).toLocaleString()} to deliver</div>
+                    </Td>
+                    <Td className="whitespace-nowrap text-right">
+                      <div className="font-medium">{formatRWF(orderTotal(o))}</div>
+                      <div className="text-xs text-ink/50">
+                        Paid {paidAmount(o).toLocaleString()} · Bal {balance(o).toLocaleString()}
+                      </div>
+                    </Td>
                     <Td>
                       <div className="flex flex-col gap-1">
                         <Pill
@@ -465,11 +470,11 @@ function OrdersInner() {
                         {o.request?.status === "open" && (
                           <Pill tone="info">Request: {o.request.kind}</Pill>
                         )}
+                        <span className="text-xs text-ink/50">
+                          Check: {CHECK_LABEL[cs.state]}
+                          {cs.state === "partial" && ` (${cs.verified}/${cs.total})`}
+                        </span>
                       </div>
-                    </Td>
-                    <Td>
-                      {CHECK_LABEL[cs.state]}
-                      {cs.state === "partial" && ` (${cs.verified}/${cs.total})`}
                     </Td>
                     <Td>
                       {canAct || isChecker ? (
