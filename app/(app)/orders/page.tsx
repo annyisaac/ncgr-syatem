@@ -501,9 +501,14 @@ function OrdersInner() {
                       <div className="text-xs text-ink/50">→ {toDeliver(o).toLocaleString()} to deliver</div>
                     </Td>
                     <Td className="whitespace-nowrap text-right">
-                      <div className="font-medium">{formatRWF(orderTotal(o))}</div>
+                      <div className={`font-medium ${isFullyPaid(o) ? "text-green" : "text-ink"}`}>
+                        {formatRWF(orderTotal(o))}
+                      </div>
                       <div className="text-xs text-ink/50">
-                        Paid {paidAmount(o).toLocaleString()} · Bal {balance(o).toLocaleString()}
+                        Paid {paidAmount(o).toLocaleString()} · Bal{" "}
+                        <span className={balance(o) > 0 ? "font-semibold text-red" : ""}>
+                          {balance(o).toLocaleString()}
+                        </span>
                       </div>
                     </Td>
                     <Td>
