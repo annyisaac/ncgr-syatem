@@ -83,7 +83,6 @@ function OrdersInner() {
   const [query, setQuery] = useState(search.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [productFilter, setProductFilter] = useState("all");
-  const [payFilter, setPayFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(dateParam);
   const [preset, setPreset] = useState<PeriodPreset>("all");
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
@@ -129,17 +128,29 @@ function OrdersInner() {
     else if (tile === "collected")
       list = list.filter((o) => allVerified(o));
 
-    if (statusFilter !== "all") list = list.filter((o) => o.status === statusFilter);
-    if (productFilter !== "all") list = list.filter((o) => o.product === productFilter);
-    if (payFilter !== "all") {
+    // One dropdown covers both the order status and the payment status.
+    if (statusFilter !== "all") {
       list = list.filter((o) => {
-        if (payFilter === "debt") return isDebtApproved(o) || !!o.debtOk;
-        if (payFilter === "paid") return isFullyPaid(o);
-        if (payFilter === "partial") return !isFullyPaid(o) && paidAmount(o) > 0;
-        if (payFilter === "unpaid") return paidAmount(o) === 0;
-        return true;
+        switch (statusFilter) {
+          case "pending":
+          case "fulfilled":
+          case "refunded":
+          case "rejected":
+            return o.status === statusFilter;
+          case "paid":
+            return isFullyPaid(o);
+          case "partial":
+            return !isFullyPaid(o) && paidAmount(o) > 0;
+          case "unpaid":
+            return paidAmount(o) === 0;
+          case "debt":
+            return isDebtApproved(o) || !!o.debtOk;
+          default:
+            return true;
+        }
       });
     }
+    if (productFilter !== "all") list = list.filter((o) => o.product === productFilter);
 
     // Delivery-date filter (a single date, set when opened from the Deliveries
     // calendar). The period dropdown filters by range when no single date is set.
@@ -170,7 +181,7 @@ function OrdersInner() {
               ? 1
               : 0
       );
-  }, [orders, user, role, tile, statusFilter, productFilter, payFilter, dateFilter, range, query, orderParam]);
+  }, [orders, user, role, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
 
   if (!user) return null;
 
@@ -396,7 +407,7 @@ function OrdersInner() {
             />
           </div>
         )}
-        <div className="w-44">
+        <div className="w-52">
           <Select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -406,19 +417,10 @@ function OrdersInner() {
               { value: "fulfilled", label: "Fulfilled" },
               { value: "refunded", label: "Refunded" },
               { value: "rejected", label: "Rejected" },
-            ]}
-          />
-        </div>
-        <div className="w-44">
-          <Select
-            value={payFilter}
-            onChange={(e) => setPayFilter(e.target.value)}
-            options={[
-              { value: "all", label: "All payments" },
-              { value: "paid", label: "Fully paid" },
-              { value: "partial", label: "Partially paid" },
-              { value: "unpaid", label: "Unpaid" },
-              { value: "debt", label: "On debt" },
+              { value: "paid", label: "Payment: Fully paid" },
+              { value: "partial", label: "Payment: Partially paid" },
+              { value: "unpaid", label: "Payment: Unpaid" },
+              { value: "debt", label: "Payment: On debt" },
             ]}
           />
         </div>
