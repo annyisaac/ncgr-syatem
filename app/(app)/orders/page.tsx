@@ -430,7 +430,9 @@ function OrdersInner() {
                     <Td>
                       <div className="flex items-center gap-1.5">
                         <span>{o.district}</span>
-                        {showZone && <Pill tone={o.zone === "Zone 2" ? "gold" : "info"}>{o.zone}</Pill>}
+                        {showZone && o.product === "Tetra Super Harco" && (
+                          <Pill tone={o.zone === "Zone 2" ? "gold" : "info"}>{o.zone}</Pill>
+                        )}
                       </div>
                       <div className="text-xs text-ink/50">{o.sector}</div>
                     </Td>
