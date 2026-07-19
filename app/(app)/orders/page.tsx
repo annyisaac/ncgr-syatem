@@ -145,17 +145,18 @@ function OrdersInner() {
     }
 
     // When viewing a single delivery date, order by the delivery plan so
-    // "Move up / down" is meaningful; otherwise newest delivery first.
+    // "Move up / down" is meaningful; otherwise oldest order (by creation
+    // time) first.
     return list
       .slice()
       .sort((a, b) =>
         dateFilter
           ? a.plan - b.plan
-          : a.date < b.date
-            ? 1
-            : a.date > b.date
-              ? -1
-              : a.plan - b.plan
+          : a.createdAt < b.createdAt
+            ? -1
+            : a.createdAt > b.createdAt
+              ? 1
+              : 0
       );
   }, [orders, user, role, tile, statusFilter, dateFilter, range, query, orderParam]);
 
