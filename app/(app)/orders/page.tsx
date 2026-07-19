@@ -82,6 +82,7 @@ function OrdersInner() {
   // ?q= prefills the search (the dashboard's search bar hands off to here).
   const [query, setQuery] = useState(search.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
+  const [productFilter, setProductFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(dateParam);
   const [preset, setPreset] = useState<PeriodPreset>("all");
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
@@ -128,6 +129,7 @@ function OrdersInner() {
       list = list.filter((o) => allVerified(o));
 
     if (statusFilter !== "all") list = list.filter((o) => o.status === statusFilter);
+    if (productFilter !== "all") list = list.filter((o) => o.product === productFilter);
 
     // Delivery-date filter (a single date, set when opened from the Deliveries
     // calendar). The period dropdown filters by range when no single date is set.
@@ -158,7 +160,7 @@ function OrdersInner() {
               ? 1
               : 0
       );
-  }, [orders, user, role, tile, statusFilter, dateFilter, range, query, orderParam]);
+  }, [orders, user, role, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
 
   if (!user) return null;
 
@@ -371,6 +373,19 @@ function OrdersInner() {
         <div className="min-w-0 flex-1">
           <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
         </div>
+        {isAdmin && (
+          <div className="w-44">
+            <Select
+              value={productFilter}
+              onChange={(e) => setProductFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All products" },
+                { value: "Tetra Super Harco", label: "Tetra Super Harco" },
+                { value: "Ross 308", label: "Ross 308" },
+              ]}
+            />
+          </div>
+        )}
         <div className="w-44">
           <Select
             value={statusFilter}
