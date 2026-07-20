@@ -132,6 +132,11 @@ export default function MachinesPage() {
     setEditM(null);
   }
 
+  function toggleActive(m: Machine) {
+    upsertMachine({ ...m, active: !m.active, on: nowISO() });
+    toast(`Machine ${m.code} ${m.active ? "deactivated" : "activated"}.`);
+  }
+
   function recordReading(e?: React.FormEvent) {
     e?.preventDefault();
     setRErr(null);
@@ -235,6 +240,14 @@ export default function MachinesPage() {
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <span className="truncate text-sm text-muted">Operator: <span className="text-ink">{rd?.operator ?? "—"}</span></span>
                   <div className="flex shrink-0 items-center gap-2">
+                    {canManage && (
+                      <button
+                        onClick={() => toggleActive(m)}
+                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${m.active ? "bg-red-bg text-red" : "bg-green-bg text-green"}`}
+                      >
+                        {m.active ? "Deactivate" : "Activate"}
+                      </button>
+                    )}
                     {canManage && <button onClick={() => openEdit(m)} className="text-xs text-gold-dark underline">Edit</button>}
                     {canViewDetail && <Link href={`/hatchery/machines/${encodeURIComponent(m.code)}`} className="text-sm font-semibold text-gold-dark">View Details →</Link>}
                   </div>
