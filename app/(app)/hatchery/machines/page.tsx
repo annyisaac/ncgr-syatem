@@ -133,6 +133,12 @@ export default function MachinesPage() {
   }
 
   function toggleActive(m: Machine) {
+    if (m.active) {
+      const held = eggsInMachine(batches, m.code, m.type === "setter" ? "setters" : "transfers");
+      if (held > 0 && !window.confirm(
+        `${m.code} still holds ${held.toLocaleString()} eggs. Deactivating removes it from the pool for new sets/transfers and from the reading list, but its current eggs stay put. Continue?`
+      )) return;
+    }
     upsertMachine({ ...m, active: !m.active, on: nowISO() });
     toast(`Machine ${m.code} ${m.active ? "deactivated" : "activated"}.`);
   }
@@ -316,7 +322,7 @@ export default function MachinesPage() {
         ) : (
           <form onSubmit={recordReading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {sessionOp && <p className="sm:col-span-2 text-sm text-muted">Recording as <strong className="text-ink">{sessionOp.name}</strong>.</p>}
-            <Field label="Machine"><Select value={r.machineCode} onChange={(e) => setR({ ...r, machineCode: e.target.value, turning: e.target.value ? opposite(lastTurnOf(e.target.value)) : "" })} placeholder="Select" options={machines.map((m) => ({ value: m.code, label: `${m.code} (${m.type})` }))} /></Field>
+            <Field label="Machine"><Select value={r.machineCode} onChange={(e) => setR({ ...r, machineCode: e.target.value, turning: e.target.value ? opposite(lastTurnOf(e.target.value)) : "" })} placeholder="Select" options={machines.filter((m) => m.active).map((m) => ({ value: m.code, label: `${m.code} (${m.type})` }))} /></Field>
             {r.machineCode && (
               <div className="sm:col-span-2 rounded-md border border-line bg-cream/40 px-3 py-2 text-sm">
                 {lastTurnOf(r.machineCode)

@@ -14,7 +14,7 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { todayISO, nowISO, formatDate } from "@/lib/format";
 import type { Batch, ChickCount } from "@/lib/hatchery/types";
-import { saleableFrom, markStep, expectedHatchDate, batchFlocks, flockTransferred } from "@/lib/hatchery/lifecycle";
+import { saleableFrom, markStep, machinesToSync, expectedHatchDate, batchFlocks, flockTransferred } from "@/lib/hatchery/lifecycle";
 
 const CAN_ACT = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
@@ -27,7 +27,13 @@ const daysBetween = (fromIso: string, toIso: string) =>
 
 export default function HatchPage() {
   const { user } = useAuth();
-  const { batches, counts, upsertBatch, upsertCount, upsertInventory, newId } = useHatchery();
+  const { batches, machines, counts, upsertBatch, upsertCount, upsertMachine, upsertInventory, newId } = useHatchery();
+
+  /** After a batch hatches, its hatcher(s) are empty → set them inactive. */
+  function syncHatchers(nb: Batch) {
+    const nextBatches = batches.map((b) => (b.id === nb.id ? nb : b));
+    machinesToSync(machines, nb.transfers.map((a) => a.machineCode), nextBatches).forEach(upsertMachine);
+  }
   const { toast } = useToast();
 
   const [sel, setSel] = useState<string | null>(null);
@@ -116,6 +122,7 @@ export default function HatchPage() {
       upsertInventory({ id: newId("inv"), productType: nb.productType, hatchDate: todayISO(), availableCount: saleableTot, batchId: nb.id, updatedBy: user!.email, on: nowISO() });
     }
     upsertBatch(nb);
+    syncHatchers(nb);
     toast(allDone ? `${b.batchNo} fully verified — ${saleableTot.toLocaleString()} saleable.` : `Flock ${c.flockId} verified.`);
   }
 
@@ -128,6 +135,7 @@ export default function HatchPage() {
     let nb: Batch = { ...batch, hatchedCount: hatchedN, culls: cullsN, unhatchedCount: unhatched, saleableCount: saleable };
     nb = markStep(nb, "hatching", user!);
     upsertBatch(nb);
+    syncHatchers(nb);
     toast(`${hatchedN.toLocaleString()} hatched — ${saleable.toLocaleString()} saleable.`);
     setSel(null); setHatched(""); setCulls("");
   }

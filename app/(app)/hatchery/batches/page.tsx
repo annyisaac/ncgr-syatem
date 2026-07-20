@@ -14,7 +14,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception } from "@/lib/hatchery/types";
-import { batchCode, machineFreeCapacity, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
+import { batchCode, machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
@@ -26,7 +26,7 @@ interface AssignRow { groupKey: string; machineCode: string; eggs: string; sette
 
 export default function BatchesPage() {
   const { user } = useAuth();
-  const { receptions, machines, batches, upsertBatch, upsertReception, newId } = useHatchery();
+  const { receptions, machines, batches, upsertBatch, upsertReception, upsertMachine, newId } = useHatchery();
   const { toast } = useToast();
 
   const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
@@ -34,7 +34,9 @@ export default function BatchesPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const canSet = !!user && CAN_SET.includes(user.role);
-  const setters = machines.filter((m) => m.type === "setter" && m.active);
+  // Idle setters are inactive; setting eggs into one activates it, so the picker
+  // lists all setters (occupancy/free capacity guards over-filling).
+  const setters = machines.filter((m) => m.type === "setter");
 
   // Only receptions marked "ready to set" (and not batched) can be batched.
   const groups: Group[] = useMemo(() => {
@@ -169,6 +171,8 @@ export default function BatchesPage() {
     batch = markStep(batch, "setting", user!);
     upsertBatch(batch);
     usedGroups.forEach((g) => g.recs.forEach((r) => upsertReception({ ...r, batchId: id })));
+    // Setting eggs activates the setters they went into.
+    machinesToSync(machines, setterList.map((s) => s.machineCode), [...batches, batch]).forEach(upsertMachine);
     toast(`Batch ${batch.batchNo} set — ${total.toLocaleString()} eggs, ${flocks.length} flock(s).`);
     setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]);
   }

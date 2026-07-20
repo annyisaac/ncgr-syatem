@@ -18,7 +18,7 @@ import {
   type Batch, type BatchFlock, type Candling, type MachineAssignment,
 } from "@/lib/hatchery/types";
 import {
-  candlingTotal, markStep, machineFreeCapacity,
+  candlingTotal, markStep, machineFreeCapacity, machinesToSync,
   batchFlocks, flockHasCandling, flockFertileAfterC1, flockFertileAfterC2,
   flockTransferDone, recomputeBatchAggregates,
 } from "@/lib/hatchery/lifecycle";
@@ -38,7 +38,7 @@ function catCounts(f: BatchFlock, stage: 1 | 2): Record<string, number> {
 
 export default function CandlingPage() {
   const { user } = useAuth();
-  const { batches, machines, upsertBatch } = useHatchery();
+  const { batches, machines, upsertBatch, upsertMachine } = useHatchery();
   const { toast } = useToast();
 
   const [mode, setMode] = useState<"c1" | "c2">("c1");
@@ -48,7 +48,9 @@ export default function CandlingPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const canAct = !!user && CAN_ACT.includes(user.role);
-  const hatchers = machines.filter((m) => m.type === "hatcher" && m.active);
+  // Idle hatchers are inactive; transferring eggs into one activates it, so the
+  // picker lists all hatchers (free capacity guards over-filling).
+  const hatchers = machines.filter((m) => m.type === "hatcher");
 
   // Flocks in the candling phase. Candling I shows every flock (candled + to
   // candle); Candling II shows those that have had candling 1. Each row = one flock.
@@ -152,6 +154,11 @@ export default function CandlingPage() {
     let nb: Batch = recomputeBatchAggregates({ ...selected.batch, flocks });
     if (batchFlocks(nb).every(flockTransferDone)) nb = markStep(nb, "transfer", user!);
     upsertBatch(nb);
+    // Transferring activates the hatcher(s) that received eggs; once the whole
+    // batch has moved off the setters, those setters go inactive.
+    const nextBatches = batches.map((b) => (b.id === nb.id ? nb : b));
+    const touched = [...list.map((a) => a.machineCode), ...(nb.setters ?? []).map((s) => s.machineCode)];
+    machinesToSync(machines, touched, nextBatches).forEach(upsertMachine);
     toast(`Transferred ${assignedTotal.toLocaleString()} eggs for flock ${target.flockId}.`);
     setSel(null); setTRows([{ machineCode: "", eggs: "" }]);
   }

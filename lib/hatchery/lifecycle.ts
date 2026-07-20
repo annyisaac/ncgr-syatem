@@ -237,6 +237,28 @@ export function machineFreeCapacity(
   return Math.max(0, machine.capacity - eggsInMachine(batches, machine.code, field));
 }
 
+/**
+ * A machine is "active" while it holds eggs — setters from setting until the
+ * eggs are transferred out, hatchers from transfer until the chicks hatch.
+ * Given the machine codes touched by an operation and the already-updated
+ * batches, return the machines whose active flag needs to change, ready to save.
+ */
+export function machinesToSync(
+  machines: Machine[],
+  codes: string[],
+  batches: Batch[]
+): Machine[] {
+  const touched = new Set(codes);
+  const changed: Machine[] = [];
+  for (const m of machines) {
+    if (!touched.has(m.code)) continue;
+    const field = m.type === "setter" ? "setters" : "transfers";
+    const active = eggsInMachine(batches, m.code, field) > 0;
+    if (active !== m.active) changed.push({ ...m, active, on: new Date().toISOString() });
+  }
+  return changed;
+}
+
 // ---------------------------------------------------------------------------
 // Boxes
 // ---------------------------------------------------------------------------
