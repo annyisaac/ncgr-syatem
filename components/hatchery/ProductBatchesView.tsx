@@ -91,10 +91,7 @@ export function ProductBatchesView({ product }: { product: Product }) {
 
       <Card>
         <CardHeader title={`Batches (${mine.length})`} />
-        {loading ? (
-          <p className="text-sm text-muted">Loading…</p>
-        ) : (
-          <TableWrap>
+        <TableWrap>
             <thead>
               <tr>
                 <Th>Batch</Th><Th>Set date</Th><Th>Stage</Th>
@@ -104,7 +101,7 @@ export function ProductBatchesView({ product }: { product: Product }) {
             </thead>
             <tbody>
               {mine.length === 0 ? (
-                <EmptyRow colSpan={9} text={`No ${product} batches yet.`} />
+                <EmptyRow colSpan={9} text={loading ? "" : `No ${product} batches yet.`} />
               ) : mine.map((b) => (
                 <tr key={b.id}>
                   <Td className="font-medium">{b.batchNo}</Td>
@@ -120,7 +117,6 @@ export function ProductBatchesView({ product }: { product: Product }) {
               ))}
             </tbody>
           </TableWrap>
-        )}
       </Card>
 
       {batch && (

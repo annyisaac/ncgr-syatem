@@ -141,9 +141,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    if (user) await recordDevice(user.email, false);
-    await getSupabase().auth.signOut();
+    const email = user?.email;
+    // Clear the UI immediately — don't wait on the network.
     setUser(null);
+    // Record the sign-out in the background so it never blocks logout.
+    if (email) void recordDevice(email, false);
+    // Local scope clears this tab's session without a server round-trip.
+    await getSupabase().auth.signOut({ scope: "local" });
   }, [user]);
 
   const refresh = useCallback(async () => {
