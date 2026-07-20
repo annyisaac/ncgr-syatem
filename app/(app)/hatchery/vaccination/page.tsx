@@ -17,14 +17,14 @@ const CAN_VAX = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Op
 
 export default function VaccinationPage() {
   const { user } = useAuth();
-  const { batches, supplies, vaccinations, counts, inventory, upsertBatch, upsertVaccination, upsertSupply, upsertCount, upsertInventory, newId } = useHatchery();
+  const { batches, supplies, vaccinations, inventory, upsertBatch, upsertVaccination, upsertSupply, upsertInventory, newId } = useHatchery();
   const { toast } = useToast();
 
   const [batchId, setBatchId] = useState("");
   const [vaccineId, setVaccineId] = useState("");
   const [doses, setDoses] = useState("");
   const [date, setDate] = useState(todayISO());
-  const [vax, setVax] = useState<Record<string, string>>({}); // culls removed during vaccination, per flock
+  const [vaxCulls, setVaxCulls] = useState(""); // culls removed during vaccination (batch total)
   const [err, setErr] = useState<string | null>(null);
 
   const canVax = !!user && CAN_VAX.includes(user.role);
@@ -35,12 +35,8 @@ export default function VaccinationPage() {
   const vaccine = vaccineSupplies.find((s) => s.id === vaccineId) ?? null;
   const dosesN = Number(doses) || 0;
 
-  // The batch's verified per-flock counts — vaccination culls come off these.
-  const batchCounts = useMemo(
-    () => (batch ? counts.filter((c) => c.batchId === batch.id && c.verified) : []),
-    [counts, batch]
-  );
-  const finalSaleable = batchCounts.reduce((s, c) => s + Math.max(0, c.total - (Number(vax[c.flockId ?? ""]) || 0)), 0);
+  const vaxCullsN = Number(vaxCulls) || 0;
+  const finalSaleable = batch ? Math.max(0, batch.saleableCount - vaxCullsN) : 0;
 
   const rows = useMemo(() => vaccinations.slice().sort((a, b) => (a.on < b.on ? 1 : -1)), [vaccinations]);
   const batchNo = (id: string) => batches.find((b) => b.id === id)?.batchNo ?? id;
@@ -49,7 +45,7 @@ export default function VaccinationPage() {
 
   function pickBatch(id: string) {
     setBatchId(id);
-    setVax({});
+    setVaxCulls("");
     setErr(null);
   }
 
@@ -60,10 +56,7 @@ export default function VaccinationPage() {
     if (!vaccine) return setErr("Select a vaccine.");
     if (dosesN <= 0) return setErr("Enter the number of doses.");
     if (dosesN > vaccine.quantity) return setErr(`Only ${vaccine.quantity} doses of ${vaccine.name} in stock.`);
-    for (const c of batchCounts) {
-      const vc = Number(vax[c.flockId ?? ""]) || 0;
-      if (vc > c.total) return setErr(`Flock ${c.flockId}: culls (${vc}) can't exceed its ${c.total.toLocaleString()} saleable.`);
-    }
+    if (vaxCullsN > batch.saleableCount) return setErr(`Culls (${vaxCullsN}) can't exceed the ${batch.saleableCount.toLocaleString()} saleable.`);
     const on = nowISO();
 
     // Vaccination record + deduct vaccine stock.
@@ -72,16 +65,9 @@ export default function VaccinationPage() {
     const s: Supply = { ...vaccine, quantity: vaccine.quantity - dosesN, history: [...vaccine.history, `${on} — ${dosesN} doses to ${batch.batchNo} by ${user!.name}`], on };
     upsertSupply(s);
 
-    // Apply vaccination culls per flock → final saleable.
-    let saleableTot = 0, cullsTot = 0;
-    for (const c of batchCounts) {
-      const vc = Number(vax[c.flockId ?? ""]) || 0;
-      upsertCount({ ...c, vaxCulls: vc });
-      saleableTot += Math.max(0, c.total - vc);
-      cullsTot += (c.culls ?? 0) + vc;
-    }
-
-    // Roll up to the batch: saleable = counted saleable − vaccination culls (final).
+    // Final saleable = counted saleable − culls removed at vaccination.
+    const saleableTot = Math.max(0, batch.saleableCount - vaxCullsN);
+    const cullsTot = (batch.culls ?? 0) + vaxCullsN;
     let nb: Batch = { ...batch, vaccinated: true, saleableCount: saleableTot, culls: cullsTot };
     if (!nb.steps["vaccination"]) nb = markStep(nb, "vaccination", user!);
     upsertBatch(nb);
@@ -95,12 +81,12 @@ export default function VaccinationPage() {
     );
 
     toast(`${dosesN} doses of ${vaccine.name} given to ${batch.batchNo} — final saleable ${saleableTot.toLocaleString()}.`);
-    setDoses(""); setVax({});
+    setDoses(""); setVaxCulls("");
   }
 
   return (
     <div className="space-y-5">
-      <p className="-mt-2 text-sm text-muted">Vaccinate the batch and record any culls removed during vaccination, per flock — the remaining chicks are the final saleable number.</p>
+      <p className="-mt-2 text-sm text-muted">Vaccinate the batch and record any culls removed during vaccination — the remaining chicks are the final saleable number.</p>
 
       {canVax && (
         <Card>
@@ -125,32 +111,15 @@ export default function VaccinationPage() {
 
               {batch && (
                 <div className="space-y-2 rounded-lg border border-line p-3">
-                  <p className="text-sm font-semibold text-ink">Culls removed during vaccination (per flock)</p>
-                  {batchCounts.length === 0 ? (
-                    <p className="text-xs text-muted">This batch has no verified flock counts yet — verify counts on the Hatch page first.</p>
-                  ) : (
-                    <>
-                      {batchCounts.map((c) => {
-                        const vc = Number(vax[c.flockId ?? ""]) || 0;
-                        return (
-                          <div key={c.id} className="grid grid-cols-[1.4fr_0.8fr_0.8fr] items-end gap-2">
-                            <div className="text-sm">
-                              <span className="font-medium">Flock {c.flockId}</span>
-                              <span className="ml-2 text-xs text-muted">{c.total.toLocaleString()} counted saleable</span>
-                            </div>
-                            <Field label="Culls (vax)">
-                              <Input type="number" min={0} value={vax[c.flockId ?? ""] ?? ""} onChange={(e) => setVax({ ...vax, [c.flockId ?? ""]: e.target.value })} />
-                            </Field>
-                            <div className="pb-2 text-right text-sm">
-                              <span className="text-xs text-muted">final </span>
-                              <strong className="text-ink">{Math.max(0, c.total - vc).toLocaleString()}</strong>
-                            </div>
-                          </div>
-                        );
-                      })}
+                  <p className="text-sm font-semibold text-ink">Culls removed during vaccination</p>
+                  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                    <Field label={`Culls (of ${batch.saleableCount.toLocaleString()} saleable)`}>
+                      <Input type="number" min={0} value={vaxCulls} onChange={(e) => setVaxCulls(e.target.value)} />
+                    </Field>
+                    <div className="flex items-end">
                       <p className="text-sm">Final saleable (batch): <strong className="text-green">{finalSaleable.toLocaleString()}</strong></p>
-                    </>
-                  )}
+                    </div>
+                  </div>
                 </div>
               )}
 

@@ -226,17 +226,15 @@ function ProductionView({ filter }: { filter: DashFilter }) {
 // ---------------------------------------------------------------------------
 
 function TechView({ filter }: { filter: DashFilter }) {
-  const { batches, counts, machines } = useHatchery();
+  const { batches, machines } = useHatchery();
   const toCandle = batches.filter(inPipeline);
   const inHatchers = batches.filter((b) => b.steps["transfer"] && !b.steps["hatching"]);
-  const toVerify = counts.filter((c) => !c.verified).length;
   const activeMachines = machines.filter((m) => m.active).length;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Batches to candle" value={String(toCandle.length)} tone={toCandle.length ? "gold" : "default"} />
         <StatTile label="In hatchers" value={String(inHatchers.length)} />
-        <StatTile label="Counts to verify" value={String(toVerify)} tone={toVerify ? "gold" : "default"} />
         <StatTile label="Active batches" value={String(batches.filter((b) => b.status === "active").length)} />
         <StatTile label="Active machines" value={String(activeMachines)} />
       </div>

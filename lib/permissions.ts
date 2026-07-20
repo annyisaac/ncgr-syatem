@@ -56,7 +56,6 @@ const H_OPERATORS: NavItem = { label: "Hatchery attendants", href: "/hatchery/op
 const H_BATCHES: NavItem = { label: "Batches / setting", href: "/hatchery/batches" };
 const H_CANDLING: NavItem = { label: "Candling", href: "/hatchery/candling" };
 const H_HATCH: NavItem = { label: "Hatch", href: "/hatchery/hatch" };
-const H_COUNTING: NavItem = { label: "Counting", href: "/hatchery/counting" };
 const H_BOXES: NavItem = { label: "Boxes", href: "/hatchery/boxes" };
 const H_VACCINATION: NavItem = { label: "Vaccination", href: "/hatchery/vaccination" };
 const H_FARM_VISITS: NavItem = { label: "Farm visits", href: "/hatchery/farm-visits" };
@@ -71,7 +70,7 @@ const H_HANDOVER: NavItem = { label: "Shift handover", href: "/hatchery/handover
 
 const H_ALL: NavItem[] = [
   H_DASH, H_RECEPTION, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_BATCHES,
-  H_CANDLING, H_HATCH, H_COUNTING, H_BOXES, H_VACCINATION, H_VAC_REQUESTS,
+  H_CANDLING, H_HATCH, H_BOXES, H_VACCINATION, H_VAC_REQUESTS,
   H_FARM_VISITS, H_COORD, H_CHICKS, H_INVENTORY, H_SPAREPARTS, H_BIO, H_MAINT,
   H_HANDOVER,
 ];
@@ -146,7 +145,7 @@ const NAV: Record<Role, NavItem[]> = {
   "Operations Manager": H_ALL,
   "Hatchery Operations Manager": [
     H_DASH, H_RECEPTION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
-    H_COUNTING, H_BOXES, H_COORD, H_CHICKS, H_INVENTORY, H_HANDOVER,
+    H_BOXES, H_COORD, H_CHICKS, H_INVENTORY, H_HANDOVER,
   ],
   "Production Technician": [
     H_DASH, H_RECEPTION, H_FUMIGATION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH, H_HANDOVER,
@@ -158,7 +157,6 @@ const NAV: Record<Role, NavItem[]> = {
     H_STORE,
     { label: "Record machines", href: "/hatchery/machines" },
     { label: "Box making", href: "/hatchery/boxes" },
-    { label: "Counting chicks", href: "/hatchery/counting" },
     H_BIO,
     H_HANDOVER,
   ],
