@@ -29,6 +29,7 @@ import type {
   Allocation,
   Batch,
   BoxLog,
+  BoxTarget,
   ChickCount,
   ChickInventory,
   Dispatch,
@@ -62,6 +63,7 @@ interface HatcheryContextValue {
   readings: MachineReading[];
   counts: ChickCount[];
   boxLogs: BoxLog[];
+  boxTargets: BoxTarget[];
   supplies: Supply[];
   vaccinations: Vaccination[];
   biosecurity: LogEntry[];
@@ -89,6 +91,7 @@ interface HatcheryContextValue {
   upsertReading: (r: MachineReading) => Promise<void>;
   upsertCount: (c: ChickCount) => Promise<void>;
   upsertBoxLog: (l: BoxLog) => Promise<void>;
+  upsertBoxTarget: (t: BoxTarget) => Promise<void>;
   upsertSupply: (s: Supply) => Promise<void>;
   upsertVaccination: (v: Vaccination) => Promise<void>;
   upsertBiosecurity: (l: LogEntry) => Promise<void>;
@@ -133,6 +136,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const [readings, setReadings] = useState<MachineReading[]>([]);
   const [counts, setCounts] = useState<ChickCount[]>([]);
   const [boxLogs, setBoxLogs] = useState<BoxLog[]>([]);
+  const [boxTargets, setBoxTargets] = useState<BoxTarget[]>([]);
   const [supplies, setSupplies] = useState<Supply[]>([]);
   const [vaccinations, setVaccinations] = useState<Vaccination[]>([]);
   const [biosecurity, setBiosecurity] = useState<LogEntry[]>([]);
@@ -152,7 +156,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const load = useCallback(async () => {
     try {
       const [
-        rec, store, fum, mac, op, bat, rd, cnt, box, sup, vac, bio, mnt, inv, alloc, disp, fv, vr, sp, spr, frm, flk, mi, sh,
+        rec, store, fum, mac, op, bat, rd, cnt, box, bt, sup, vac, bio, mnt, inv, alloc, disp, fv, vr, sp, spr, frm, flk, mi, sh,
       ] = await Promise.all([
         fetchTable<Reception>("receptions"),
         fetchTable<StoreReading>("store_readings"),
@@ -163,6 +167,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
         fetchTable<MachineReading>("machine_readings"),
         fetchTable<ChickCount>("chick_counts"),
         fetchTable<BoxLog>("box_logs"),
+        fetchTable<BoxTarget>("box_targets"),
         fetchTable<Supply>("supplies"),
         fetchTable<Vaccination>("vaccinations"),
         fetchTable<LogEntry>("biosecurity_logs"),
@@ -188,6 +193,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
       setReadings(rd);
       setCounts(cnt);
       setBoxLogs(box);
+      setBoxTargets(bt);
       setSupplies(sup);
       setVaccinations(vac);
       setBiosecurity(bio);
@@ -264,7 +270,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const value: HatcheryContextValue = {
     loading,
     receptions, storeReadings, fumigations, machines, operators, batches: sortedBatches, readings,
-    counts, boxLogs, supplies, vaccinations, biosecurity, maintenance,
+    counts, boxLogs, boxTargets, supplies, vaccinations, biosecurity, maintenance,
     inventory, allocations, dispatches, farmVisits, vaccineRequests,
     spareParts, spareRequests, farms, flocks, machineIssues, shiftHandovers,
     reload: load,
@@ -277,6 +283,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     upsertReading: (r) => persist("machine_readings", r, setReadings),
     upsertCount: (c) => persist("chick_counts", c, setCounts),
     upsertBoxLog: (l) => persist("box_logs", l, setBoxLogs),
+    upsertBoxTarget: (t) => persist("box_targets", t, setBoxTargets),
     upsertSupply: (s) => persist("supplies", s, setSupplies),
     upsertVaccination: (v) => persist("vaccinations", v, setVaccinations),
     upsertBiosecurity: (l) => persist("biosecurity_logs", l, setBiosecurity),

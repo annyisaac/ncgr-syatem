@@ -23,6 +23,7 @@ export type HatcheryTable =
   | "operators"
   | "chick_counts"
   | "box_logs"
+  | "box_targets"
   | "supplies"
   | "farm_visits"
   | "vaccine_requests"

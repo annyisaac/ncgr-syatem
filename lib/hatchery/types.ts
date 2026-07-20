@@ -304,6 +304,19 @@ export interface BoxLog {
   on: string;
 }
 
+/**
+ * Boxes needed for a given week, entered directly by the hatchery manager or
+ * production technician (no batch tracking). One row per week — `week` is the
+ * label key (e.g. "H26-W28") and doubles as the id so re-entering overwrites.
+ */
+export interface BoxTarget {
+  id: string;
+  week: string;   // week key, e.g. "H26-W28"
+  boxes: number;
+  by: string;
+  on: string;
+}
+
 // ---------------------------------------------------------------------------
 // Supplies inventory (unassembled boxes + vaccines)
 // ---------------------------------------------------------------------------

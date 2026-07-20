@@ -12,14 +12,23 @@ import { Field, Input } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
-import { CHICKS_PER_BOX, type BoxLog, type Supply } from "@/lib/hatchery/types";
-import { boxesNeeded, isoWeek, expectedHatchDate } from "@/lib/hatchery/lifecycle";
+import { CHICKS_PER_BOX, type BoxLog, type BoxTarget, type Supply } from "@/lib/hatchery/types";
+import { isoWeek, isoWeekYear } from "@/lib/hatchery/lifecycle";
 
 const CAN_MAKE = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Hatchery Attendant", "Production Technician"];
+// Who sets the weekly target — the hatchery manager and production technician.
+const CAN_TARGET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
+
+/** Week label/key for a date, e.g. "H26-W28". */
+function weekKey(dateIso: string): string {
+  const yy = String(isoWeekYear(dateIso)).slice(-2);
+  const ww = String(isoWeek(dateIso)).padStart(2, "0");
+  return `H${yy}-W${ww}`;
+}
 
 export default function BoxesPage() {
   const { user } = useAuth();
-  const { boxLogs, supplies, batches, upsertBoxLog, upsertSupply, newId } = useHatchery();
+  const { boxLogs, boxTargets, supplies, upsertBoxLog, upsertBoxTarget, upsertSupply, newId } = useHatchery();
   const { recorder } = useOperator();
   const { toast } = useToast();
 
@@ -27,27 +36,28 @@ export default function BoxesPage() {
   const [date, setDate] = useState(todayISO());
   const [err, setErr] = useState<string | null>(null);
 
+  // Weekly target entry
+  const [targetWeekDate, setTargetWeekDate] = useState(todayISO());
+  const [targetBoxes, setTargetBoxes] = useState("");
+  const [targetErr, setTargetErr] = useState<string | null>(null);
+
   const canMake = !!user && CAN_MAKE.includes(user.role);
+  const canTarget = !!user && CAN_TARGET.includes(user.role);
   const boxStock = supplies.find((s) => s.kind === "box");
   const unassembled = boxStock?.quantity ?? 0;
 
-  // Boxes needed this week = based on batches expected to hatch this ISO week and their saleable/eggs.
-  const thisWeek = isoWeek(todayISO());
-  const upcoming = useMemo(() => {
-    return batches
-      .filter((b) => b.steps["setting"] && !b.steps["counting"])
-      .map((b) => {
-        const setOn = b.steps["setting"]?.on?.slice(0, 10) ?? b.createdAt.slice(0, 10);
-        const hatchDate = expectedHatchDate(setOn);
-        // predicted saleable: use hatched/saleable if known else fertile estimate (eggs set).
-        const predicted = b.saleableCount || b.hatchedCount || b.eggsSet;
-        return { batch: b, hatchDate, week: isoWeek(hatchDate), boxes: boxesNeeded(predicted) };
-      })
-      .filter((x) => x.week === thisWeek);
-  }, [batches, thisWeek]);
+  const thisWeek = weekKey(todayISO());
+  const thisWeekTarget = boxTargets.find((t) => t.week === thisWeek);
+  const boxesNeededThisWeek = thisWeekTarget?.boxes ?? 0;
 
-  const boxesNeededThisWeek = upcoming.reduce((s, x) => s + x.boxes, 0);
+  const editingWeek = weekKey(targetWeekDate);
+  const editingExisting = boxTargets.find((t) => t.week === editingWeek);
+
   const rows = useMemo(() => boxLogs.slice().sort((a, b) => (a.on < b.on ? 1 : -1)), [boxLogs]);
+  const targetRows = useMemo(
+    () => boxTargets.slice().sort((a, b) => (a.week < b.week ? 1 : -1)),
+    [boxTargets]
+  );
 
   if (!user) return null;
 
@@ -73,32 +83,42 @@ export default function BoxesPage() {
     setMade("");
   }
 
+  function saveTarget(e: React.FormEvent) {
+    e.preventDefault();
+    setTargetErr(null);
+    const n = Number(targetBoxes) || 0;
+    if (n <= 0) return setTargetErr("Enter the number of boxes needed for the week.");
+    const on = nowISO();
+    const rec: BoxTarget = { id: `boxtarget_${editingWeek}`, week: editingWeek, boxes: n, by: user!.name, on };
+    upsertBoxTarget(rec);
+    toast(`Boxes needed for ${editingWeek} set to ${n}.`);
+    setTargetBoxes("");
+  }
+
   return (
     <div className="space-y-5">
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <Stat label="Unassembled in stock" value={unassembled.toLocaleString()} tone={unassembled < boxesNeededThisWeek ? "warn" : "ok"} />
-        <Stat label={`Boxes needed (week ${thisWeek})`} value={boxesNeededThisWeek.toLocaleString()} />
+        <Stat label="Unassembled in stock" value={unassembled.toLocaleString()} tone={boxesNeededThisWeek > 0 && unassembled < boxesNeededThisWeek ? "warn" : "ok"} />
+        <Stat label={`Boxes needed (${thisWeek})`} value={boxesNeededThisWeek ? boxesNeededThisWeek.toLocaleString() : "—"} />
         <Stat label="Chicks per box" value={String(CHICKS_PER_BOX)} />
       </div>
 
-      <Card>
-        <CardHeader title={`Batches hatching this week (week ${thisWeek})`} />
-        <TableWrap>
-          <thead><tr><Th>Batch</Th><Th>Product</Th><Th>Expected hatch</Th><Th className="text-right">Predicted chicks</Th><Th className="text-right">Boxes</Th></tr></thead>
-          <tbody>
-            {upcoming.length === 0 ? <EmptyRow colSpan={5} text="No batches hatching this week." /> : upcoming.map((x) => (
-              <tr key={x.batch.id}>
-                <Td className="font-medium">{x.batch.batchNo}</Td>
-                <Td>{x.batch.productType}</Td>
-                <Td>{formatDate(x.hatchDate)}</Td>
-                <Td className="text-right">{(x.batch.saleableCount || x.batch.hatchedCount || x.batch.eggsSet).toLocaleString()}</Td>
-                <Td className="text-right font-medium">{x.boxes}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </TableWrap>
-      </Card>
+      {canTarget && (
+        <Card>
+          <CardHeader title="Boxes needed this week" />
+          <p className="-mt-1 mb-3 text-xs text-muted">Enter how many boxes are needed for the week. Re-entering a week overwrites its number.</p>
+          <form onSubmit={saveTarget} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <Field label="Week (any date in it)"><Input type="date" value={targetWeekDate} onChange={(e) => setTargetWeekDate(e.target.value)} /></Field>
+            <Field label={`Boxes needed (${editingWeek})`}>
+              <Input type="number" min={0} value={targetBoxes} onChange={(e) => setTargetBoxes(e.target.value)}
+                placeholder={editingExisting ? `currently ${editingExisting.boxes}` : "—"} />
+            </Field>
+            <div className="flex items-end"><Button type="submit">Save</Button></div>
+            {targetErr && <p className="sm:col-span-3 text-sm text-status-refunded">{targetErr}</p>}
+          </form>
+        </Card>
+      )}
 
       {canMake && (
         <Card>
@@ -115,6 +135,23 @@ export default function BoxesPage() {
           )}
         </Card>
       )}
+
+      <Card>
+        <CardHeader title="Boxes needed by week" />
+        <TableWrap>
+          <thead><tr><Th>Week</Th><Th className="text-right">Boxes needed</Th><Th>Set by</Th><Th>On</Th></tr></thead>
+          <tbody>
+            {targetRows.length === 0 ? <EmptyRow colSpan={4} text="No weekly targets set yet." /> : targetRows.map((t) => (
+              <tr key={t.id}>
+                <Td className="font-medium">{t.week}{t.week === thisWeek && <Pill tone="gold" className="ml-2">this week</Pill>}</Td>
+                <Td className="text-right font-medium">{t.boxes.toLocaleString()}</Td>
+                <Td>{t.by}</Td>
+                <Td>{formatDate(t.on)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+      </Card>
 
       <Card>
         <CardHeader title="Box-making log" />
