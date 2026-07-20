@@ -46,6 +46,7 @@ export default function ReceptionPage() {
   const canAdd = !!user && CAN_ADD.includes(user.role);
   const canEdit = !!user && CAN_EDIT.includes(user.role);
   const canManageFarms = !!user && CAN_MANAGE_FARMS.includes(user.role);
+  const isAdmin = !!user && user.role === "Admin";
   const rows = useMemo(() => receptions.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), [receptions]);
   const batchNo = (id?: string) => (id ? batches.find((b) => b.id === id)?.batchNo ?? id : null);
   const farmName = (id: string) => farms.find((x) => x.id === id)?.name ?? "—";
@@ -147,6 +148,12 @@ export default function ReceptionPage() {
     toast(location === "store" ? "Sent to egg store room." : "Marked ready to set.");
   }
 
+  /** Admin undo: pull a store/ready reception back to the reception stage. */
+  function bringBack(r: Reception) {
+    upsertReception({ ...r, location: undefined });
+    toast(`${r.farm} · flock ${r.flockId} brought back to reception.`);
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -240,9 +247,15 @@ export default function ReceptionPage() {
                     {r.batchId ? (
                       <Pill tone="green">Set</Pill>
                     ) : r.location === "store" ? (
-                      <Pill tone="info">Store room</Pill>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Pill tone="info">Store room</Pill>
+                        {isAdmin && <Button size="sm" variant="ghost" onClick={() => bringBack(r)}>Bring back</Button>}
+                      </div>
                     ) : r.location === "ready" ? (
-                      <Pill tone="gold">Ready to set</Pill>
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Pill tone="gold">Ready to set</Pill>
+                        {isAdmin && <Button size="sm" variant="ghost" onClick={() => bringBack(r)}>Bring back</Button>}
+                      </div>
                     ) : canAdd ? (
                       <div className="flex flex-wrap gap-1">
                         <Button size="sm" variant="ghost" onClick={() => setLocation(r, "store")}>Store</Button>
