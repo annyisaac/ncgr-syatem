@@ -24,6 +24,7 @@ const CAN_ADD = [
   "Production Technician",
 ];
 const CAN_MANAGE_FARMS = ["Admin", "Hatchery Manager"];
+const CAN_EDIT = ["Admin", "Hatchery Manager"];
 
 const num = (v: string) => Number(v) || 0;
 
@@ -34,6 +35,7 @@ export default function ReceptionPage() {
 
   const [show, setShow] = useState(false);
   const [showFarms, setShowFarms] = useState(false);
+  const [editing, setEditing] = useState<Reception | null>(null);
   const [f, setF] = useState({
     flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "",
     crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "",
@@ -42,6 +44,7 @@ export default function ReceptionPage() {
   const [err, setErr] = useState<string | null>(null);
 
   const canAdd = !!user && CAN_ADD.includes(user.role);
+  const canEdit = !!user && CAN_EDIT.includes(user.role);
   const canManageFarms = !!user && CAN_MANAGE_FARMS.includes(user.role);
   const rows = useMemo(() => receptions.slice().sort((a, b) => (a.date < b.date ? 1 : -1)), [receptions]);
   const batchNo = (id?: string) => (id ? batches.find((b) => b.id === id)?.batchNo ?? id : null);
@@ -59,12 +62,63 @@ export default function ReceptionPage() {
 
   if (!user) return null;
 
+  function resetForm() {
+    setF({
+      flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "",
+      crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "", date: todayISO(),
+    });
+  }
+
+  function startEdit(r: Reception) {
+    setEditing(r);
+    setF({
+      flock: "",
+      ageOfFlock: String(r.ageOfFlock),
+      eggsReceived: String(r.eggsReceived),
+      ageOfEggs: String(r.ageOfEggs),
+      crackedOnFarm: String(r.crackedOnFarm),
+      crackedOnSet: String(r.crackedOnSet),
+      misshapen: String(r.misshapen),
+      dirty: String(r.dirty),
+      date: r.date,
+    });
+    setErr(null);
+    setShow(true);
+  }
+
+  function cancelForm() {
+    setShow(false);
+    setEditing(null);
+    resetForm();
+  }
+
   function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
+    if (num(f.eggsReceived) <= 0) return setErr("Enter eggs received.");
+
+    // Editing keeps the reception's identity, farm, flock and product; only the
+    // recorded figures and date change. (Admin / Hatchery Manager only.)
+    if (editing) {
+      const rec: Reception = {
+        ...editing,
+        date: f.date,
+        ageOfFlock: num(f.ageOfFlock),
+        eggsReceived: num(f.eggsReceived),
+        ageOfEggs: num(f.ageOfEggs),
+        crackedOnFarm: num(f.crackedOnFarm),
+        crackedOnSet: num(f.crackedOnSet),
+        misshapen: num(f.misshapen),
+        dirty: num(f.dirty),
+      };
+      upsertReception(rec);
+      toast(`Updated reception — ${settableEggs(rec).toLocaleString()} settable.`);
+      cancelForm();
+      return;
+    }
+
     const flock = flocks.find((x) => x.id === f.flock);
     if (!flock) return setErr("Select the flock.");
-    if (num(f.eggsReceived) <= 0) return setErr("Enter eggs received.");
     const farm = farmName(flock.farmId);
     const rec: Reception = {
       id: newId("rec"),
@@ -85,7 +139,7 @@ export default function ReceptionPage() {
     upsertReception(rec);
     toast(`Received ${rec.eggsReceived} eggs from ${farm} — ${settableEggs(rec).toLocaleString()} settable.`);
     setShow(false);
-    setF({ ...f, flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "", crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "" });
+    resetForm();
   }
 
   function setLocation(r: Reception, location: ReceptionLocation) {
@@ -102,7 +156,11 @@ export default function ReceptionPage() {
               {showFarms ? "Hide farms & flocks" : "Manage farms & flocks"}
             </Button>
           )}
-          {canAdd && <Button onClick={() => setShow((v) => !v)}>{show ? "Hide form" : "Record reception"}</Button>}
+          {canAdd && (
+            <Button onClick={() => (show ? cancelForm() : (setEditing(null), resetForm(), setShow(true)))}>
+              {show && !editing ? "Hide form" : "Record reception"}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -115,12 +173,18 @@ export default function ReceptionPage() {
 
       {show && canAdd && (
         <Card>
-          <CardHeader title="Receive eggs from farm" />
+          <CardHeader title={editing ? "Edit reception" : "Receive eggs from farm"} />
           <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Farm · Flock (product)">
-              <Select value={f.flock} onChange={(e) => setF({ ...f, flock: e.target.value })}
-                placeholder={activeFlocks.length ? "Select flock" : "No flocks defined"}
-                options={activeFlocks.map((x) => ({ value: x.id, label: `${x.farmName} · ${x.code} · ${x.productType}` }))} />
+              {editing ? (
+                <div className="rounded-[9px] border border-line bg-grey-bg px-3.5 py-2.5 text-[0.9rem] text-ink">
+                  {editing.farm} · {editing.flockId} · {editing.productType}
+                </div>
+              ) : (
+                <Select value={f.flock} onChange={(e) => setF({ ...f, flock: e.target.value })}
+                  placeholder={activeFlocks.length ? "Select flock" : "No flocks defined"}
+                  options={activeFlocks.map((x) => ({ value: x.id, label: `${x.farmName} · ${x.code} · ${x.productType}` }))} />
+              )}
             </Field>
             <Field label="Age of flock (weeks)"><Input type="number" value={f.ageOfFlock} onChange={(e) => setF({ ...f, ageOfFlock: e.target.value })} /></Field>
             <Field label="Eggs received"><Input type="number" value={f.eggsReceived} onChange={(e) => setF({ ...f, eggsReceived: e.target.value })} /></Field>
@@ -138,8 +202,8 @@ export default function ReceptionPage() {
             </div>
             {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
             <div className="sm:col-span-3 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setShow(false)}>Cancel</Button>
-              <Button type="submit">Save reception</Button>
+              <Button variant="ghost" onClick={cancelForm}>Cancel</Button>
+              <Button type="submit">{editing ? "Update reception" : "Save reception"}</Button>
             </div>
           </form>
         </Card>
@@ -154,11 +218,12 @@ export default function ReceptionPage() {
               <Th className="text-right">Received</Th><Th className="text-right">Cracked</Th>
               <Th className="text-right">Misshapen</Th><Th className="text-right">Dirty</Th>
               <Th className="text-right">Settable</Th><Th>Where</Th><Th>Batch</Th>
+              {canEdit && <Th>Edit</Th>}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={11} text="No receptions yet." />
+              <EmptyRow colSpan={canEdit ? 12 : 11} text="No receptions yet." />
             ) : (
               rows.map((r) => (
                 <tr key={r.id}>
@@ -188,6 +253,11 @@ export default function ReceptionPage() {
                     )}
                   </Td>
                   <Td>{r.batchId ? <Pill tone="gold">{batchNo(r.batchId)}</Pill> : <span className="text-muted">—</span>}</Td>
+                  {canEdit && (
+                    <Td>
+                      <Button size="sm" variant="ghost" onClick={() => startEdit(r)}>Edit</Button>
+                    </Td>
+                  )}
                 </tr>
               ))
             )}
