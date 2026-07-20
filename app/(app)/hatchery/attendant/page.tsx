@@ -11,6 +11,7 @@ const TILES = [
   { href: "/hatchery/boxes", label: "Box making", hint: "Log boxes assembled from stock" },
   { href: "/hatchery/counting", label: "Counting chicks", hint: "Count hatched chicks box by box" },
   { href: "/hatchery/biosecurity", label: "Biosecurity", hint: "Cleaning, disinfection & incidents" },
+  { href: "/hatchery/handover", label: "Shift handover", hint: "Note what happened & what's pending for the next shift" },
 ];
 
 export default function AttendantHome() {
