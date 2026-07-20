@@ -101,6 +101,8 @@ export default function MachinesPage() {
   const lastTurnOf = (mcode: string): TurnDirection | undefined =>
     readings.filter((rd) => rd.machineCode === mcode && rd.turning).sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))[0]?.turning;
   const opposite = (t?: TurnDirection): "" | TurnDirection => (t === "left" ? "right" : t === "right" ? "left" : "");
+  // Eggs are only turned in setters — hatchers don't record turning.
+  const recIsSetter = machines.find((m) => m.code === r.machineCode)?.type === "setter";
 
   const machineInUse = (mcode: string) =>
     readings.some((rd) => rd.machineCode === mcode) ||
@@ -319,7 +321,9 @@ export default function MachinesPage() {
                   <Stat label="Dig. Temp" value={rd ? `${rd.digitalTempF}°F` : "—"} hot={hot} />
                   <Stat label="Humidity" value={rd ? `${rd.digitalHumidityF}%` : "—"} />
                   <Stat label="Fan Speed" value={rd ? `${rd.fanSpeed} RPM` : "—"} />
-                  <Stat label="Last turn" value={lastTurnOf(m.code) ? (lastTurnOf(m.code) === "left" ? "◄ Left" : "Right ►") : "—"} />
+                  {m.type === "setter" && (
+                    <Stat label="Last turn" value={lastTurnOf(m.code) ? (lastTurnOf(m.code) === "left" ? "◄ Left" : "Right ►") : "—"} />
+                  )}
                 </div>
 
                 <div className="mt-3 flex items-center justify-between gap-2">
@@ -393,18 +397,20 @@ export default function MachinesPage() {
           <form onSubmit={recordReading} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             {sessionOp && <p className="sm:col-span-2 text-sm text-muted">Recording as <strong className="text-ink">{sessionOp.name}</strong>.</p>}
             <Field label="Machine"><Select value={r.machineCode} onChange={(e) => setR({ ...r, machineCode: e.target.value, turning: e.target.value ? opposite(lastTurnOf(e.target.value)) : "" })} placeholder="Select" options={machines.filter((m) => m.active).map((m) => ({ value: m.code, label: `${m.code} (${m.type})` }))} /></Field>
-            {r.machineCode && (
+            {r.machineCode && recIsSetter && (
               <div className="sm:col-span-2 rounded-md border border-line bg-cream/40 px-3 py-2 text-sm">
                 {lastTurnOf(r.machineCode)
                   ? <>Last turn on {r.machineCode}: <strong className="text-ink capitalize">{lastTurnOf(r.machineCode)}</strong> — turn <strong className="text-gold-dark capitalize">{opposite(lastTurnOf(r.machineCode)) || "either way"}</strong> next.</>
                   : <>No turning recorded yet for {r.machineCode}.</>}
               </div>
             )}
-            <Field label="Turning direction">
-              <Select value={r.turning} onChange={(e) => setR({ ...r, turning: e.target.value as "" | TurnDirection })}
-                placeholder="Not recorded"
-                options={[{ value: "left", label: "Left" }, { value: "right", label: "Right" }]} />
-            </Field>
+            {recIsSetter && (
+              <Field label="Turning direction">
+                <Select value={r.turning} onChange={(e) => setR({ ...r, turning: e.target.value as "" | TurnDirection })}
+                  placeholder="Not recorded"
+                  options={[{ value: "left", label: "Left" }, { value: "right", label: "Right" }]} />
+              </Field>
+            )}
             {!sessionOp && <Field label="Operator"><Select value={r.operatorId} onChange={(e) => setR({ ...r, operatorId: e.target.value })} placeholder="Select operator" options={activeOps.map((o) => ({ value: o.id, label: o.name }))} /></Field>}
             {!sessionOp && <Field label="Operator code" hint="Your own code proves it's you"><Input value={r.operatorCode} onChange={(e) => setR({ ...r, operatorCode: e.target.value })} placeholder="OP-XXXX" /></Field>}
             <Field label="Fan speed"><Input type="number" value={r.fanSpeed} onChange={(e) => setR({ ...r, fanSpeed: e.target.value })} /></Field>
