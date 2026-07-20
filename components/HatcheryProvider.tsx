@@ -36,11 +36,13 @@ import type {
   Fumigation,
   LogEntry,
   Machine,
+  MachineIssue,
   MachineReading,
   Operator,
   Farm,
   Flock,
   Reception,
+  ShiftHandover,
   SparePart,
   SparePartRequest,
   StoreReading,
@@ -73,6 +75,8 @@ interface HatcheryContextValue {
   spareRequests: SparePartRequest[];
   farms: Farm[];
   flocks: Flock[];
+  machineIssues: MachineIssue[];
+  shiftHandovers: ShiftHandover[];
 
   reload: () => Promise<void>;
 
@@ -99,6 +103,8 @@ interface HatcheryContextValue {
   upsertSpareRequest: (r: SparePartRequest) => Promise<void>;
   upsertFarm: (f: Farm) => Promise<void>;
   upsertFlock: (f: Flock) => Promise<void>;
+  upsertMachineIssue: (i: MachineIssue) => Promise<void>;
+  upsertShiftHandover: (h: ShiftHandover) => Promise<void>;
 
   newId: (prefix: string) => string;
 }
@@ -140,11 +146,13 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const [spareRequests, setSpareRequests] = useState<SparePartRequest[]>([]);
   const [farms, setFarms] = useState<Farm[]>([]);
   const [flocks, setFlocks] = useState<Flock[]>([]);
+  const [machineIssues, setMachineIssues] = useState<MachineIssue[]>([]);
+  const [shiftHandovers, setShiftHandovers] = useState<ShiftHandover[]>([]);
 
   const load = useCallback(async () => {
     try {
       const [
-        rec, store, fum, mac, op, bat, rd, cnt, box, sup, vac, bio, mnt, inv, alloc, disp, fv, vr, sp, spr, frm, flk,
+        rec, store, fum, mac, op, bat, rd, cnt, box, sup, vac, bio, mnt, inv, alloc, disp, fv, vr, sp, spr, frm, flk, mi, sh,
       ] = await Promise.all([
         fetchTable<Reception>("receptions"),
         fetchTable<StoreReading>("store_readings"),
@@ -168,6 +176,8 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
         fetchTable<SparePartRequest>("spare_part_requests"),
         fetchTable<Farm>("farms"),
         fetchTable<Flock>("flocks"),
+        fetchTable<MachineIssue>("machine_issues"),
+        fetchTable<ShiftHandover>("shift_handovers"),
       ]);
       setReceptions(rec);
       setStoreReadings(store);
@@ -191,6 +201,8 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
       setSpareRequests(spr);
       setFarms(frm);
       setFlocks(flk);
+      setMachineIssues(mi);
+      setShiftHandovers(sh);
     } catch (err) {
       console.error("Failed to load hatchery data:", err);
     }
@@ -254,7 +266,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     receptions, storeReadings, fumigations, machines, operators, batches: sortedBatches, readings,
     counts, boxLogs, supplies, vaccinations, biosecurity, maintenance,
     inventory, allocations, dispatches, farmVisits, vaccineRequests,
-    spareParts, spareRequests, farms, flocks,
+    spareParts, spareRequests, farms, flocks, machineIssues, shiftHandovers,
     reload: load,
     upsertReception: (r) => persist("receptions", r, setReceptions),
     upsertStoreReading: (r) => persist("store_readings", r, setStoreReadings),
@@ -282,6 +294,8 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     upsertSpareRequest: (r) => persist("spare_part_requests", r, setSpareRequests),
     upsertFarm: (f) => persist("farms", f, setFarms),
     upsertFlock: (f) => persist("flocks", f, setFlocks),
+    upsertMachineIssue: (i) => persist("machine_issues", i, setMachineIssues),
+    upsertShiftHandover: (h) => persist("shift_handovers", h, setShiftHandovers),
     newId,
   };
 

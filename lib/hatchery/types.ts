@@ -485,3 +485,41 @@ export interface VaccineRequest {
   on: string;
   history: string[];
 }
+
+// ---------------------------------------------------------------------------
+// Machine issue reports & shift handovers
+// ---------------------------------------------------------------------------
+
+export type IssueSeverity = "low" | "medium" | "high";
+export type IssueStatus = "open" | "resolved";
+
+/** A problem reported on a machine's operation — any hatchery staff (including
+ *  the shared Attendant account) can raise one; managers / maintenance resolve. */
+export interface MachineIssue {
+  id: string;
+  machineCode: string;
+  severity: IssueSeverity;
+  description: string;
+  status: IssueStatus;
+  reportedBy: string; // account email
+  reporterName?: string; // operator name (attendant session) or user name
+  on: string; // ISO datetime
+  resolvedBy?: string;
+  resolvedOn?: string;
+  resolutionNote?: string;
+}
+
+export type ShiftName = "day" | "night";
+
+/** End-of-shift handover so the incoming shift knows the state of the floor. */
+export interface ShiftHandover {
+  id: string;
+  date: string; // yyyy-mm-dd
+  shift: ShiftName;
+  summary: string; // what happened this shift
+  pending: string; // tasks / issues for the next shift
+  machinesNote?: string; // machine-specific notes
+  by: string; // account email
+  byName?: string; // operator / user name
+  on: string; // ISO datetime
+}

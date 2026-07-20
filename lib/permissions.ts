@@ -67,11 +67,13 @@ const H_INVENTORY: NavItem = { label: "Inventory", href: "/hatchery/inventory" }
 const H_SPAREPARTS: NavItem = { label: "Spare parts", href: "/hatchery/spareparts" };
 const H_BIO: NavItem = { label: "Biosecurity", href: "/hatchery/biosecurity" };
 const H_MAINT: NavItem = { label: "Maintenance", href: "/hatchery/maintenance" };
+const H_HANDOVER: NavItem = { label: "Shift handover", href: "/hatchery/handover" };
 
 const H_ALL: NavItem[] = [
   H_DASH, H_RECEPTION, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_BATCHES,
   H_CANDLING, H_HATCH, H_COUNTING, H_BOXES, H_VACCINATION, H_VAC_REQUESTS,
   H_FARM_VISITS, H_COORD, H_CHICKS, H_INVENTORY, H_SPAREPARTS, H_BIO, H_MAINT,
+  H_HANDOVER,
 ];
 
 const NAV: Record<Role, NavItem[]> = {
@@ -144,10 +146,10 @@ const NAV: Record<Role, NavItem[]> = {
   "Operations Manager": H_ALL,
   "Hatchery Operations Manager": [
     H_DASH, H_RECEPTION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
-    H_COUNTING, H_BOXES, H_COORD, H_CHICKS, H_INVENTORY,
+    H_COUNTING, H_BOXES, H_COORD, H_CHICKS, H_INVENTORY, H_HANDOVER,
   ],
   "Production Technician": [
-    H_DASH, H_RECEPTION, H_FUMIGATION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
+    H_DASH, H_RECEPTION, H_FUMIGATION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH, H_HANDOVER,
   ],
   // Shared tablet account. No side menu — everything is launched from the
   // attendant home hub. No inventory page, but box making shows live stock.
@@ -158,12 +160,13 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Box making", href: "/hatchery/boxes" },
     { label: "Counting chicks", href: "/hatchery/counting" },
     H_BIO,
+    H_HANDOVER,
   ],
   "Hatchery Veterinary": [
     H_DASH, H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
   ],
   "Maintenance Technician": [
-    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS,
+    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_HANDOVER,
   ],
   "Hatchery Sales & Coordination Officer": [
     H_DASH, H_COORD, H_FARM_VISITS, H_CHICKS, H_INVENTORY, H_BATCHES,

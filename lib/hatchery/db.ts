@@ -29,7 +29,9 @@ export type HatcheryTable =
   | "spare_parts"
   | "spare_part_requests"
   | "farms"
-  | "flocks";
+  | "flocks"
+  | "machine_issues"
+  | "shift_handovers";
 
 export async function fetchTable<T>(table: HatcheryTable): Promise<T[]> {
   if (!inBrowser()) return [];

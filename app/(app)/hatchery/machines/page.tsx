@@ -11,18 +11,20 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { nowISO, formatDateTime } from "@/lib/format";
-import type { Machine, MachineReading, MachineType, TurnDirection } from "@/lib/hatchery/types";
+import type { Machine, MachineIssue, MachineReading, MachineType, TurnDirection, IssueSeverity } from "@/lib/hatchery/types";
 import { MAX_MACHINE_TEMP_F } from "@/lib/hatchery/types";
 import { eggsInMachine, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
 
 const CAN_MANAGE = ["Admin", "Hatchery Manager"];
 const CAN_RECORD = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Hatchery Attendant", "Maintenance Technician", "Production Technician"];
+// Who can resolve reported machine issues.
+const CAN_RESOLVE = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Maintenance Technician"];
 
 type TypeFilter = "all" | MachineType;
 
 export default function MachinesPage() {
   const { user } = useAuth();
-  const { machines, operators, batches, readings, upsertMachine, upsertReading, newId } = useHatchery();
+  const { machines, operators, batches, readings, machineIssues, upsertMachine, upsertReading, upsertMachineIssue, newId } = useHatchery();
   const { operator: sessionOp } = useOperator();
   const { toast } = useToast();
 
@@ -52,8 +54,18 @@ export default function MachinesPage() {
   const [ef, setEf] = useState({ code: "", capacity: "", type: "setter" as MachineType, active: true });
   const [eErr, setEErr] = useState<string | null>(null);
 
+  // Report a machine issue
+  const [reportFor, setReportFor] = useState<Machine | null>(null);
+  const [iForm, setIForm] = useState<{ severity: IssueSeverity; description: string }>({ severity: "medium", description: "" });
+  const [iErr, setIErr] = useState<string | null>(null);
+
   const canManage = !!user && CAN_MANAGE.includes(user.role);
   const canRecord = !!user && CAN_RECORD.includes(user.role);
+  const canResolve = !!user && CAN_RESOLVE.includes(user.role);
+  const openIssues = useMemo(
+    () => machineIssues.filter((i) => i.status === "open").sort((a, b) => (a.on < b.on ? 1 : -1)),
+    [machineIssues]
+  );
   // Attendants only record readings — they don't drill into machine detail/graphs.
   const canViewDetail = !!user && user.role !== "Hatchery Attendant";
   const activeOps = useMemo(() => operators.filter((o) => o.active), [operators]);
@@ -149,6 +161,33 @@ export default function MachinesPage() {
     toast(`Machine ${m.code} ${m.active ? "deactivated" : "activated"}.`);
   }
 
+  function openReport(m: Machine) {
+    setReportFor(m);
+    setIForm({ severity: "medium", description: "" });
+    setIErr(null);
+  }
+  function submitIssue() {
+    if (!reportFor) return;
+    if (!iForm.description.trim()) return setIErr("Describe the issue.");
+    const issue: MachineIssue = {
+      id: newId("issue"),
+      machineCode: reportFor.code,
+      severity: iForm.severity,
+      description: iForm.description.trim(),
+      status: "open",
+      reportedBy: user!.email,
+      reporterName: sessionOp?.name ?? user!.name,
+      on: nowISO(),
+    };
+    void upsertMachineIssue(issue);
+    toast(`Issue reported for ${reportFor.code}.`);
+    setReportFor(null);
+  }
+  function resolveIssue(i: MachineIssue) {
+    void upsertMachineIssue({ ...i, status: "resolved", resolvedBy: user!.email, resolvedOn: nowISO() });
+    toast(`Issue on ${i.machineCode} marked resolved.`);
+  }
+
   function recordReading(e?: React.FormEvent) {
     e?.preventDefault();
     setRErr(null);
@@ -216,6 +255,26 @@ export default function MachinesPage() {
         </div>
       )}
 
+      {/* Open machine issues */}
+      {openIssues.length > 0 && (
+        <div className="rounded-2xl border border-red/30 bg-red-bg/30 p-4">
+          <h2 className="mb-2 text-sm font-bold text-ink">Open machine issues ({openIssues.length})</h2>
+          <div className="space-y-2">
+            {openIssues.map((i) => (
+              <div key={i.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line bg-paper px-3 py-2 text-sm">
+                <div className="min-w-0">
+                  <span className="font-semibold text-ink">{i.machineCode}</span>
+                  <span className={`ml-2 rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${sevClass(i.severity)}`}>{i.severity}</span>
+                  <div className="text-ink">{i.description}</div>
+                  <div className="text-[0.68rem] text-muted">by {i.reporterName ?? i.reportedBy} · {formatDateTime(i.on)}</div>
+                </div>
+                {canResolve && <Button size="sm" variant="secondary" onClick={() => resolveIssue(i)}>Resolve</Button>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Card grid */}
       {visible.length === 0 ? (
         <div className="rounded-xl border border-line bg-paper p-6 text-center text-sm text-muted">
@@ -266,6 +325,7 @@ export default function MachinesPage() {
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <span className="truncate text-sm text-muted">Operator: <span className="text-ink">{rd?.operator ?? "—"}</span></span>
                   <div className="flex shrink-0 items-center gap-2">
+                    {canRecord && <button onClick={() => openReport(m)} className="text-xs text-red underline">Report issue</button>}
                     {canManage && <button onClick={() => openEdit(m)} className="text-xs text-gold-dark underline">Edit</button>}
                     {canViewDetail && <Link href={`/hatchery/machines/${encodeURIComponent(m.code)}`} className="text-sm font-semibold text-gold-dark">View Details →</Link>}
                   </div>
@@ -360,8 +420,31 @@ export default function MachinesPage() {
           </form>
         )}
       </Modal>
+
+      {/* Report machine issue modal */}
+      <Modal
+        open={!!reportFor}
+        onClose={() => setReportFor(null)}
+        title={reportFor ? `Report issue — ${reportFor.code}` : "Report issue"}
+        footer={<><Button variant="ghost" onClick={() => setReportFor(null)}>Cancel</Button><Button onClick={submitIssue}>Report issue</Button></>}
+      >
+        <div className="grid grid-cols-1 gap-3">
+          <Field label="Severity">
+            <Select value={iForm.severity} onChange={(e) => setIForm({ ...iForm, severity: e.target.value as IssueSeverity })}
+              options={[{ value: "low", label: "Low" }, { value: "medium", label: "Medium" }, { value: "high", label: "High" }]} />
+          </Field>
+          <Field label="What's the problem?">
+            <Input value={iForm.description} onChange={(e) => setIForm({ ...iForm, description: e.target.value })} placeholder="e.g. fan not spinning, temperature unstable" />
+          </Field>
+          {iErr && <p className="text-sm text-status-refunded">{iErr}</p>}
+        </div>
+      </Modal>
     </div>
   );
+}
+
+function sevClass(s: IssueSeverity): string {
+  return s === "high" ? "bg-red-bg text-red" : s === "medium" ? "bg-gold-bg text-gold-dark" : "bg-grey-bg text-muted";
 }
 
 function Stat({ label, value, hot }: { label: string; value: string; hot?: boolean }) {
