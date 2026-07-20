@@ -14,7 +14,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception } from "@/lib/hatchery/types";
-import { batchCode, machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
+import { nextBatchNo, machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
@@ -70,7 +70,7 @@ export default function BatchesPage() {
   const previewBatchNo = (() => {
     const firstKey = resolved.find((r) => r.groupKey && (Number(r.eggs) || 0) > 0)?.groupKey;
     const p = groups.find((g) => g.key === firstKey)?.product;
-    return p && setDate ? batchCode(setDate, p) : null;
+    return p && setDate ? nextBatchNo(batches, p, setDate) : null;
   })();
 
   // Per-flock: how many eggs assigned (across setters) vs settable.
@@ -140,15 +140,16 @@ export default function BatchesPage() {
     }));
     const setterList: MachineAssignment[] = valid.map((r) => ({ machineCode: r.machineCode, eggs: r.eggs }));
     const product = usedGroups[0].product;
-    // Batch number follows the setting week (the chosen set date), not the
-    // reception date — that's how the hatchery numbers its sets.
+    // Batch number is counted sequentially per set (not the calendar week);
+    // the set date groups the Ross + Tetra of one setting onto the same week.
     const date = setDate || todayISO();
     const total = flocks.reduce((s, f) => s + f.eggsSet, 0);
     const on = nowISO();
     const id = newId("batch");
     let batch: Batch = {
       id,
-      batchNo: batchCode(date, product),
+      batchNo: nextBatchNo(batches, product, date),
+      setDate: date,
       productType: product,
       farm: flocks.length === 1 ? flocks[0].farm : "Multiple flocks",
       flockId: flocks.length === 1 ? flocks[0].flockId : `${flocks.length} flocks`,

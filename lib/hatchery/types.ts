@@ -236,6 +236,7 @@ export type BatchStatus = "active" | "dispatched" | "delivered" | "inactive";
 export interface Batch {
   id: string;
   batchNo: string; // NCGR-H26-W29-02
+  setDate?: string; // yyyy-mm-dd the eggs were set (groups a Ross+Tetra set)
   productType: Product;
   farm: string;
   flockId: string;

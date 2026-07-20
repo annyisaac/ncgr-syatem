@@ -77,6 +77,46 @@ export function batchCode(dateIso: string, product: Product): string {
   return `NCGR-H${yy}-W${ww}-${PRODUCT_CODE[product]}`;
 }
 
+/** Pull the H (2-digit week-year) and W (week number) out of a batch number. */
+function parseHW(batchNo: string): { h: number; w: number } | null {
+  const m = /-H(\d+)-W(\d+)-/.exec(batchNo);
+  return m ? { h: Number(m[1]), w: Number(m[2]) } : null;
+}
+
+/**
+ * The batch number for a NEW set, counted sequentially:
+ * - batches sharing a set date share a week (so the Ross "01" and Tetra "02" of
+ *   one setting get the same W),
+ * - otherwise it's the next week after the highest existing batch,
+ * - past week 52 the H rolls over and the week restarts at 01,
+ * - the very first batch ever anchors to its set date's ISO week.
+ */
+export function nextBatchNo(batches: Batch[], product: Product, setDate: string): string {
+  const same = setDate ? batches.find((b) => b.setDate === setDate) : undefined;
+  let h: number;
+  let w: number;
+  if (same && parseHW(same.batchNo)) {
+    ({ h, w } = parseHW(same.batchNo)!);
+  } else {
+    let max: { h: number; w: number } | null = null;
+    for (const b of batches) {
+      const hw = parseHW(b.batchNo);
+      if (hw && (!max || hw.h > max.h || (hw.h === max.h && hw.w > max.w))) max = hw;
+    }
+    if (!max) {
+      h = Number(String(isoWeekYear(setDate)).slice(-2));
+      w = isoWeek(setDate);
+    } else if (max.w >= 52) {
+      h = max.h + 1;
+      w = 1;
+    } else {
+      h = max.h;
+      w = max.w + 1;
+    }
+  }
+  return `NCGR-H${String(h).padStart(2, "0")}-W${String(w).padStart(2, "0")}-${PRODUCT_CODE[product]}`;
+}
+
 export function expectedHatchDate(setDate: string): string {
   return addDays(setDate, INCUBATION_DAYS);
 }
