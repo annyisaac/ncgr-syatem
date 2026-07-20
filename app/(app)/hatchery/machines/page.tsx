@@ -26,12 +26,14 @@ export default function MachinesPage() {
   const { operator: sessionOp } = useOperator();
   const { toast } = useToast();
 
+  // Attendants only see active (in-use) machines; everyone else sees all,
+  // including deactivated ones, and can filter down if they want.
+  const isAttendant = user?.role === "Hatchery Attendant";
+
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  // Default to showing only active (in-use) machines; toggle the filter to see
-  // inactive ones (e.g. to reactivate one).
-  const [activeOnly, setActiveOnly] = useState(true);
+  const [activeOnly, setActiveOnly] = useState(false);
 
   // Add machine
   const [showCreate, setShowCreate] = useState(false);
@@ -69,7 +71,7 @@ export default function MachinesPage() {
     const q = query.trim().toLowerCase();
     return machines
       .filter((m) => (typeFilter === "all" ? true : m.type === typeFilter))
-      .filter((m) => (activeOnly ? m.active : true))
+      .filter((m) => (activeOnly || isAttendant ? m.active : true))
       .filter((m) => {
         if (!q) return true;
         const op = latestByMachine.get(m.code)?.operator ?? "";
@@ -77,7 +79,7 @@ export default function MachinesPage() {
       })
       .slice()
       .sort((a, b) => a.code.localeCompare(b.code));
-  }, [machines, typeFilter, activeOnly, query, latestByMachine]);
+  }, [machines, typeFilter, activeOnly, isAttendant, query, latestByMachine]);
 
   const selectedReadings = useMemo(
     () => (r.machineCode ? readings.filter((rd) => rd.machineCode === r.machineCode).sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1)).slice(0, 5) : []),
@@ -204,9 +206,11 @@ export default function MachinesPage() {
               {t === "all" ? "All types" : `${t}s`}
             </button>
           ))}
-          <label className="ml-2 flex items-center gap-2 text-muted">
-            <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} /> Active only
-          </label>
+          {!isAttendant && (
+            <label className="ml-2 flex items-center gap-2 text-muted">
+              <input type="checkbox" checked={activeOnly} onChange={(e) => setActiveOnly(e.target.checked)} /> Active only
+            </label>
+          )}
         </div>
       )}
 
