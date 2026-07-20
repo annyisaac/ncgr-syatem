@@ -162,6 +162,16 @@ export interface MachineAssignment {
   eggs: number;
 }
 
+/** A trolley of eggs moved from one setter to another during incubation. */
+export interface SetterMove {
+  from: string; // source setter code
+  to: string; // destination setter code
+  eggs: number; // eggs moved (on the trolley/trolleys)
+  trolleys?: number; // how many trolleys were moved
+  on: string; // ISO datetime
+  by: string; // who moved them
+}
+
 export interface MachineReading {
   id: string;
   machineCode: string;
@@ -243,7 +253,8 @@ export interface Batch {
   receptionIds: string[]; // combined daily receptions
   eggsSet: number; // total eggs set (sum across flocks)
   flocks?: BatchFlock[]; // per-flock breakdown (multi-flock batches)
-  setters: MachineAssignment[];
+  setters: MachineAssignment[]; // CURRENT setter distribution (updated by moves)
+  setterMoves?: SetterMove[]; // log of trolley moves between setters
   transfers: MachineAssignment[]; // batch-level total (recomputed from flocks)
   candlings: Candling[]; // batch-level total (recomputed from flocks)
   hatchedCount: number;

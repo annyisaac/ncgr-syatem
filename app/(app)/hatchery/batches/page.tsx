@@ -13,7 +13,8 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import { nowISO, todayISO } from "@/lib/format";
-import type { Batch, BatchFlock, MachineAssignment, Reception } from "@/lib/hatchery/types";
+import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from "@/lib/hatchery/types";
+import { Modal } from "@/components/ui/Modal";
 import { nextBatchNo, machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
@@ -32,6 +33,11 @@ export default function BatchesPage() {
   const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
   const [setDate, setSetDate] = useState(todayISO());
   const [err, setErr] = useState<string | null>(null);
+
+  // Move a trolley of eggs from one setter to another
+  const [moveB, setMoveB] = useState<Batch | null>(null);
+  const [mv, setMv] = useState({ from: "", to: "", eggs: "", trolleys: "" });
+  const [mvErr, setMvErr] = useState<string | null>(null);
 
   const canSet = !!user && CAN_SET.includes(user.role);
   // Idle setters are inactive; setting eggs into one activates it, so the picker
@@ -178,6 +184,53 @@ export default function BatchesPage() {
     setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]);
   }
 
+  function openMove(b: Batch) {
+    setMoveB(b);
+    setMv({ from: b.setters[0]?.machineCode ?? "", to: "", eggs: "", trolleys: "" });
+    setMvErr(null);
+  }
+
+  function doMove() {
+    if (!moveB) return;
+    setMvErr(null);
+    const { from, to } = mv;
+    const eggs = Number(mv.eggs) || 0;
+    const trolleys = Number(mv.trolleys) || 0;
+    if (!from) return setMvErr("Choose the setter to move from.");
+    if (!to) return setMvErr("Choose the setter to move to.");
+    if (from === to) return setMvErr("Pick two different setters.");
+    if (eggs <= 0) return setMvErr("Enter the number of eggs on the trolley.");
+    const cur = moveB.setters.find((s) => s.machineCode === from);
+    if (!cur || eggs > cur.eggs) return setMvErr(`Only ${(cur?.eggs ?? 0).toLocaleString()} eggs in ${from}.`);
+    const toMachine = setters.find((m) => m.code === to);
+    if (!toMachine) return setMvErr("Destination setter not found.");
+    const free = machineFreeCapacity(toMachine, batches, "setters");
+    if (eggs > free) return setMvErr(`${to} only has room for ${free.toLocaleString()} more.`);
+
+    // Update the CURRENT setter distribution: out of `from`, into `to`.
+    const next = moveB.setters
+      .map((s) => (s.machineCode === from ? { ...s, eggs: s.eggs - eggs } : s))
+      .filter((s) => s.eggs > 0);
+    const di = next.findIndex((s) => s.machineCode === to);
+    if (di >= 0) next[di] = { ...next[di], eggs: next[di].eggs + eggs };
+    else next.push({ machineCode: to, eggs });
+
+    const move: SetterMove = { from, to, eggs, trolleys: trolleys || undefined, on: nowISO(), by: user!.email };
+    const nb: Batch = {
+      ...moveB,
+      setters: next,
+      setterMoves: [...(moveB.setterMoves ?? []), move],
+      history: [
+        ...moveB.history,
+        `${nowISO()} — Moved ${eggs.toLocaleString()} eggs${trolleys ? ` (${trolleys} trolley${trolleys > 1 ? "s" : ""})` : ""} from ${from} to ${to} (by ${user!.name})`,
+      ],
+    };
+    upsertBatch(nb);
+    machinesToSync(machines, [from, to], batches.map((x) => (x.id === nb.id ? nb : x))).forEach(upsertMachine);
+    toast(`Moved ${eggs.toLocaleString()} eggs from ${from} to ${to}.`);
+    setMoveB(null);
+  }
+
   return (
     <div className="space-y-5">
 
@@ -265,15 +318,25 @@ export default function BatchesPage() {
         <CardHeader title={`${rows.length} batch(es)`} />
         <TableWrap>
           <thead>
-            <tr><Th>Batch</Th><Th>Product</Th><Th>Farm / flock</Th><Th>Step</Th><Th className="text-right">Eggs set</Th><Th className="text-right">Hatched</Th><Th className="text-right">Saleable</Th><Th>Status</Th></tr>
+            <tr><Th>Batch</Th><Th>Product</Th><Th>Farm / flock</Th><Th>Step</Th><Th>Setters</Th><Th className="text-right">Eggs set</Th><Th className="text-right">Hatched</Th><Th className="text-right">Saleable</Th><Th>Status</Th></tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? <EmptyRow colSpan={8} text="No batches yet." /> : rows.map((b) => (
+            {rows.length === 0 ? <EmptyRow colSpan={9} text="No batches yet." /> : rows.map((b) => (
               <tr key={b.id}>
                 <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
                 <Td>{b.productType}</Td>
                 <Td>{b.flocks && b.flocks.length > 1 ? `${b.flocks.length} flocks` : `${b.farm} · ${b.flockId}`}</Td>
                 <Td>{stepLabel(b.currentStep)}</Td>
+                <Td>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">
+                      {b.setters.length ? b.setters.map((s) => `${s.machineCode}·${s.eggs.toLocaleString()}`).join(", ") : "—"}
+                    </span>
+                    {canSet && b.steps?.["setting"] && !b.steps?.["transfer"] && b.setters.length > 0 && (
+                      <div><Button size="sm" variant="ghost" onClick={() => openMove(b)}>Move trolley</Button></div>
+                    )}
+                  </div>
+                </Td>
                 <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
                 <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>
                 <Td className="text-right">{b.saleableCount.toLocaleString()}</Td>
@@ -283,6 +346,32 @@ export default function BatchesPage() {
           </tbody>
         </TableWrap>
       </Card>
+
+      {/* Move a trolley between setters */}
+      <Modal
+        open={!!moveB}
+        onClose={() => setMoveB(null)}
+        title={moveB ? `Move a trolley — ${moveB.batchNo}` : "Move a trolley"}
+        footer={<><Button variant="ghost" onClick={() => setMoveB(null)}>Cancel</Button><Button onClick={doMove}>Move</Button></>}
+      >
+        {moveB && (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <Field label="From setter">
+              <Select value={mv.from} onChange={(e) => setMv({ ...mv, from: e.target.value })}
+                placeholder="Select"
+                options={moveB.setters.map((s) => ({ value: s.machineCode, label: `${s.machineCode} (${s.eggs.toLocaleString()} eggs)` }))} />
+            </Field>
+            <Field label="To setter">
+              <Select value={mv.to} onChange={(e) => setMv({ ...mv, to: e.target.value })}
+                placeholder="Select"
+                options={setters.filter((m) => m.code !== mv.from).map((m) => ({ value: m.code, label: `${m.code} (free ${Math.max(0, machineFreeCapacity(m, batches, "setters")).toLocaleString()})` }))} />
+            </Field>
+            <Field label="Eggs on the trolley"><Input type="number" min={1} value={mv.eggs} onChange={(e) => setMv({ ...mv, eggs: e.target.value })} /></Field>
+            <Field label="Trolleys (optional)"><Input type="number" min={0} value={mv.trolleys} onChange={(e) => setMv({ ...mv, trolleys: e.target.value })} /></Field>
+            {mvErr && <p className="sm:col-span-2 text-sm text-status-refunded">{mvErr}</p>}
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }

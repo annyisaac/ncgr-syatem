@@ -124,6 +124,19 @@ export default function BatchDetailPage() {
               <div key={a.machineCode} className="flex justify-between rounded-md border border-line px-3 py-1.5"><span>{a.machineCode}</span><span>{a.eggs.toLocaleString()} eggs</span></div>
             ))}
           </div>
+          {batch.setterMoves && batch.setterMoves.length > 0 && (
+            <div className="mt-3">
+              <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Trolley moves</p>
+              <div className="space-y-1 text-sm">
+                {batch.setterMoves.map((m, i) => (
+                  <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-1.5">
+                    <span><strong className="text-ink">{m.from}</strong> → <strong className="text-ink">{m.to}</strong> · {m.eggs.toLocaleString()} eggs{m.trolleys ? ` (${m.trolleys} trolley${m.trolleys > 1 ? "s" : ""})` : ""}</span>
+                    <span className="text-xs text-muted">{formatDateTime(m.on)}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </Card>
         <Card>
           <CardHeader title="Hatcher machines (transfer)" />
