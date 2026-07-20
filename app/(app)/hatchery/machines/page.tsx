@@ -222,9 +222,19 @@ export default function MachinesPage() {
                   <span className="text-[0.7rem] text-muted">{rd ? formatDateTime(rd.timestamp) : "no readings"}</span>
                 </div>
 
-                <div className="mt-1.5 flex items-center gap-2">
-                  <h2 className="text-lg font-bold text-ink">{m.code}</h2>
-                  {!m.active && <span className="rounded bg-grey-bg px-1.5 py-0.5 text-[0.6rem] text-muted">inactive</span>}
+                <div className="mt-1.5 flex items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-lg font-bold text-ink">{m.code}</h2>
+                    {!m.active && <span className="rounded bg-grey-bg px-1.5 py-0.5 text-[0.6rem] text-muted">inactive</span>}
+                  </div>
+                  {canManage && (
+                    <button
+                      onClick={() => toggleActive(m)}
+                      className={`shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold ${m.active ? "bg-red-bg text-red" : "bg-green-bg text-green"}`}
+                    >
+                      {m.active ? "Deactivate" : "Activate"}
+                    </button>
+                  )}
                 </div>
                 <p className="text-[0.72rem] text-muted">cap {m.capacity.toLocaleString()} · free {(m.capacity - used).toLocaleString()}</p>
 
@@ -240,14 +250,6 @@ export default function MachinesPage() {
                 <div className="mt-3 flex items-center justify-between gap-2">
                   <span className="truncate text-sm text-muted">Operator: <span className="text-ink">{rd?.operator ?? "—"}</span></span>
                   <div className="flex shrink-0 items-center gap-2">
-                    {canManage && (
-                      <button
-                        onClick={() => toggleActive(m)}
-                        className={`rounded-full px-2.5 py-1 text-xs font-semibold ${m.active ? "bg-red-bg text-red" : "bg-green-bg text-green"}`}
-                      >
-                        {m.active ? "Deactivate" : "Activate"}
-                      </button>
-                    )}
                     {canManage && <button onClick={() => openEdit(m)} className="text-xs text-gold-dark underline">Edit</button>}
                     {canViewDetail && <Link href={`/hatchery/machines/${encodeURIComponent(m.code)}`} className="text-sm font-semibold text-gold-dark">View Details →</Link>}
                   </div>
