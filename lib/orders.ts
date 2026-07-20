@@ -14,7 +14,10 @@
 import { nowISO } from "./format";
 import {
   allVerified,
+  balance,
+  customerCredit,
   isFullyPaid,
+  orderTotal,
   type Order,
   type Payment,
   type User,
@@ -172,6 +175,82 @@ export function fulfillOrder(
   );
 }
 
+/** Credit (RWF) to auto-apply to an order from the customer's wallet — capped at
+ *  what the order is billed. Pass the current order list (the order itself is
+ *  excluded so its own bill doesn't cancel the credit). */
+export function creditToApply(order: Order, orders: Order[]): number {
+  return Math.min(customerCredit(orders, order, order.id), orderTotal(order));
+}
+
+/**
+ * Record a short delivery: `delivered` paid chicks were handed over (fewer than
+ * ordered). The order is marked delivered and billed for that count; a backorder
+ * is spun off for the remaining chicks on `nextDate`, already carrying any
+ * surplus the customer paid as applied credit. Returns both orders to persist.
+ */
+export function shortDeliver(
+  order: Order,
+  delivered: number,
+  nextDate: string,
+  actor: User,
+  orders: Order[],
+  newId: (prefix: string) => string
+): { order: Order; backorder: Order } {
+  const remaining = Math.max(0, order.chicks - delivered);
+  const deliveredOrder = withHistory(
+    { ...order, delivered, deliverOk: true, status: "fulfilled" as const },
+    actor,
+    `Short delivery — ${delivered.toLocaleString()} of ${order.chicks.toLocaleString()} chicks; ${remaining.toLocaleString()} carried to a backorder`
+  );
+
+  // First plan slot on the backorder's date (like a reschedule — front of day).
+  const plansOnDate = orders
+    .filter((o) => o.date === nextDate && o.status !== "refunded" && o.status !== "rejected")
+    .map((o) => o.plan);
+  const plan = (plansOnDate.length ? Math.min(...plansOnDate) : 0) - 1;
+
+  let backorder: Order = {
+    ...order,
+    id: newId("ord"),
+    chicks: remaining,
+    comp: 0,
+    delivered: undefined,
+    deliverOk: undefined,
+    status: "pending",
+    confirmedOk: true, // continuation of an already-confirmed order
+    debtOk: undefined,
+    deliveryFail: undefined,
+    routeId: undefined,
+    deliveryChicks: undefined,
+    pickupLocation: undefined,
+    request: undefined,
+    commReq: undefined,
+    commPaid: undefined,
+    creditApplied: undefined,
+    backorderOf: order.id,
+    payments: [],
+    date: nextDate,
+    created: nextDate,
+    createdAt: nowISO(),
+    plan,
+    history: [logLine(actor, `Backorder for ${remaining.toLocaleString()} chicks carried from ${order.name}'s short delivery`)],
+  };
+
+  // Surplus from the (now smaller-billed) delivered order becomes credit that
+  // covers this backorder — compute against the updated delivered order.
+  const updated = orders.map((o) => (o.id === deliveredOrder.id ? deliveredOrder : o));
+  const applied = creditToApply(backorder, updated);
+  if (applied > 0) {
+    backorder = withHistory(
+      { ...backorder, creditApplied: applied },
+      actor,
+      `Applied ${applied.toLocaleString()} RWF customer credit from the earlier payment`
+    );
+  }
+
+  return { order: deliveredOrder, backorder };
+}
+
 /**
  * Reschedule an order to a new delivery date. When the full order list is
  * passed, the order is placed FIRST in the new date's delivery plan (it gets a
@@ -246,8 +325,5 @@ export function reorderPlan(
 
 /** True when an order was delivered while still carrying a balance. */
 export function isDebtApproved(order: Order): boolean {
-  return (
-    order.deliverOk === true &&
-    order.payments.reduce((s, p) => s + p.amt, 0) < order.chicks * order.price
-  );
+  return order.deliverOk === true && balance(order) > 0;
 }

@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 
 import type { Order, Payment, Product, Province } from "@/lib/types";
-import { availableFor } from "@/lib/types";
+import { availableFor, customerCredit, orderTotal } from "@/lib/types";
 import {
   DISTRICTS_BY_PROVINCE,
   PROVINCES,
@@ -117,6 +117,13 @@ export default function NewOrderPage() {
     return { name: latest.name, count: theirs.length };
   }, [phone, orders]);
 
+  // Any credit this customer is carrying — auto-applied to this order on save.
+  const custCredit = useMemo(() => {
+    const nm = (existingCustomer?.name ?? name).trim();
+    if (!nm || normalizePhone(phone).length < 6) return 0;
+    return customerCredit(orders, { phone: phone.trim(), name: nm });
+  }, [orders, phone, name, existingCustomer]);
+
   // Ordering availability: only Admin-opened dates are selectable; remaining
   // chicks are visible to Admin & Zone Managers only.
   const canSeeAvail = user?.role === "Admin" || user?.role === "Tetra Zone Manager";
@@ -195,6 +202,17 @@ export default function NewOrderPage() {
     }
 
     const samedate = orders.filter((o) => o.date === date).length;
+    const finalName = (existingCustomer?.name ?? name).trim();
+
+    // Auto-apply any credit this customer is carrying (overpayments / short
+    // deliveries), capped at what this order is billed.
+    const applied = Math.min(
+      customerCredit(orders, { phone: phone.trim(), name: finalName }),
+      orderTotal({ chicks: nChicks, price: nPrice })
+    );
+    if (applied > 0) {
+      history.push(logLine(user!, `Applied ${applied.toLocaleString()} RWF customer credit`));
+    }
 
     const order: Order = {
       id: newId("ord"),
@@ -204,7 +222,7 @@ export default function NewOrderPage() {
       sector: sector.trim(),
       dsr: selectedDsr?.name,
       dsrId: dsrId || undefined,
-      name: (existingCustomer?.name ?? name).trim(),
+      name: finalName,
       clientDistrict,
       clientSector: clientSector.trim(),
       phone: phone.trim(),
@@ -220,6 +238,7 @@ export default function NewOrderPage() {
       history,
       plan: samedate,
       payments,
+      ...(applied > 0 ? { creditApplied: applied } : {}),
     };
 
     setSaving(true);
@@ -374,6 +393,12 @@ export default function NewOrderPage() {
                   {name.trim() !== existingCustomer.name && (
                     <Button variant="ghost" size="sm" onClick={() => setName(existingCustomer.name)}>Use “{existingCustomer.name}”</Button>
                   )}
+                </div>
+              )}
+              {custCredit > 0 && (
+                <div className="mb-4 rounded-xl border border-green/30 bg-green-bg px-3 py-2.5 text-sm text-green">
+                  <strong>Customer credit: {formatRWF(custCredit)}</strong>{" "}
+                  <span className="text-green/80">— applied automatically to this order (up to its total).</span>
                 </div>
               )}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

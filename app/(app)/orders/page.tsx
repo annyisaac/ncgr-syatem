@@ -22,6 +22,7 @@ import type { Order, Payment, User } from "@/lib/types";
 import {
   allVerified,
   balance,
+  customerCredit,
   isFullyPaid,
   orderTotal,
   paidAmount,
@@ -48,11 +49,13 @@ import {
   rejectOrder,
   reorderPlan,
   rescheduleOrder,
+  shortDeliver,
   withHistory,
 } from "@/lib/orders";
 
 type ModalState =
   | { type: "pay"; order: Order }
+  | { type: "fulfill"; order: Order }
   | { type: "reschedule"; order: Order }
   | { type: "edit"; order: Order }
   | { type: "refund"; order: Order }
@@ -71,7 +74,7 @@ const CHECK_LABEL: Record<string, string> = {
 
 function OrdersInner() {
   const { user } = useAuth();
-  const { orders, availability, upsertOrder, removeOrder } = useData();
+  const { orders, availability, upsertOrder, removeOrder, newId } = useData();
   const { toast } = useToast();
   const search = useSearchParams();
   const tile = search.get("tile") ?? "all";
@@ -209,6 +212,21 @@ function OrdersInner() {
   function doFulfill(o: Order, note?: string) {
     act(fulfillOrder(o, user!, note), `Order delivered for ${o.name}.`);
   }
+  function doDeliver(o: Order, delivered: number, nextDate: string) {
+    // Full delivery — the ordinary path.
+    if (delivered >= o.chicks) {
+      doFulfill(o);
+      return;
+    }
+    // Short delivery — bill what was given, carry the rest to a backorder.
+    const { order, backorder } = shortDeliver(o, delivered, nextDate, user!, orders, newId);
+    upsertOrder(order);
+    upsertOrder(backorder);
+    const carried = o.chicks - delivered;
+    toast(
+      `Delivered ${delivered.toLocaleString()} of ${o.chicks.toLocaleString()} — backorder for ${carried.toLocaleString()} created${backorder.creditApplied ? " (paid from credit)" : ""}.`
+    );
+  }
   function doApproveDebt(o: Order) {
     act(
       approveDebt(o, user!, "Approved delivery on debt"),
@@ -259,7 +277,7 @@ function OrdersInner() {
     if (!o.deliverOk && !isClosed(o)) {
       const r = canFulfill(o);
       if (r === null) {
-        acts.push({ label: "Fulfill (deliver)", onClick: () => doFulfill(o) });
+        acts.push({ label: "Fulfill (deliver)", onClick: () => setModal({ type: "fulfill", order: o }) });
       } else if (isAdmin && isFullyPaid(o) && !allVerified(o)) {
         acts.push({
           label: "Deliver — override unchecked",
@@ -486,6 +504,12 @@ function OrdersInner() {
                       </Link>
                       <div className="text-xs text-ink/50">{o.phone}</div>
                       {o.dsr && <div className="text-xs text-ink/50">DSR: {o.dsr}</div>}
+                      {(() => {
+                        const credit = customerCredit(orders, o);
+                        return credit > 0 ? (
+                          <div className="text-xs font-medium text-green">Credit: {formatRWF(credit)}</div>
+                        ) : null;
+                      })()}
                     </Td>
                     <Td>
                       <div className="flex items-center gap-1.5">
@@ -498,7 +522,11 @@ function OrdersInner() {
                     </Td>
                     <Td className="whitespace-nowrap text-right">
                       {o.chicks.toLocaleString()}
-                      <div className="text-xs text-ink/50">→ {toDeliver(o).toLocaleString()} to deliver</div>
+                      {o.delivered != null && o.delivered !== o.chicks ? (
+                        <div className="text-xs font-medium text-gold-dark">Delivered {o.delivered.toLocaleString()}</div>
+                      ) : (
+                        <div className="text-xs text-ink/50">→ {toDeliver(o).toLocaleString()} to deliver</div>
+                      )}
                     </Td>
                     <Td className="whitespace-nowrap text-right">
                       <div className={`font-medium ${isFullyPaid(o) ? "text-green" : "text-ink"}`}>
@@ -510,6 +538,9 @@ function OrdersInner() {
                           {balance(o).toLocaleString()}
                         </span>
                       </div>
+                      {!!o.creditApplied && (
+                        <div className="text-xs text-green">Credit applied {o.creditApplied.toLocaleString()}</div>
+                      )}
                     </Td>
                     <Td>
                       <div className="flex flex-col gap-1">
@@ -532,6 +563,7 @@ function OrdersInner() {
                               ? "Confirmed"
                               : o.status}
                         </Pill>
+                        {o.backorderOf && <Pill tone="purple">Backorder</Pill>}
                         {o.debtOk && !o.deliverOk && <Pill tone="info">On debt</Pill>}
                         {isDebtApproved(o) && <Pill tone="refunded">Debt approved</Pill>}
                         {o.request?.status === "open" && (
@@ -573,6 +605,18 @@ function OrdersInner() {
               ),
               "Payment added."
             );
+            setModal(null);
+          }}
+        />
+      )}
+
+      {modal?.type === "fulfill" && (
+        <FulfillModal
+          order={modal.order}
+          availability={availability}
+          onClose={() => setModal(null)}
+          onSave={(delivered, nextDate) => {
+            doDeliver(modal.order, delivered, nextDate);
             setModal(null);
           }}
         />
@@ -762,6 +806,88 @@ function PayModal({
         <Field label="Transaction ID">
           <Input value={ref} onChange={(e) => setRef(e.target.value)} />
         </Field>
+        {err && <p className="text-sm text-status-refunded">{err}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+function FulfillModal({
+  order,
+  availability,
+  onClose,
+  onSave,
+}: {
+  order: Order;
+  availability: { id: string; date: string; ross: number; tetra: number }[];
+  onClose: () => void;
+  onSave: (delivered: number, nextDate: string) => void;
+}) {
+  const [delivered, setDelivered] = useState(String(order.chicks));
+  const openDates = useMemo(
+    () =>
+      availability
+        .slice()
+        .filter((a) => a.ross > 0 || a.tetra > 0)
+        .sort((a, b) => (a.date < b.date ? -1 : 1)),
+    [availability]
+  );
+  const [nextDate, setNextDate] = useState(openDates[0]?.id ?? order.date);
+  const [err, setErr] = useState<string | null>(null);
+
+  const n = Number(delivered) || 0;
+  const short = n > 0 && n < order.chicks;
+  const remaining = Math.max(0, order.chicks - n);
+
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Deliver — ${order.name}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (n <= 0) return setErr("Enter how many chicks were delivered.");
+              if (n > order.chicks) return setErr(`Cannot deliver more than the ${order.chicks.toLocaleString()} ordered.`);
+              if (short && !nextDate) return setErr("Pick a delivery date for the remaining chicks.");
+              onSave(n, nextDate);
+            }}
+          >
+            {short ? "Deliver & create backorder" : "Confirm delivery"}
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-ink/60">
+          Ordered <strong>{order.chicks.toLocaleString()}</strong> chicks. Enter how
+          many were actually delivered — if fewer, the rest carries to a backorder.
+        </p>
+        <Field label="Chicks delivered now">
+          <Input type="number" min={1} max={order.chicks} value={delivered} onChange={(e) => setDelivered(e.target.value)} />
+        </Field>
+        {short && (
+          <div className="space-y-3 rounded-lg border border-line p-3">
+            <p className="text-sm">
+              Remaining <strong className="text-gold-dark">{remaining.toLocaleString()}</strong> chicks →
+              backorder. Any money already paid above {formatRWF(order.price * n)} is
+              kept as the customer&apos;s credit and applied to it.
+            </p>
+            <Field label="Backorder delivery date">
+              {openDates.length === 0 ? (
+                <p className="text-sm text-status-refunded">No open dates — the backorder keeps this order&apos;s date until you reschedule it.</p>
+              ) : (
+                <Select
+                  value={nextDate}
+                  onChange={(e) => setNextDate(e.target.value)}
+                  options={openDates.map((a) => ({ value: a.id, label: formatDate(a.date) }))}
+                />
+              )}
+            </Field>
+          </div>
+        )}
         {err && <p className="text-sm text-status-refunded">{err}</p>}
       </div>
     </Modal>

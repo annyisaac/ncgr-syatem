@@ -227,6 +227,14 @@ export interface Order {
   routeId?: string; // assigned delivery route
   deliveryChicks?: number; // chicks allocated for delivery
   pickupLocation?: string; // where the chicks are picked up
+  /** Paid chicks actually handed over. When set and < chicks, the order was a
+   *  short delivery and is billed on this number, not the ordered amount. */
+  delivered?: number;
+  /** This order continues an earlier one that could only be part-delivered. */
+  backorderOf?: string;
+  /** Customer credit (RWF) drawn onto this order from their wallet — counts
+   *  toward the balance so a credit-funded order can be confirmed/delivered. */
+  creditApplied?: number;
 }
 
 /**
@@ -381,25 +389,89 @@ export function toDeliver(order: Pick<Order, "chicks" | "comp">): number {
   return order.chicks + extra2(order) + order.comp;
 }
 
-/** Free chicks (2% extra + compensation) are not charged. */
-export function orderTotal(order: Pick<Order, "chicks" | "price">): number {
-  return order.chicks * order.price;
+/** Chicks the order is billed for — the delivered count once it has been
+ *  short-delivered, otherwise the ordered amount. */
+export function billedChicks(
+  order: Pick<Order, "chicks"> & { delivered?: number }
+): number {
+  return order.delivered ?? order.chicks;
+}
+
+/** Free chicks (2% extra + compensation) are not charged. A short delivery is
+ *  billed only for the chicks actually handed over. */
+export function orderTotal(
+  order: Pick<Order, "chicks" | "price"> & { delivered?: number }
+): number {
+  return billedChicks(order) * order.price;
 }
 
 export function paidAmount(order: Pick<Order, "payments">): number {
   return order.payments.reduce((sum, p) => sum + p.amt, 0);
 }
 
+/** Outstanding cash on this order. Applied customer credit counts toward it,
+ *  so a credit-funded order reads as paid. */
 export function balance(
-  order: Pick<Order, "chicks" | "price" | "payments">
+  order: Pick<Order, "chicks" | "price" | "payments"> & {
+    delivered?: number;
+    creditApplied?: number;
+  }
 ): number {
-  return orderTotal(order) - paidAmount(order);
+  return orderTotal(order) - paidAmount(order) - (order.creditApplied ?? 0);
 }
 
 export function isFullyPaid(
-  order: Pick<Order, "chicks" | "price" | "payments">
+  order: Pick<Order, "chicks" | "price" | "payments"> & {
+    delivered?: number;
+    creditApplied?: number;
+  }
 ): boolean {
   return balance(order) <= 0;
+}
+
+// ---------------------------------------------------------------------------
+// Customer credit (wallet)
+// ---------------------------------------------------------------------------
+
+/** Digits-only phone, so "0781 398 821" and "250781398821" compare loosely. */
+function phoneDigits(phone: string): string {
+  const d = phone.replace(/\D/g, "");
+  return d.startsWith("250") ? d.slice(3) : d.replace(/^0/, "");
+}
+
+/** The same customer — matched on phone (loose) and name (case-insensitive). */
+export function sameCustomer(
+  a: Pick<Order, "phone" | "name">,
+  b: Pick<Order, "phone" | "name">
+): boolean {
+  return (
+    phoneDigits(a.phone) === phoneDigits(b.phone) &&
+    a.name.trim().toLowerCase() === b.name.trim().toLowerCase()
+  );
+}
+
+/**
+ * A customer's available credit in RWF: cash they have paid beyond the value of
+ * chicks actually delivered/committed to them, summed across their orders. It
+ * grows when they overpay or are short-delivered, and is consumed as later
+ * orders bill against them. Refunded/rejected orders don't count; pass the
+ * order being created/paid as `excludeId` to get the credit available *before*
+ * it draws down.
+ */
+export function customerCredit(
+  orders: Order[],
+  ref: Pick<Order, "phone" | "name">,
+  excludeId?: string
+): number {
+  const mine = orders.filter(
+    (o) =>
+      o.status !== "refunded" &&
+      o.status !== "rejected" &&
+      o.id !== excludeId &&
+      sameCustomer(o, ref)
+  );
+  const raw = mine.reduce((s, o) => s + paidAmount(o) - orderTotal(o), 0);
+  return Math.max(0, raw);
 }
 
 export function allVerified(order: Pick<Order, "payments">): boolean {
