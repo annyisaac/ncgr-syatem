@@ -54,10 +54,25 @@ export function isoWeek(dateIso: string): number {
   return 1 + Math.round((target.getTime() - firstThursday.getTime()) / (7 * 864e5));
 }
 
-/** NCGR-H26-W29-02 (company · H+year · W+week · product code). */
-export function batchCode(dateIso: string, product: Product): string {
+/** The ISO week-year of a date — the year that owns its ISO week. It rolls to
+ *  the next year exactly when the week wraps from 52/53 back to 01, so it pairs
+ *  correctly with isoWeek() at the December/January boundary. */
+export function isoWeekYear(dateIso: string): number {
   const d = new Date(dateIso + "T00:00:00");
-  const yy = String(d.getFullYear()).slice(-2);
+  const target = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNr = (target.getUTCDay() + 6) % 7;
+  target.setUTCDate(target.getUTCDate() - dayNr + 3); // Thursday of this week
+  return target.getUTCFullYear();
+}
+
+/**
+ * Batch number: NCGR-H{year}-W{week}-{product}. Week is the ISO calendar week
+ * (so a hatchery that sets weekly counts up W28, W29, …); at year end the week
+ * wraps to W01 and H (the ISO week-year) increments. Suffix is the product
+ * code — 01 Ross 308, 02 Tetra Super Harco. e.g. NCGR-H26-W29-02.
+ */
+export function batchCode(dateIso: string, product: Product): string {
+  const yy = String(isoWeekYear(dateIso)).slice(-2);
   const ww = String(isoWeek(dateIso)).padStart(2, "0");
   return `NCGR-H${yy}-W${ww}-${PRODUCT_CODE[product]}`;
 }
