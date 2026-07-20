@@ -14,29 +14,42 @@ import { formatDate, formatDateTime } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
 /**
+ * Cache shared across every ProductBatchesView (Ross + Tetra) and across page
+ * visits, so the DB round trip only blocks the very first open. Later visits
+ * render instantly from cache while a fresh copy loads in the background.
+ */
+let cache: { batches: Batch[]; inventory: ChickInventory[] } | null = null;
+
+async function loadHatcheryView() {
+  const [batches, inventory] = await Promise.all([
+    fetchTable<Batch>("batches"),
+    fetchTable<ChickInventory>("chick_inventory"),
+  ]);
+  cache = { batches, inventory };
+  return cache;
+}
+
+/**
  * Read-only "live view of production from the hatchery" for one product. The
  * Ross Order Receiver (Ross 308) and the Tetra zone managers (Tetra Super
  * Harco) each get their own product's batches, powered by this one component.
  */
 export function ProductBatchesView({ product }: { product: Product }) {
-  const [batches, setBatches] = useState<Batch[]>([]);
-  const [inventory, setInventory] = useState<ChickInventory[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [batches, setBatches] = useState<Batch[]>(cache?.batches ?? []);
+  const [inventory, setInventory] = useState<ChickInventory[]>(cache?.inventory ?? []);
+  const [loading, setLoading] = useState(!cache);
   const [selected, setSelected] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
     (async () => {
       try {
-        const [b, inv] = await Promise.all([
-          fetchTable<Batch>("batches"),
-          fetchTable<ChickInventory>("chick_inventory"),
-        ]);
+        const data = await loadHatcheryView();
         if (!active) return;
-        setBatches(b);
-        setInventory(inv);
+        setBatches(data.batches);
+        setInventory(data.inventory);
       } catch {
-        /* RLS or network — leave empty */
+        /* RLS or network — keep whatever we have */
       } finally {
         if (active) setLoading(false);
       }
