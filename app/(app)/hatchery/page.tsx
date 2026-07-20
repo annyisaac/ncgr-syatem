@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -8,9 +8,11 @@ import { useData } from "@/components/DataProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
 import { Card } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
-import { GreetingHeader, StatTile, SectionTitle } from "@/components/dashboard/DashKit";
+import { GreetingHeader, StatTile, SectionTitle, SearchTimeBar } from "@/components/dashboard/DashKit";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
+import { formatDate, formatDateTime, todayISO } from "@/lib/format";
 import { computeKpis, stepLabel, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
 import { visibleOrders } from "@/lib/permissions";
 import { PRODUCTS, balance, isFullyPaid, type Order, type User } from "@/lib/types";
@@ -23,30 +25,57 @@ const HATCHERY_SUBTITLE: Partial<Record<string, string>> = {
   "Production Technician": "here's the production floor today",
 };
 
+/** Shared search + period filter passed to every hatchery dashboard view. */
+export interface DashFilter {
+  q: string;
+  range: DateRangeValue;
+}
+
+/** Text match against a set of fields (empty query = match all). */
+function matches(q: string, ...fields: (string | undefined)[]): boolean {
+  const s = q.trim().toLowerCase();
+  if (!s) return true;
+  return fields.some((f) => (f ?? "").toLowerCase().includes(s));
+}
+/** Date-in-range test (no range set = match all). */
+function inFilterRange(dateIso: string | undefined, range: DateRangeValue): boolean {
+  if (!(range.from || range.to)) return true;
+  return inRange((dateIso ?? "").slice(0, 10), range);
+}
+
 export default function HatcheryDashboard() {
   const { user } = useAuth();
   const { loading } = useHatchery();
+
+  const [q, setQ] = useState("");
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const range = presetToRange(preset, custom, todayISO());
+
   if (!user) return null;
 
   const role = user.role;
+  const filter: DashFilter = { q, range };
   return (
     <div className="space-y-5">
       <GreetingHeader name={user.name} subtitle={HATCHERY_SUBTITLE[role] ?? "here's the hatchery today"} right={<Pill tone="gold">{role}</Pill>} />
 
+      <SearchTimeBar q={q} setQ={setQ} placeholder="Search this dashboard…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
+
       {loading ? (
         <Card><p className="text-sm text-muted">Loading hatchery data…</p></Card>
       ) : role === "Hatchery Veterinary" ? (
-        <VetView />
+        <VetView filter={filter} />
       ) : role === "Maintenance Technician" ? (
-        <MaintenanceView />
+        <MaintenanceView filter={filter} />
       ) : role === "Hatchery Sales & Coordination Officer" ? (
-        <CoordinationView user={user} />
+        <CoordinationView user={user} filter={filter} />
       ) : role === "Production Technician" ? (
-        <TechView />
+        <TechView filter={filter} />
       ) : role === "Hatchery Operations Manager" ? (
-        <ProductionView />
+        <ProductionView filter={filter} />
       ) : (
-        <ManagerView user={user} />
+        <ManagerView user={user} filter={filter} />
       )}
     </div>
   );
@@ -56,8 +85,10 @@ export default function HatcheryDashboard() {
 // Shared pieces
 // ---------------------------------------------------------------------------
 
-function BatchesCard({ batches, title = "Batches" }: { batches: Batch[]; title?: string }) {
-  const rows = batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 12);
+function BatchesCard({ batches, filter, title = "Batches" }: { batches: Batch[]; filter?: DashFilter; title?: string }) {
+  const rows = batches
+    .filter((b) => !filter || (matches(filter.q, b.batchNo, b.productType, stepLabel(b.currentStep)) && inFilterRange(b.createdAt, filter.range)))
+    .slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 12);
   const tone = (s: Batch["status"]) =>
     s === "delivered" ? "fulfilled" : s === "dispatched" ? "gold" : s === "inactive" ? "neutral" : "info";
   return (
@@ -129,7 +160,7 @@ const ordersToDeliver = (orders: Order[], user: User) =>
 // Manager (Admin / Hatchery Manager / Operations Manager) — full overview
 // ---------------------------------------------------------------------------
 
-function ManagerView({ user }: { user: User }) {
+function ManagerView({ user, filter }: { user: User; filter: DashFilter }) {
   const { batches, inventory, maintenance, allocations, dispatches, supplies, spareParts, spareRequests } = useHatchery();
   const { orders } = useData();
   const kpis = useMemo(() => computeKpis(batches, inventory), [batches, inventory]);
@@ -159,7 +190,7 @@ function ManagerView({ user }: { user: User }) {
         <StatTile label="Low / pending parts" value={`${lowStock} / ${pendingParts}`} tone={lowStock || pendingParts ? "gold" : "default"} />
       </div>
       <OverTempCard />
-      <BatchesCard batches={batches} />
+      <BatchesCard batches={batches} filter={filter} />
     </>
   );
 }
@@ -168,7 +199,7 @@ function ManagerView({ user }: { user: User }) {
 // Hatchery Operations Manager — production overview
 // ---------------------------------------------------------------------------
 
-function ProductionView() {
+function ProductionView({ filter }: { filter: DashFilter }) {
   const { batches, inventory } = useHatchery();
   const kpis = useMemo(() => computeKpis(batches, inventory), [batches, inventory]);
   return (
@@ -181,7 +212,7 @@ function ProductionView() {
         <StatTile label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
       </div>
       <OverTempCard />
-      <BatchesCard batches={batches} />
+      <BatchesCard batches={batches} filter={filter} />
     </>
   );
 }
@@ -190,7 +221,7 @@ function ProductionView() {
 // Production Technician — production tasks
 // ---------------------------------------------------------------------------
 
-function TechView() {
+function TechView({ filter }: { filter: DashFilter }) {
   const { batches, counts } = useHatchery();
   const toCandle = batches.filter(inPipeline);
   const inHatchers = batches.filter((b) => b.steps["transfer"] && !b.steps["hatching"]);
@@ -204,7 +235,7 @@ function TechView() {
         <StatTile label="Active batches" value={String(batches.filter((b) => b.status === "active").length)} />
       </div>
       <OverTempCard />
-      <BatchesCard batches={batches.filter((b) => b.status === "active")} title="Active pipeline" />
+      <BatchesCard batches={batches.filter((b) => b.status === "active")} filter={filter} title="Active pipeline" />
     </>
   );
 }
@@ -213,10 +244,14 @@ function TechView() {
 // Hatchery Veterinary — health / vaccination
 // ---------------------------------------------------------------------------
 
-function VetView() {
+function VetView({ filter }: { filter: DashFilter }) {
   const { batches, vaccineRequests, farmVisits, biosecurity } = useHatchery();
-  const toVax = batches.filter(awaitingVaccination);
-  const pendingReq = vaccineRequests.filter((r) => r.status === "requested" || r.status === "confirmed");
+  const toVax = batches
+    .filter(awaitingVaccination)
+    .filter((b) => matches(filter.q, b.batchNo, b.productType) && inFilterRange(b.createdAt, filter.range));
+  const pendingReq = vaccineRequests
+    .filter((r) => r.status === "requested" || r.status === "confirmed")
+    .filter((r) => matches(filter.q, r.vaccine, r.status));
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -266,13 +301,15 @@ function VetView() {
 // Maintenance Technician — machines & spare parts
 // ---------------------------------------------------------------------------
 
-function MaintenanceView() {
+function MaintenanceView({ filter }: { filter: DashFilter }) {
   const { readings, maintenance, machines, spareParts, spareRequests } = useHatchery();
   const alerts = readings.filter((r) => isMachineOverTemp(r.dryF, r.wetF, r.digitalTempF)).length;
   const downtime = maintenance.reduce((s, m) => s + (m.downtimeHours ?? 0), 0);
-  const lowParts = spareParts.filter((p) => p.quantity <= 0);
+  const lowParts = spareParts.filter((p) => p.quantity <= 0).filter((p) => matches(filter.q, p.name, p.location));
   const pendingReq = spareRequests.filter((r) => r.status === "pending");
-  const recentMaint = maintenance.slice().sort((a, b) => (a.on < b.on ? 1 : -1)).slice(0, 8);
+  const recentMaint = maintenance
+    .filter((m) => matches(filter.q, m.area, m.kind, m.notes) && inFilterRange(m.on, filter.range))
+    .slice().sort((a, b) => (a.on < b.on ? 1 : -1)).slice(0, 8);
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
@@ -320,12 +357,14 @@ function MaintenanceView() {
 // Hatchery Sales & Coordination Officer — sales coordination
 // ---------------------------------------------------------------------------
 
-function CoordinationView({ user }: { user: User }) {
+function CoordinationView({ user, filter }: { user: User; filter: DashFilter }) {
   const { inventory, allocations, dispatches } = useHatchery();
   const { orders } = useData();
   const toDeliver = useMemo(
-    () => ordersToDeliver(orders, user).slice().sort((a, b) => (a.date === b.date ? a.plan - b.plan : a.date < b.date ? -1 : 1)),
-    [orders, user]
+    () => ordersToDeliver(orders, user)
+      .filter((o) => matches(filter.q, o.name, o.product, o.district) && inFilterRange(o.date, filter.range))
+      .slice().sort((a, b) => (a.date === b.date ? a.plan - b.plan : a.date < b.date ? -1 : 1)),
+    [orders, user, filter]
   );
   const availBy = (p: string) => inventory.filter((i) => i.productType === p && i.availableCount > 0).reduce((s, i) => s + i.availableCount, 0);
   const totalAvail = inventory.reduce((s, i) => s + i.availableCount, 0);
