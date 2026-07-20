@@ -29,7 +29,9 @@ export default function MachinesPage() {
   const [query, setQuery] = useState("");
   const [showFilters, setShowFilters] = useState(false);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
-  const [activeOnly, setActiveOnly] = useState(false);
+  // Default to showing only active (in-use) machines; toggle the filter to see
+  // inactive ones (e.g. to reactivate one).
+  const [activeOnly, setActiveOnly] = useState(true);
 
   // Add machine
   const [showCreate, setShowCreate] = useState(false);
