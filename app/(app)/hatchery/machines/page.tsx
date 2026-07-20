@@ -107,7 +107,9 @@ export default function MachinesPage() {
     if (!code.trim()) return setCErr("Enter the machine code (e.g. S01 / H01).");
     if (machines.some((m) => m.code.toLowerCase() === code.trim().toLowerCase())) return setCErr("A machine with that code exists.");
     if (cap <= 0) return setCErr("Enter the capacity (eggs).");
-    const m: Machine = { id: newId("mac"), code: code.trim().toUpperCase(), type, capacity: cap, active: true, by: user!.email, on: nowISO() };
+    // A new machine holds no eggs yet, so it starts inactive; setting eggs into
+    // it (or a manual toggle) activates it.
+    const m: Machine = { id: newId("mac"), code: code.trim().toUpperCase(), type, capacity: cap, active: false, by: user!.email, on: nowISO() };
     upsertMachine(m);
     toast(`Machine ${m.code} created.`);
     setShowCreate(false); setCode(""); setCapacity("");
@@ -237,7 +239,9 @@ export default function MachinesPage() {
                 <div className="mt-1.5 flex items-center justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <h2 className="text-lg font-bold text-ink">{m.code}</h2>
-                    {!m.active && <span className="rounded bg-grey-bg px-1.5 py-0.5 text-[0.6rem] text-muted">inactive</span>}
+                    <span className={`rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${m.active ? "bg-green-bg text-green" : "bg-grey-bg text-muted"}`}>
+                      {m.active ? "Active" : "Inactive"}
+                    </span>
                   </div>
                   {canManage && (
                     <button
