@@ -12,7 +12,7 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
-import { nowISO } from "@/lib/format";
+import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception } from "@/lib/hatchery/types";
 import { batchCode, machineFreeCapacity, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
 
@@ -30,6 +30,7 @@ export default function BatchesPage() {
   const { toast } = useToast();
 
   const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
+  const [setDate, setSetDate] = useState(todayISO());
   const [err, setErr] = useState<string | null>(null);
 
   const canSet = !!user && CAN_SET.includes(user.role);
@@ -62,6 +63,13 @@ export default function BatchesPage() {
 
   const assignedTotal = rowsIn.reduce((s, r) => s + (Number(r.eggs) || 0), 0);
   const flockCount = new Set(resolved.filter((r) => r.groupKey && (Number(r.eggs) || 0) > 0).map((r) => r.groupKey)).size;
+
+  // Preview of the batch number for the chosen set date + selected product.
+  const previewBatchNo = (() => {
+    const firstKey = resolved.find((r) => r.groupKey && (Number(r.eggs) || 0) > 0)?.groupKey;
+    const p = groups.find((g) => g.key === firstKey)?.product;
+    return p && setDate ? batchCode(setDate, p) : null;
+  })();
 
   // Per-flock: how many eggs assigned (across setters) vs settable.
   const flockSummary = useMemo(() => {
@@ -130,7 +138,9 @@ export default function BatchesPage() {
     }));
     const setterList: MachineAssignment[] = valid.map((r) => ({ machineCode: r.machineCode, eggs: r.eggs }));
     const product = usedGroups[0].product;
-    const date = usedGroups.map((g) => g.date).sort()[0];
+    // Batch number follows the setting week (the chosen set date), not the
+    // reception date — that's how the hatchery numbers its sets.
+    const date = setDate || todayISO();
     const total = flocks.reduce((s, f) => s + f.eggsSet, 0);
     const on = nowISO();
     const id = newId("batch");
@@ -224,7 +234,19 @@ export default function BatchesPage() {
                   ))}
                 </div>
               )}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+              <div className="flex flex-wrap items-end gap-3 border-t border-line pt-3">
+                <div className="w-44">
+                  <Field label="Set date (drives batch no.)">
+                    <Input type="date" value={setDate} onChange={(e) => setSetDate(e.target.value)} />
+                  </Field>
+                </div>
+                {previewBatchNo && (
+                  <p className="text-sm text-muted">
+                    Batch number: <strong className="text-ink">{previewBatchNo}</strong>
+                  </p>
+                )}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <p className="text-sm">Total to set: <strong>{assignedTotal.toLocaleString()}</strong> egg(s) · <strong>{flockCount}</strong> flock(s)</p>
                 <Button onClick={createBatch}>Create batch</Button>
               </div>
