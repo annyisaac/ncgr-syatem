@@ -13,7 +13,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatDate, formatDateTime, todayISO } from "@/lib/format";
-import { computeKpis, stepLabel, isMachineOverTemp, eggsInMachine } from "@/lib/hatchery/lifecycle";
+import { computeKpis, stepLabel, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
 import { visibleOrders } from "@/lib/permissions";
 import { PRODUCTS, balance, isFullyPaid, type Order, type User } from "@/lib/types";
 import type { Batch } from "@/lib/hatchery/types";
@@ -144,47 +144,6 @@ function OverTempCard() {
   );
 }
 
-/** Active (in-use) machines with their egg load and latest reading. */
-function ActiveMachinesCard({ filter }: { filter: DashFilter }) {
-  const { machines, readings, batches } = useHatchery();
-  const active = machines
-    .filter((m) => m.active && matches(filter.q, m.code, m.type))
-    .slice().sort((a, b) => a.code.localeCompare(b.code));
-  const latest = (code: string) =>
-    readings.filter((r) => r.machineCode === code).sort((a, b) => (a.timestamp < b.timestamp ? 1 : -1))[0];
-  return (
-    <Card>
-      <SectionTitle label={`Active machines (${active.length})`} />
-      <TableWrap>
-        <thead>
-          <tr>
-            <Th>Machine</Th><Th>Type</Th><Th className="text-right">Eggs</Th>
-            <Th className="text-right">Dig. Temp</Th><Th>Last reading</Th>
-          </tr>
-        </thead>
-        <tbody>
-          {active.length === 0 ? (
-            <EmptyRow colSpan={5} text="No active machines." />
-          ) : active.map((m) => {
-            const rd = latest(m.code);
-            const hot = rd ? isMachineOverTemp(rd.dryF, rd.wetF, rd.digitalTempF) : false;
-            const eggs = eggsInMachine(batches, m.code, m.type === "setter" ? "setters" : "transfers");
-            return (
-              <tr key={m.id}>
-                <Td className="font-medium"><Link href={`/hatchery/machines/${encodeURIComponent(m.code)}`} className="text-gold-dark underline underline-offset-2">{m.code}</Link></Td>
-                <Td className="capitalize">{m.type}</Td>
-                <Td className="text-right">{eggs.toLocaleString()}</Td>
-                <Td className={`text-right ${hot ? "font-semibold text-red" : ""}`}>{rd ? `${rd.digitalTempF}°F` : "—"}</Td>
-                <Td className="text-xs text-muted">{rd ? formatDateTime(rd.timestamp) : "no readings"}</Td>
-              </tr>
-            );
-          })}
-        </tbody>
-      </TableWrap>
-    </Card>
-  );
-}
-
 const awaitingVaccination = (b: Batch) => !!b.steps["counting"] && !b.vaccinated;
 const inPipeline = (b: Batch) => !!b.steps["setting"] && !b.steps["hatching"] && b.status === "active";
 
@@ -202,7 +161,8 @@ const ordersToDeliver = (orders: Order[], user: User) =>
 // ---------------------------------------------------------------------------
 
 function ManagerView({ user, filter }: { user: User; filter: DashFilter }) {
-  const { batches, inventory, maintenance, allocations, dispatches, supplies, spareParts, spareRequests } = useHatchery();
+  const { batches, inventory, maintenance, allocations, dispatches, supplies, spareParts, spareRequests, machines } = useHatchery();
+  const activeMachines = machines.filter((m) => m.active).length;
   const { orders } = useData();
   const kpis = useMemo(() => computeKpis(batches, inventory), [batches, inventory]);
   const downtime = maintenance.reduce((s, m) => s + (m.downtimeHours ?? 0), 0);
@@ -229,9 +189,9 @@ function ManagerView({ user, filter }: { user: User; filter: DashFilter }) {
         <StatTile label="In transit" value={String(inTransit)} />
         <StatTile label="Downtime (h)" value={downtime.toFixed(1)} tone={downtime > 0 ? "red" : "default"} />
         <StatTile label="Low / pending parts" value={`${lowStock} / ${pendingParts}`} tone={lowStock || pendingParts ? "gold" : "default"} />
+        <StatTile label="Active machines" value={String(activeMachines)} />
       </div>
       <OverTempCard />
-      <ActiveMachinesCard filter={filter} />
       <BatchesCard batches={batches} filter={filter} />
     </>
   );
@@ -242,19 +202,20 @@ function ManagerView({ user, filter }: { user: User; filter: DashFilter }) {
 // ---------------------------------------------------------------------------
 
 function ProductionView({ filter }: { filter: DashFilter }) {
-  const { batches, inventory } = useHatchery();
+  const { batches, inventory, machines } = useHatchery();
   const kpis = useMemo(() => computeKpis(batches, inventory), [batches, inventory]);
+  const activeMachines = machines.filter((m) => m.active).length;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <StatTile label="Active batches" value={String(kpis.activeBatches)} />
         <StatTile label="Eggs set" value={kpis.eggsSet.toLocaleString()} />
         <StatTile label="Chicks hatched" value={kpis.chicksHatched.toLocaleString()} tone="green" />
         <StatTile label="Hatchability" value={`${kpis.hatchability.toFixed(0)}%`} tone="gold" />
         <StatTile label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
+        <StatTile label="Active machines" value={String(activeMachines)} />
       </div>
       <OverTempCard />
-      <ActiveMachinesCard filter={filter} />
       <BatchesCard batches={batches} filter={filter} />
     </>
   );
@@ -265,20 +226,21 @@ function ProductionView({ filter }: { filter: DashFilter }) {
 // ---------------------------------------------------------------------------
 
 function TechView({ filter }: { filter: DashFilter }) {
-  const { batches, counts } = useHatchery();
+  const { batches, counts, machines } = useHatchery();
   const toCandle = batches.filter(inPipeline);
   const inHatchers = batches.filter((b) => b.steps["transfer"] && !b.steps["hatching"]);
   const toVerify = counts.filter((c) => !c.verified).length;
+  const activeMachines = machines.filter((m) => m.active).length;
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
         <StatTile label="Batches to candle" value={String(toCandle.length)} tone={toCandle.length ? "gold" : "default"} />
         <StatTile label="In hatchers" value={String(inHatchers.length)} />
         <StatTile label="Counts to verify" value={String(toVerify)} tone={toVerify ? "gold" : "default"} />
         <StatTile label="Active batches" value={String(batches.filter((b) => b.status === "active").length)} />
+        <StatTile label="Active machines" value={String(activeMachines)} />
       </div>
       <OverTempCard />
-      <ActiveMachinesCard filter={filter} />
       <BatchesCard batches={batches.filter((b) => b.status === "active")} filter={filter} title="Active pipeline" />
     </>
   );
