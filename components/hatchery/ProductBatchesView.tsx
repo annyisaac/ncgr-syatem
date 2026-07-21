@@ -8,6 +8,7 @@ import { Pill } from "@/components/ui/Pill";
 import { StatTile } from "@/components/dashboard/DashKit";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { fetchTable } from "@/lib/hatchery/db";
+import { getSupabase } from "@/lib/supabase";
 import { LIFECYCLE_STEPS, type Batch, type ChickInventory } from "@/lib/hatchery/types";
 import { stepLabel } from "@/lib/hatchery/lifecycle";
 import { formatDate, formatDateTime } from "@/lib/format";
@@ -42,7 +43,7 @@ export function ProductBatchesView({ product }: { product: Product }) {
 
   useEffect(() => {
     let active = true;
-    (async () => {
+    const refresh = async () => {
       try {
         const data = await loadHatcheryView();
         if (!active) return;
@@ -53,8 +54,27 @@ export function ProductBatchesView({ product }: { product: Product }) {
       } finally {
         if (active) setLoading(false);
       }
-    })();
-    return () => { active = false; };
+    };
+    void refresh();
+
+    // Live: reflect hatchery production the moment it changes (debounced).
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void refresh(), 350);
+    };
+    const sb = getSupabase();
+    const channel = sb
+      .channel("product-batches-live")
+      .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
+        if (payload.table === "batches" || payload.table === "chick_inventory") bump();
+      })
+      .subscribe();
+    return () => {
+      active = false;
+      if (timer) clearTimeout(timer);
+      void sb.removeChannel(channel);
+    };
   }, []);
 
   const mine = useMemo(

@@ -231,23 +231,36 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     };
   }, [enabled, load]);
 
+  // Live data: refetch the hatchery dataset whenever any of its tables changes
+  // anywhere. Debounced so a burst of writes triggers a single reload — no
+  // manual refresh needed. (chick_inventory keeps its own realtime through
+  // this same path.)
   useEffect(() => {
     if (!enabled) return;
+    const HATCHERY_TABLES = new Set([
+      "receptions", "store_readings", "fumigations", "machines", "operators", "batches",
+      "machine_readings", "chick_counts", "box_logs", "box_targets", "supplies", "vaccinations",
+      "biosecurity_logs", "maintenance_logs", "chick_inventory", "allocations", "dispatches",
+      "farm_visits", "vaccine_requests", "spare_parts", "spare_part_requests", "farms", "flocks",
+      "machine_issues", "shift_handovers",
+    ]);
     const sb = getSupabase();
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void load(), 350);
+    };
     const channel = sb
-      .channel("chick_inventory_changes")
-      .on(
-        "postgres_changes",
-        { event: "*", schema: "public", table: "chick_inventory" },
-        () => {
-          fetchTable<ChickInventory>("chick_inventory").then(setInventory).catch(() => {});
-        }
-      )
+      .channel("hatchery-live")
+      .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
+        if (HATCHERY_TABLES.has(payload.table ?? "")) bump();
+      })
       .subscribe();
     return () => {
+      if (timer) clearTimeout(timer);
       sb.removeChannel(channel);
     };
-  }, [enabled]);
+  }, [enabled, load]);
 
   function persist<T extends { id: string }>(
     table: HatcheryTable,

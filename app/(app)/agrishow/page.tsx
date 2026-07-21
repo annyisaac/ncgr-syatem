@@ -10,6 +10,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { StatTile } from "@/components/dashboard/DashKit";
+import { getSupabase } from "@/lib/supabase";
 import { formatDateTime } from "@/lib/format";
 import {
   createEventLink,
@@ -56,6 +57,26 @@ export default function AgrishowPage() {
   // Initial fetch — setState lands after the awaited load, off the render path.
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { void load(); }, [load]);
+
+  // Live: new registrations and link changes appear without a refresh.
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void load(), 350);
+    };
+    const sb = getSupabase();
+    const channel = sb
+      .channel("agrishow-live")
+      .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
+        if (payload.table === "event_registrations" || payload.table === "event_links") bump();
+      })
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void sb.removeChannel(channel);
+    };
+  }, [load]);
 
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const linkUrl = (t: string) => `${origin}/visit/${t}`;

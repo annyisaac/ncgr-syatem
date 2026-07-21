@@ -153,7 +153,6 @@ export function DataProvider({ children }: { children: ReactNode }) {
     if (!user) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setDb(EMPTY);
-      // eslint-disable-next-line react-hooks/set-state-in-effect
       setNotifications([]);
       setLoading(false);
       return;
@@ -190,6 +189,31 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("ncgr:db-updated", onUpdate);
   }, [load]);
 
+  // Live data: refetch the sales dataset whenever any of its tables changes
+  // anywhere (RLS still scopes what each user receives). Debounced so a burst
+  // of writes triggers a single reload — no manual refresh needed.
+  useEffect(() => {
+    if (!user) return;
+    const SALES_TABLES = new Set([
+      "users", "dsrs", "orders", "commissions", "statements", "routes", "availability", "dsr_visits",
+    ]);
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const bump = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => void load(), 350);
+    };
+    const channel = getSupabase()
+      .channel("sales-live")
+      .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
+        if (SALES_TABLES.has(payload.table ?? "")) bump();
+      })
+      .subscribe();
+    return () => {
+      if (timer) clearTimeout(timer);
+      void getSupabase().removeChannel(channel);
+    };
+  }, [user, load]);
+
   /** Optimistic bulk update: reflect in the UI now, persist the whole collection. */
   function apply<K extends keyof Database>(
     key: K,
@@ -208,7 +232,7 @@ export function DataProvider({ children }: { children: ReactNode }) {
    * (functional update, never a stale closure) and persists only that one row,
    * so a concurrent save from another user can never delete it.
    */
-  function applyOne<K extends keyof Database, T extends { }>(
+  function applyOne<K extends keyof Database, T extends object>(
     key: K,
     item: T,
     matches: (x: T) => boolean,
