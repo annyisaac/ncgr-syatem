@@ -149,6 +149,15 @@ export default function VisitRegisterPage() {
                       </button>
                     );
                   })}
+                  {(() => {
+                    const bothOn = PRODUCTS.every((p) => products.includes(p));
+                    return (
+                      <button type="button" onClick={() => setProducts(bothOn ? [] : [...PRODUCTS])}
+                        className={`rounded-lg border px-3.5 py-2 text-[0.85rem] font-semibold transition ${bothOn ? "border-gold bg-gold text-[#231b04]" : "border-line bg-field text-ink hover:border-gold"}`}>
+                        {bothOn ? "✓ " : ""}Both
+                      </button>
+                    );
+                  })()}
                 </div>
               </Field>
               <Field label="Planned number of chicks">
