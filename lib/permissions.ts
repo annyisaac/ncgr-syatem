@@ -150,8 +150,7 @@ const NAV: Record<Role, NavItem[]> = {
     H_VACCINATION, H_VAC_REQUESTS, H_FARM_VISITS, H_SPAREPARTS, H_BIO, H_MAINT,
   ],
   "Hatchery Operations Manager": [
-    H_DASH, H_RECEPTION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
-    H_BOXES, H_COORD, H_CHICKS, H_INVENTORY,
+    H_DASH, H_MACHINES, H_HATCH, H_BOXES,
   ],
   // Shift handover is limited to the Hatchery Manager and Production Technician.
   "Production Technician": [
