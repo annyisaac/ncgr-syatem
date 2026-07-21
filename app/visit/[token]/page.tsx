@@ -7,7 +7,10 @@ import Image from "next/image";
 import { COMPANY, ALL_DISTRICTS } from "@/lib/config";
 import { eventPublicInfo, registerVisitor } from "@/lib/events";
 
-const INTERESTS = ["Ross 308", "Tetra Super Harco", "Both", "Just visiting"];
+const CATEGORIES = ["Farmer", "Agrovet / Retailer", "Cooperative", "Wholesaler / Trader", "Individual", "Other"];
+const PRODUCTS = ["Ross 308", "Tetra Super Harco"];
+const CONTACT_METHODS = ["Phone call", "SMS", "WhatsApp", "Email"];
+const INPUT = "h-12 w-full rounded-lg border border-line bg-field px-4 text-[0.9rem] text-ink outline-none transition focus:border-gold";
 
 export default function VisitRegisterPage() {
   const { token } = useParams<{ token: string }>();
@@ -22,8 +25,15 @@ export default function VisitRegisterPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [district, setDistrict] = useState("");
-  const [interest, setInterest] = useState("");
-  const [note, setNote] = useState("");
+  const [category, setCategory] = useState("");
+  const [products, setProducts] = useState<string[]>([]);
+  const [plannedChicks, setPlannedChicks] = useState("");
+  const [purchaseMonth, setPurchaseMonth] = useState("");
+  const [contactMethod, setContactMethod] = useState("");
+  const [consent, setConsent] = useState(false);
+
+  const toggleProduct = (p: string) =>
+    setProducts((prev) => (prev.includes(p) ? prev.filter((x) => x !== p) : [...prev, p]));
 
   const load = useCallback(async () => {
     const res = await eventPublicInfo(token);
@@ -38,11 +48,19 @@ export default function VisitRegisterPage() {
   async function submit(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!name.trim()) return setErr("Please enter your name.");
+    if (!name.trim()) return setErr("Please enter your full name.");
     if (phone.replace(/\D/g, "").length < 6) return setErr("Please enter a valid phone number.");
     setBusy(true);
     const res = await registerVisitor(token, {
-      name: name.trim(), phone: phone.trim(), district, interest, note: note.trim(),
+      name: name.trim(),
+      phone: phone.trim(),
+      district,
+      category,
+      products: products.join(", "),
+      plannedChicks: Number(plannedChicks) || 0,
+      purchaseMonth,
+      contactMethod,
+      consent,
     });
     setBusy(false);
     if (!res.ok) return setErr(res.error ?? "Could not submit.");
@@ -84,32 +102,60 @@ export default function VisitRegisterPage() {
             <div className="mx-auto mt-3 h-[3px] w-14 rounded-full bg-gold" />
 
             <form onSubmit={submit} className="mt-5 space-y-3.5">
-              <Field label="Your name">
+              <Field label="Full name">
                 <input value={name} onChange={(e) => setName(e.target.value)} required
-                  className="h-12 w-full rounded-lg border border-line bg-field px-4 text-[0.9rem] text-ink outline-none transition focus:border-gold" />
+                  className={INPUT} />
               </Field>
-              <Field label="Phone">
+              <Field label="Phone number">
                 <input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="07xxxxxxxx"
-                  className="h-12 w-full rounded-lg border border-line bg-field px-4 text-[0.9rem] text-ink outline-none transition focus:border-gold" />
+                  className={INPUT} />
               </Field>
-              <Field label="District (optional)">
-                <select value={district} onChange={(e) => setDistrict(e.target.value)}
-                  className="h-12 w-full rounded-lg border border-line bg-field px-3 text-[0.9rem] text-ink outline-none transition focus:border-gold">
+              <Field label="District">
+                <select value={district} onChange={(e) => setDistrict(e.target.value)} className={INPUT}>
                   <option value="">Select district</option>
                   {ALL_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
                 </select>
               </Field>
-              <Field label="Interested in (optional)">
-                <select value={interest} onChange={(e) => setInterest(e.target.value)}
-                  className="h-12 w-full rounded-lg border border-line bg-field px-3 text-[0.9rem] text-ink outline-none transition focus:border-gold">
-                  <option value="">Select</option>
-                  {INTERESTS.map((i) => <option key={i} value={i}>{i}</option>)}
+              <Field label="Customer category">
+                <select value={category} onChange={(e) => setCategory(e.target.value)} className={INPUT}>
+                  <option value="">Select category</option>
+                  {CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
-              <Field label="Note (optional)">
-                <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything you'd like us to know"
-                  className="h-12 w-full rounded-lg border border-line bg-field px-4 text-[0.9rem] text-ink outline-none transition focus:border-gold" />
+              <Field label="Products interested in">
+                <div className="flex flex-wrap gap-2">
+                  {PRODUCTS.map((p) => {
+                    const on = products.includes(p);
+                    return (
+                      <button key={p} type="button" onClick={() => toggleProduct(p)}
+                        className={`rounded-lg border px-3.5 py-2 text-[0.85rem] font-semibold transition ${on ? "border-gold bg-gold text-[#231b04]" : "border-line bg-field text-ink hover:border-gold"}`}>
+                        {on ? "✓ " : ""}{p}
+                      </button>
+                    );
+                  })}
+                </div>
               </Field>
+              <Field label="Planned number of chicks">
+                <input type="number" min={0} inputMode="numeric" value={plannedChicks} onChange={(e) => setPlannedChicks(e.target.value)} placeholder="e.g. 500"
+                  className={INPUT} />
+              </Field>
+              <Field label="Expected purchase month">
+                <input type="month" value={purchaseMonth} onChange={(e) => setPurchaseMonth(e.target.value)} className={INPUT} />
+              </Field>
+              <Field label="Preferred contact method">
+                <select value={contactMethod} onChange={(e) => setContactMethod(e.target.value)} className={INPUT}>
+                  <option value="">Select method</option>
+                  {CONTACT_METHODS.map((m) => <option key={m} value={m}>{m}</option>)}
+                </select>
+              </Field>
+
+              <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-line bg-field px-3.5 py-3">
+                <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-gold" />
+                <span className="text-[0.85rem] leading-snug text-ink">
+                  I consent to receive updates and offers from {COMPANY.name} about chicks and events.
+                </span>
+              </label>
 
               {err && <p className="rounded-xl border border-red/20 bg-red-bg px-4 py-3 text-sm font-semibold text-red">{err}</p>}
 

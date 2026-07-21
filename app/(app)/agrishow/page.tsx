@@ -20,6 +20,14 @@ import {
   type EventRegistration,
 } from "@/lib/events";
 
+/** "2026-08" → "Aug 2026". Empty/invalid → "". */
+function monthLabel(m?: string): string {
+  if (!m || !/^\d{4}-\d{2}$/.test(m)) return "";
+  const [y, mo] = m.split("-");
+  const d = new Date(Number(y), Number(mo) - 1, 1);
+  return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
+}
+
 export default function AgrishowPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -103,11 +111,19 @@ export default function AgrishowPage() {
   function downloadCsv() {
     const rows = shownRegs;
     if (rows.length === 0) return toast("No registrations to download.", "info");
-    const head = ["Name", "Phone", "District", "Interested in", "Note", "Event", "Registered at"];
+    const head = [
+      "Full Name", "Phone Number", "District", "Customer Category", "Products Interested In",
+      "Planned Number of Chicks", "Expected Purchase Month", "Preferred Contact Method",
+      "Consent to Receive Updates", "Event", "Registered at",
+    ];
     const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
     const lines = [head.map(esc).join(",")];
     for (const r of rows) {
-      lines.push([r.name, r.phone, r.district ?? "", r.interest ?? "", r.note ?? "", r.event, formatDateTime(r.on)].map((v) => esc(String(v))).join(","));
+      lines.push([
+        r.name, r.phone, r.district ?? "", r.category ?? "", r.products ?? "",
+        r.plannedChicks ? String(r.plannedChicks) : "", monthLabel(r.purchaseMonth), r.contactMethod ?? "",
+        r.consent ? "Yes" : "No", r.event, formatDateTime(r.on),
+      ].map((v) => esc(String(v))).join(","));
     }
     const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
@@ -172,17 +188,24 @@ export default function AgrishowPage() {
           </div>
         </div>
         <TableWrap>
-          <thead><tr><Th>Name</Th><Th>Phone</Th><Th>District</Th><Th>Interested in</Th><Th>Event</Th><Th>Registered</Th></tr></thead>
+          <thead><tr>
+            <Th>Name</Th><Th>Phone</Th><Th>District</Th><Th>Category</Th><Th>Products</Th>
+            <Th className="text-right">Chicks</Th><Th>Buy month</Th><Th>Contact</Th><Th>Consent</Th><Th>Registered</Th>
+          </tr></thead>
           <tbody>
             {shownRegs.length === 0 ? (
-              <EmptyRow colSpan={6} text={loading ? "" : "No visitors registered yet."} />
+              <EmptyRow colSpan={10} text={loading ? "" : "No visitors registered yet."} />
             ) : shownRegs.map((r) => (
               <tr key={r.id}>
                 <Td className="font-medium">{r.name}</Td>
                 <Td>{r.phone}</Td>
                 <Td>{r.district || "—"}</Td>
-                <Td>{r.interest || "—"}</Td>
-                <Td>{r.event}</Td>
+                <Td>{r.category || "—"}</Td>
+                <Td>{r.products || "—"}</Td>
+                <Td className="text-right">{r.plannedChicks ? r.plannedChicks.toLocaleString() : "—"}</Td>
+                <Td>{monthLabel(r.purchaseMonth) || "—"}</Td>
+                <Td>{r.contactMethod || "—"}</Td>
+                <Td>{r.consent ? <Pill tone="green">Yes</Pill> : <Pill tone="neutral">No</Pill>}</Td>
                 <Td>{formatDateTime(r.on)}</Td>
               </tr>
             ))}

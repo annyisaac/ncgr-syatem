@@ -26,8 +26,12 @@ export interface EventRegistration {
   name: string;
   phone: string;
   district?: string;
-  interest?: string;
-  note?: string;
+  category?: string; // customer category (farmer, agrovet, cooperative…)
+  products?: string; // products interested in (comma-joined)
+  plannedChicks?: number; // planned number of chicks
+  purchaseMonth?: string; // expected purchase month, "yyyy-mm"
+  contactMethod?: string; // preferred contact method
+  consent?: boolean; // consent to receive updates
   on: string; // ISO datetime
 }
 
@@ -35,8 +39,12 @@ export interface VisitorInput {
   name: string;
   phone: string;
   district?: string;
-  interest?: string;
-  note?: string;
+  category?: string;
+  products?: string;
+  plannedChicks?: number;
+  purchaseMonth?: string;
+  contactMethod?: string;
+  consent?: boolean;
 }
 
 function newToken(): string {
