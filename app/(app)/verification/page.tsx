@@ -24,7 +24,7 @@ import {
   parseWorkbook,
   type ParsedSheet,
 } from "@/lib/excel";
-import { runAutoCheck, type AutoOutcome } from "@/lib/verification";
+import { runAutoCheck, distinctByAmount, type AutoOutcome } from "@/lib/verification";
 import { withHistory } from "@/lib/orders";
 
 interface Staged {
@@ -41,7 +41,12 @@ function splitRefs(input: string): string[] {
 function lookupRefs(refs: string[], statements: BankStatement[]) {
   const all = statements.flatMap((s) => s.rows);
   const norm = (s: string) => s.trim().toLowerCase();
-  return refs.map((ref) => ({ ref, matches: all.filter((r) => norm(r.ref) === norm(ref)) }));
+  // Collapse identical repeats (same ref + amount) so a re-uploaded or
+  // overlapping statement doesn't read as a duplicate.
+  return refs.map((ref) => ({
+    ref,
+    matches: distinctByAmount(all.filter((r) => norm(r.ref) === norm(ref))),
+  }));
 }
 
 /** Verified amount collected on an order vs what is owed. */
