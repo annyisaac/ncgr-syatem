@@ -18,6 +18,14 @@ import {
 } from "./types";
 import type { DSRCommissionRow } from "./commission";
 import type { ClientRecord } from "./clients";
+import type { EventRegistration } from "./events";
+
+/** "2026-08" → "Aug 2026". Empty/invalid → "". */
+function monthLabel(m?: string): string {
+  if (!m || !/^\d{4}-\d{2}$/.test(m)) return "";
+  const [y, mo] = m.split("-");
+  return new Date(Number(y), Number(mo) - 1, 1).toLocaleDateString(undefined, { month: "short", year: "numeric" });
+}
 
 // ---------------------------------------------------------------------------
 // Shared PDF header / footer
@@ -271,6 +279,49 @@ export async function ordersPDF(orders: Order[], filterLabel: string): Promise<v
 
   addSignatures(doc);
   finalizeAndSave(doc, logo, `NCGR-Orders-${filterLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Event visitors (Agrishow) report
+// ---------------------------------------------------------------------------
+
+export async function visitorsPDF(
+  regs: EventRegistration[],
+  filterLabel: string
+): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc("Visitor Registrations", [
+    `Filter: ${filterLabel}`,
+    `Visitors: ${regs.length}`,
+  ]);
+
+  const body = regs.map((r) => [
+    r.name,
+    r.phone,
+    r.province ?? "",
+    r.district ?? "",
+    r.sector ?? "",
+    r.category ?? "",
+    r.products ?? "",
+    r.plannedChicks ? r.plannedChicks.toLocaleString() : "",
+    monthLabel(r.purchaseMonth),
+    r.contactMethod ?? "",
+    r.consent ? "Yes" : "No",
+    formatDateTime(r.on),
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [[
+      "Name", "Phone", "Province", "District", "Sector", "Category",
+      "Products", "Chicks", "Buy month", "Contact", "Consent", "Registered",
+    ]],
+    body,
+    styles: { fontSize: 7.5, cellPadding: 2.5 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  finalizeAndSave(doc, logo, `NCGR-Visitors-${filterLabel.replace(/\s+/g, "_")}.pdf`);
 }
 
 // ---------------------------------------------------------------------------

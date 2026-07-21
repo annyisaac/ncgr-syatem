@@ -25,7 +25,9 @@ export interface EventRegistration {
   event: string;
   name: string;
   phone: string;
+  province?: string;
   district?: string;
+  sector?: string;
   category?: string; // customer category (farmer, agrovet, cooperative…)
   products?: string; // products interested in (comma-joined)
   plannedChicks?: number; // planned number of chicks
@@ -38,7 +40,9 @@ export interface EventRegistration {
 export interface VisitorInput {
   name: string;
   phone: string;
+  province?: string;
   district?: string;
+  sector?: string;
   category?: string;
   products?: string;
   plannedChicks?: number;

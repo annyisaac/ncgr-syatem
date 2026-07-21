@@ -10,8 +10,11 @@ import { Pill } from "@/components/ui/Pill";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { StatTile } from "@/components/dashboard/DashKit";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { getSupabase } from "@/lib/supabase";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, todayISO } from "@/lib/format";
+import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
+import { visitorsPDF } from "@/lib/reports";
 import {
   createEventLink,
   listEventLinks,
@@ -39,6 +42,8 @@ export default function AgrishowPage() {
   const [eventName, setEventName] = useState("Agrishow 2026");
   const [creating, setCreating] = useState(false);
   const [eventFilter, setEventFilter] = useState("all");
+  const [productFilter, setProductFilter] = useState("all");
+  const [preset, setPreset] = useState<PeriodPreset>("all");
 
   const isAdmin = user?.role === "Admin";
 
@@ -86,10 +91,15 @@ export default function AgrishowPage() {
     return [{ value: "all", label: "All events" }, ...names.map((n) => ({ value: n, label: n }))];
   }, [links]);
 
-  const shownRegs = useMemo(
-    () => (eventFilter === "all" ? regs : regs.filter((r) => r.event === eventFilter)),
-    [regs, eventFilter]
-  );
+  const shownRegs = useMemo(() => {
+    const range: DateRangeValue = presetToRange(preset, ALL_TIME, todayISO());
+    return regs.filter((r) => {
+      if (eventFilter !== "all" && r.event !== eventFilter) return false;
+      if (productFilter !== "all" && !(r.products ?? "").includes(productFilter)) return false;
+      if ((range.from || range.to) && !inRange(r.on.slice(0, 10), range)) return false;
+      return true;
+    });
+  }, [regs, eventFilter, productFilter, preset]);
 
   if (!user) return null;
   if (!isAdmin) {
@@ -133,15 +143,15 @@ export default function AgrishowPage() {
     const rows = shownRegs;
     if (rows.length === 0) return toast("No registrations to download.", "info");
     const head = [
-      "Full Name", "Phone Number", "District", "Customer Category", "Products Interested In",
-      "Planned Number of Chicks", "Expected Purchase Month", "Preferred Contact Method",
-      "Consent to Receive Updates", "Event", "Registered at",
+      "Full Name", "Phone Number", "Province", "District", "Sector", "Customer Category",
+      "Products Interested In", "Planned Number of Chicks", "Expected Purchase Month",
+      "Preferred Contact Method", "Consent to Receive Updates", "Event", "Registered at",
     ];
     const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
     const lines = [head.map(esc).join(",")];
     for (const r of rows) {
       lines.push([
-        r.name, r.phone, r.district ?? "", r.category ?? "", r.products ?? "",
+        r.name, r.phone, r.province ?? "", r.district ?? "", r.sector ?? "", r.category ?? "", r.products ?? "",
         r.plannedChicks ? String(r.plannedChicks) : "", monthLabel(r.purchaseMonth), r.contactMethod ?? "",
         r.consent ? "Yes" : "No", r.event, formatDateTime(r.on),
       ].map((v) => esc(String(v))).join(","));
@@ -153,6 +163,12 @@ export default function AgrishowPage() {
     a.download = `visitors-${eventFilter === "all" ? "all" : eventFilter.replace(/\s+/g, "-")}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  function downloadPdf() {
+    if (shownRegs.length === 0) return toast("No registrations to download.", "info");
+    const label = eventFilter === "all" ? "All events" : eventFilter;
+    void visitorsPDF(shownRegs, label);
   }
 
   return (
@@ -203,24 +219,33 @@ export default function AgrishowPage() {
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardHeader title={`Visitors (${shownRegs.length})`} />
-          <div className="flex items-center gap-2">
-            <div className="w-48"><Select value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} options={eventOptions} /></div>
-            <Button variant="secondary" onClick={downloadCsv}>Download list (CSV)</Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-40"><Select value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} options={eventOptions} /></div>
+            <div className="w-44"><Select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} options={[
+              { value: "all", label: "All products" },
+              { value: "Ross 308", label: "Ross 308" },
+              { value: "Tetra Super Harco", label: "Tetra Super Harco" },
+            ]} /></div>
+            <div className="w-36"><Select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} options={PERIODS.filter((p) => p.value !== "custom")} /></div>
+            <Button variant="secondary" onClick={downloadCsv}>CSV</Button>
+            <Button variant="secondary" onClick={downloadPdf}>PDF</Button>
           </div>
         </div>
         <TableWrap>
           <thead><tr>
-            <Th>Name</Th><Th>Phone</Th><Th>District</Th><Th>Category</Th><Th>Products</Th>
+            <Th>Name</Th><Th>Phone</Th><Th>Province</Th><Th>District</Th><Th>Sector</Th><Th>Category</Th><Th>Products</Th>
             <Th className="text-right">Chicks</Th><Th>Buy month</Th><Th>Contact</Th><Th>Consent</Th><Th>Registered</Th>
           </tr></thead>
           <tbody>
             {shownRegs.length === 0 ? (
-              <EmptyRow colSpan={10} text={loading ? "" : "No visitors registered yet."} />
+              <EmptyRow colSpan={12} text={loading ? "" : "No visitors registered yet."} />
             ) : shownRegs.map((r) => (
               <tr key={r.id}>
                 <Td className="font-medium">{r.name}</Td>
                 <Td>{r.phone}</Td>
+                <Td>{r.province || "—"}</Td>
                 <Td>{r.district || "—"}</Td>
+                <Td>{r.sector || "—"}</Td>
                 <Td>{r.category || "—"}</Td>
                 <Td>{r.products || "—"}</Td>
                 <Td className="text-right">{r.plannedChicks ? r.plannedChicks.toLocaleString() : "—"}</Td>

@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 
-import { COMPANY, ALL_DISTRICTS } from "@/lib/config";
+import { COMPANY, PROVINCES, DISTRICTS_BY_PROVINCE, sectorsOfDistrict } from "@/lib/config";
 import { eventPublicInfo, registerVisitor } from "@/lib/events";
 
 const CATEGORIES = ["Farmer", "Agrovet / Retailer", "Cooperative", "Wholesaler / Trader", "Individual", "Other"];
@@ -24,7 +24,9 @@ export default function VisitRegisterPage() {
 
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [province, setProvince] = useState("");
   const [district, setDistrict] = useState("");
+  const [sector, setSector] = useState("");
   const [category, setCategory] = useState("");
   const [products, setProducts] = useState<string[]>([]);
   const [plannedChicks, setPlannedChicks] = useState("");
@@ -54,7 +56,9 @@ export default function VisitRegisterPage() {
     const res = await registerVisitor(token, {
       name: name.trim(),
       phone: phone.trim(),
+      province,
       district,
+      sector,
       category,
       products: products.join(", "),
       plannedChicks: Number(plannedChicks) || 0,
@@ -110,10 +114,22 @@ export default function VisitRegisterPage() {
                 <input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} required placeholder="07xxxxxxxx"
                   className={INPUT} />
               </Field>
+              <Field label="Province">
+                <select value={province} onChange={(e) => { setProvince(e.target.value); setDistrict(""); setSector(""); }} className={INPUT}>
+                  <option value="">Select province</option>
+                  {PROVINCES.map((p) => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </Field>
               <Field label="District">
-                <select value={district} onChange={(e) => setDistrict(e.target.value)} className={INPUT}>
-                  <option value="">Select district</option>
-                  {ALL_DISTRICTS.map((d) => <option key={d} value={d}>{d}</option>)}
+                <select value={district} disabled={!province} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} className={INPUT}>
+                  <option value="">{province ? "Select district" : "Choose province first"}</option>
+                  {(province ? DISTRICTS_BY_PROVINCE[province as keyof typeof DISTRICTS_BY_PROVINCE] ?? [] : []).map((d) => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </Field>
+              <Field label="Sector">
+                <select value={sector} disabled={!district} onChange={(e) => setSector(e.target.value)} className={INPUT}>
+                  <option value="">{district ? "Select sector" : "Choose district first"}</option>
+                  {sectorsOfDistrict(district).map((s) => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
               <Field label="Customer category">
