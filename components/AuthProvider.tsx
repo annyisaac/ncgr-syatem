@@ -32,6 +32,25 @@ const IDLE_MS = 30 * 60 * 1000;
 const LAST_ACTIVITY_KEY = "ncgr.last-activity.v1";
 /** Left on the login screen after an idle sign-out, to explain what happened. */
 export const SIGNED_OUT_REASON_KEY = "ncgr.signed-out-reason.v1";
+/** Per-tab cached profile, so reopening the app shows it at once (revalidated
+ *  in the background) instead of waiting on a fresh profile fetch. */
+const PROFILE_KEY = "ncgr.profile.v1";
+
+function readCachedProfile(): User | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(PROFILE_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedProfile(u: User | null): void {
+  if (typeof window === "undefined") return;
+  if (u) window.sessionStorage.setItem(PROFILE_KEY, JSON.stringify(u));
+  else window.sessionStorage.removeItem(PROFILE_KEY);
+}
 
 /**
  * Record this browser as a signed-in / signed-out device on the user's profile
@@ -89,11 +108,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const { data } = await sb.auth.getSession();
       const email = data.session?.user?.email;
       if (email) {
+        // Show the cached profile instantly, then revalidate in the background.
+        const cached = readCachedProfile();
+        if (cached && cached.email.toLowerCase() === email.toLowerCase() && cached.active !== false) {
+          if (active) {
+            setUser(cached);
+            setLoading(false);
+          }
+          void loadProfile(email)
+            .then((fresh) => {
+              if (!active) return;
+              if (fresh && !fresh.active) {
+                void sb.auth.signOut({ scope: "local" });
+                writeCachedProfile(null);
+                setUser(null);
+              } else if (fresh) {
+                writeCachedProfile(fresh);
+                setUser(fresh);
+              }
+            })
+            .catch(() => {});
+          return;
+        }
         const profile = await loadProfile(email);
         if (profile && !profile.active) {
-          await sb.auth.signOut();
+          await sb.auth.signOut({ scope: "local" });
+          writeCachedProfile(null);
           if (active) setUser(null);
         } else if (active) {
+          writeCachedProfile(profile);
           setUser(profile);
         }
       }
@@ -132,6 +175,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
         window.sessionStorage.removeItem(SIGNED_OUT_REASON_KEY);
       }
+      writeCachedProfile(profile);
       setUser(profile);
       // Record the device in the background so login stays fast.
       void recordDevice(profile.email, true);
@@ -143,6 +187,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(async () => {
     const email = user?.email;
     // Clear the UI immediately — don't wait on the network.
+    writeCachedProfile(null);
     setUser(null);
     // Record the sign-out in the background so it never blocks logout.
     if (email) void recordDevice(email, false);
@@ -153,9 +198,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     if (!user) return;
     const profile = await loadProfile(user.email);
-    if (profile && profile.active) setUser(profile);
-    else {
-      await getSupabase().auth.signOut();
+    if (profile && profile.active) {
+      writeCachedProfile(profile);
+      setUser(profile);
+    } else {
+      writeCachedProfile(null);
+      await getSupabase().auth.signOut({ scope: "local" });
       setUser(null);
     }
   }, [user, loadProfile]);
