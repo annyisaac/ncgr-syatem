@@ -143,11 +143,17 @@ const NAV: Record<Role, NavItem[]> = {
 
   // ---- Hatchery roles ----
   "Hatchery Manager": H_ALL,
-  "Operations Manager": H_ALL,
+  // Specialised in machine upkeep — no egg reception, batches/setting,
+  // candling, coordination, chick inventory or general inventory.
+  "Operations Manager": [
+    H_DASH, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_HATCH, H_BOXES,
+    H_VACCINATION, H_VAC_REQUESTS, H_FARM_VISITS, H_SPAREPARTS, H_BIO, H_MAINT,
+  ],
   "Hatchery Operations Manager": [
     H_DASH, H_RECEPTION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH,
-    H_BOXES, H_COORD, H_CHICKS, H_INVENTORY, H_HANDOVER,
+    H_BOXES, H_COORD, H_CHICKS, H_INVENTORY,
   ],
+  // Shift handover is limited to the Hatchery Manager and Production Technician.
   "Production Technician": [
     H_DASH, H_RECEPTION, H_FUMIGATION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH, H_HANDOVER,
   ],
@@ -159,13 +165,12 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Record machines", href: "/hatchery/machines" },
     { label: "Box making", href: "/hatchery/boxes" },
     H_BIO,
-    H_HANDOVER,
   ],
   "Hatchery Veterinary": [
     H_DASH, H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
   ],
   "Maintenance Technician": [
-    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_HANDOVER,
+    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS,
   ],
   "Hatchery Sales & Coordination Officer": [
     H_DASH, H_COORD, H_FARM_VISITS, H_CHICKS, H_INVENTORY, H_BATCHES,
