@@ -8,6 +8,7 @@ import { useOperator } from "@/components/OperatorProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
@@ -24,6 +25,7 @@ export default function HandoverPage() {
   const [show, setShow] = useState(false);
   const [f, setF] = useState(blank());
   const [err, setErr] = useState<string | null>(null);
+  const [view, setView] = useState<ShiftHandover | null>(null);
 
   const rows = useMemo(() => shiftHandovers.slice().sort((a, b) => (a.on < b.on ? 1 : -1)), [shiftHandovers]);
   if (!user) return null;
@@ -78,26 +80,54 @@ export default function HandoverPage() {
         <CardHeader title={`Recent handovers (${rows.length})`} />
         <TableWrap>
           <thead>
-            <tr><Th>Date</Th><Th>Shift</Th><Th>Summary</Th><Th>Pending</Th><Th>By</Th></tr>
+            <tr><Th>Date</Th><Th>Shift</Th><Th>Summary</Th><Th>Pending</Th><Th>By</Th><Th></Th></tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={5} text="No handovers recorded yet." />
+              <EmptyRow colSpan={6} text="No handovers recorded yet." />
             ) : rows.map((h) => (
               <tr key={h.id}>
                 <Td>{formatDate(h.date)}</Td>
                 <Td className="capitalize">{h.shift}</Td>
-                <Td>
+                <Td className="max-w-[22rem] truncate">
                   {h.summary}
                   {h.machinesNote && <div className="text-xs text-muted">Machines: {h.machinesNote}</div>}
                 </Td>
-                <Td>{h.pending || "—"}</Td>
+                <Td className="max-w-[16rem] truncate">{h.pending || "—"}</Td>
                 <Td className="text-xs text-muted">{h.byName ?? h.by}<div>{formatDateTime(h.on)}</div></Td>
+                <Td><Button size="sm" variant="ghost" onClick={() => setView(h)}>View</Button></Td>
               </tr>
             ))}
           </tbody>
         </TableWrap>
       </Card>
+
+      {view && (
+        <Modal
+          open
+          onClose={() => setView(null)}
+          title={`Handover — ${formatDate(view.date)} · ${view.shift} shift`}
+          footer={<Button onClick={() => setView(null)}>Close</Button>}
+        >
+          <div className="space-y-4">
+            <Detail label="Shift summary — what happened" value={view.summary} />
+            <Detail label="Pending for the next shift" value={view.pending || "—"} />
+            {view.machinesNote && <Detail label="Machine notes" value={view.machinesNote} />}
+            <div className="border-t border-line pt-3 text-xs text-muted">
+              Recorded by {view.byName ?? view.by} · {formatDateTime(view.on)}
+            </div>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="mt-0.5 whitespace-pre-wrap text-sm text-ink">{value}</p>
     </div>
   );
 }
