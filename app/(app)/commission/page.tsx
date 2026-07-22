@@ -36,7 +36,8 @@ export default function CommissionPage() {
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
   const range = presetToRange(preset, custom, todayISO());
 
-  const isAdmin = user?.role === "Admin";
+  // The Accountant can pay/approve commissions like an admin.
+  const isAdmin = user?.role === "Admin" || user?.role === "Accountant";
   const canInitiate =
     user?.role === "Tetra Zone Manager" || user?.role === "Ross Order Receiver";
 

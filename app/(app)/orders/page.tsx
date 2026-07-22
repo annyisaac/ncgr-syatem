@@ -108,7 +108,7 @@ function OrdersInner() {
   const canSell = isSales || isChecker;
   const canAct = isAdmin || canSell;
   // Roles that see more than one zone need each order's zone spelled out.
-  const showZone = isAdmin || role === "Tetra Payment Checker";
+  const showZone = isAdmin || role === "Tetra Payment Checker" || role === "Accountant";
 
   const rows = useMemo(() => {
     if (!user) return [];

@@ -65,7 +65,8 @@ export default function VerificationPage() {
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const isAdmin = user?.role === "Admin";
+  // The Accountant is a finance actor here too (upload, auto-check, approve).
+  const isAdmin = user?.role === "Admin" || user?.role === "Accountant";
 
   const [staged, setStaged] = useState<Staged | null>(null);
   const [outcomes, setOutcomes] = useState<AutoOutcome[]>([]);

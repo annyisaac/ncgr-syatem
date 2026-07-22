@@ -124,7 +124,8 @@ function upsertLocal<T extends { id: string }>(list: T[], item: T): T[] {
 
 export function HatcheryProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  const enabled = !!user && (isHatcheryRole(user.role) || user.role === "Admin");
+  // Accountant needs hatchery cost pages (inventory, spare parts) too.
+  const enabled = !!user && (isHatcheryRole(user.role) || user.role === "Admin" || user.role === "Accountant");
 
   const [loading, setLoading] = useState(true);
   const [receptions, setReceptions] = useState<Reception[]>([]);

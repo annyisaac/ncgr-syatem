@@ -27,6 +27,9 @@ export function canSee(order: Order, user: User): boolean {
     case "Ross Payment Checker":
       // Ross 308 is one product handled across both zones.
       return order.product === "Ross 308";
+    case "Accountant":
+      // Finance oversight — every order, across products and zones.
+      return true;
     default:
       // Hatchery coordination/oversight roles see all orders for allocation.
       return HATCHERY_ORDER_ROLES.includes(user.role);
@@ -130,6 +133,17 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Verification", href: "/verification" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
+  ],
+
+  // ---- Finance ----
+  "Accountant": [
+    { label: "Dashboard", href: "/dashboard" },
+    { label: "Clients", href: "/clients" },
+    { label: "Orders", href: "/orders" },
+    { label: "Verification", href: "/verification" },
+    { label: "Commission", href: "/commission" },
+    H_INVENTORY,
+    H_SPAREPARTS,
   ],
 
   // ---- DSR portal (code + single-device login) ----
