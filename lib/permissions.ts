@@ -89,6 +89,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Availability", href: "/availability" },
     { label: "Commission", href: "/commission" },
     { label: "Verification", href: "/verification" },
+    { label: "Finance", href: "/finance" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
     { label: "Agrishow", href: "/agrishow" },
@@ -137,6 +138,7 @@ const NAV: Record<Role, NavItem[]> = {
 
   // ---- Finance ----
   "Accountant": [
+    { label: "Finance", href: "/finance" },
     { label: "Dashboard", href: "/dashboard" },
     { label: "Clients", href: "/clients" },
     { label: "Orders", href: "/orders" },

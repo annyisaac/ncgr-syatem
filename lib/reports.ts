@@ -19,6 +19,7 @@ import {
 import type { DSRCommissionRow } from "./commission";
 import type { ClientRecord } from "./clients";
 import type { EventRegistration } from "./events";
+import type { Expense, FinanceSummary } from "./finance";
 
 /** "2026-08" → "Aug 2026". Empty/invalid → "". */
 function monthLabel(m?: string): string {
@@ -322,6 +323,74 @@ export async function visitorsPDF(
   });
 
   finalizeAndSave(doc, logo, `NCGR-Visitors-${filterLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Financial summary
+// ---------------------------------------------------------------------------
+
+export async function financePDF(
+  s: FinanceSummary,
+  expenses: Expense[],
+  periodLabel: string
+): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc(
+    "Financial Summary",
+    [`Period: ${periodLabel}`],
+    "portrait"
+  );
+
+  // Headline figures.
+  autoTable(doc, {
+    startY,
+    head: [["Figure", "Amount (RWF)"]],
+    body: [
+      ["Revenue (billed)", formatRWF(s.revenue)],
+      ["Cash collected", formatRWF(s.collected)],
+      ["Receivables (owed to us)", formatRWF(s.receivable)],
+      ["Commissions paid", formatRWF(s.commissionsPaid)],
+      ["Expenses", formatRWF(s.expenses)],
+      ["Net (collected − commissions − expenses)", formatRWF(s.net)],
+      ["Customer credit held (liability)", formatRWF(s.creditHeld)],
+      ["Orders", s.orders.toLocaleString()],
+      ["Chicks sold", s.chicksSold.toLocaleString()],
+    ],
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    columnStyles: { 1: { halign: "right" } },
+    theme: "grid",
+  });
+
+  // Revenue by product.
+  autoTable(doc, {
+    startY: doc.lastAutoTable.finalY + 16,
+    head: [["Product", "Orders", "Revenue", "Collected", "Receivable"]],
+    body: s.byProduct.map((p) => [
+      p.product, p.orders.toLocaleString(), formatRWF(p.revenue), formatRWF(p.collected), formatRWF(p.receivable),
+    ]),
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" } },
+    theme: "grid",
+  });
+
+  // Expense breakdown.
+  if (expenses.length) {
+    autoTable(doc, {
+      startY: doc.lastAutoTable.finalY + 16,
+      head: [["Date", "Category", "Note", "Amount"]],
+      body: expenses.map((e) => [formatDate(e.date), e.category, e.note ?? "", formatRWF(e.amount)]),
+      foot: [["", "", "Total", formatRWF(s.expenses)]],
+      styles: { fontSize: 8.5, cellPadding: 3 },
+      headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+      footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+      columnStyles: { 3: { halign: "right" } },
+      theme: "grid",
+    });
+  }
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Finance-${periodLabel.replace(/\s+/g, "_")}.pdf`);
 }
 
 // ---------------------------------------------------------------------------
