@@ -19,7 +19,7 @@ import {
 import type { DSRCommissionRow } from "./commission";
 import type { ClientRecord } from "./clients";
 import type { EventRegistration } from "./events";
-import type { Expense, FinanceSummary } from "./finance";
+import type { CustomerStatement, DebtorRow, Expense, FinanceSummary } from "./finance";
 
 /** "2026-08" → "Aug 2026". Empty/invalid → "". */
 function monthLabel(m?: string): string {
@@ -391,6 +391,88 @@ export async function financePDF(
 
   addSignatures(doc);
   finalizeAndSave(doc, logo, `NCGR-Finance-${periodLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Customer statement of account
+// ---------------------------------------------------------------------------
+
+export async function customerStatementPDF(st: CustomerStatement): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc(
+    "Statement of Account",
+    [`Customer: ${st.name}`, `Phone: ${st.phone}`],
+    "portrait"
+  );
+
+  autoTable(doc, {
+    startY,
+    head: [["Delivery", "Product", "Chicks", "Billed", "Paid", "Balance"]],
+    body: st.orders.map((o) => [
+      formatDate(o.date), o.product, (o.delivered ?? o.chicks).toLocaleString(),
+      formatRWF(orderTotal(o)), formatRWF(paidAmount(o)), formatRWF(balance(o)),
+    ]),
+    foot: [[
+      "Totals", "", "", formatRWF(st.totalBilled), formatRWF(st.totalPaid), formatRWF(st.balance),
+    ]],
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    columnStyles: { 2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
+    theme: "grid",
+  });
+
+  const y = doc.lastAutoTable.finalY + 16;
+  doc.setFontSize(10);
+  doc.setFont("helvetica", "bold");
+  doc.setTextColor(...INK);
+  doc.text(`Amount due: ${formatRWF(st.balance)}`, 40, y);
+  if (st.credit > 0) doc.text(`Credit on account: ${formatRWF(st.credit)}`, 40, y + 14);
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Statement-${st.name.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// Excel: Finance workbook (summary + expenses + receivables)
+// ---------------------------------------------------------------------------
+
+export async function financeExcel(
+  s: FinanceSummary,
+  expenses: Expense[],
+  debtors: DebtorRow[],
+  periodLabel: string
+): Promise<void> {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+
+  const summary = [
+    { Figure: "Revenue (billed)", Amount: s.revenue },
+    { Figure: "Cash collected", Amount: s.collected },
+    { Figure: "Receivables", Amount: s.receivable },
+    { Figure: "Commissions paid", Amount: s.commissionsPaid },
+    { Figure: "Expenses", Amount: s.expenses },
+    { Figure: "Net (cash)", Amount: s.net },
+    { Figure: "Customer credit held", Amount: s.creditHeld },
+    { Figure: "Orders", Amount: s.orders },
+    { Figure: "Chicks sold", Amount: s.chicksSold },
+  ];
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(summary), "Summary");
+
+  const byProduct = s.byProduct.map((p) => ({
+    Product: p.product, Orders: p.orders, Revenue: p.revenue, Collected: p.collected, Receivable: p.receivable, Chicks: p.chicks,
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(byProduct), "By product");
+
+  const exp = expenses.map((e) => ({ Date: e.date, Category: e.category, Amount: e.amount, Note: e.note ?? "", By: e.by }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(exp.length ? exp : [{ Date: "", Category: "", Amount: "", Note: "", By: "" }]), "Expenses");
+
+  const deb = debtors.map((d) => ({
+    Customer: d.name, Phone: d.phone, "Total owed": d.total,
+    "0-30": d.d0_30, "31-60": d.d31_60, "61-90": d.d61_90, "90+": d.d90, "Oldest (days)": d.oldestDays,
+  }));
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(deb.length ? deb : [{ Customer: "", Phone: "", "Total owed": "" }]), "Receivables");
+
+  XLSX.writeFile(wb, `NCGR-Finance-${periodLabel.replace(/\s+/g, "_")}-${nowISO().slice(0, 10)}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------
