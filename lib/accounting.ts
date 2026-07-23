@@ -85,6 +85,14 @@ export async function upsertJournal(e: JournalEntry): Promise<void> {
   if (error) throw new Error(`Could not save journal entry: ${error.message}`);
 }
 
+/** Batch upsert (used by auto-posting so a sync is a single request). */
+export async function upsertJournals(entries: JournalEntry[]): Promise<void> {
+  if (!inBrowser() || entries.length === 0) return;
+  const now = new Date().toISOString();
+  const { error } = await getSupabase().from("journal_entries").upsert(entries.map((e) => ({ id: e.id, data: e, updated_at: now })));
+  if (error) throw new Error(`Could not post entries: ${error.message}`);
+}
+
 export async function deleteJournal(id: string): Promise<void> {
   const { error } = await getSupabase().from("journal_entries").delete().eq("id", id);
   if (error) throw new Error(`Could not delete journal entry: ${error.message}`);

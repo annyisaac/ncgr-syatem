@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { useData } from "@/components/DataProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -26,12 +27,14 @@ import {
   trialBalance,
   upsertAccount,
   upsertJournal,
+  upsertJournals,
   deleteJournal,
   type Account,
   type AccountType,
   type JournalEntry,
   type JournalLine,
 } from "@/lib/accounting";
+import { salesEntriesToSync } from "@/lib/salesLedger";
 
 type Tab = "coa" | "journal" | "trial" | "ledger";
 const TABS: { id: Tab; label: string }[] = [
@@ -43,6 +46,7 @@ const TABS: { id: Tab; label: string }[] = [
 
 export default function AccountingPage() {
   const { user } = useAuth();
+  const { orders } = useData();
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [journals, setJournals] = useState<JournalEntry[]>([]);
@@ -60,6 +64,34 @@ export default function AccountingPage() {
 
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (canUse) void load(); }, [load, canUse]);
+
+  // Auto-post sales to the ledger: whenever the orders change, write the
+  // journal entries that are missing/outdated (deterministic ids → idempotent,
+  // so this never duplicates). A ref holds the latest journals so this effect
+  // only needs to depend on `orders` — no write loop.
+  const journalsRef = useRef(journals);
+  useEffect(() => { journalsRef.current = journals; }, [journals]);
+  useEffect(() => {
+    if (!canUse || orders.length === 0) return;
+    const diff = salesEntriesToSync(orders, journalsRef.current);
+    if (diff.length === 0) return;
+    (async () => {
+      try {
+        await upsertJournals(diff);
+        setJournals((p) => diff.reduce((acc, e) => upsertLocal(acc, e), p));
+      } catch { /* realtime/next load will retry */ }
+    })();
+  }, [orders, canUse]);
+
+  async function syncSalesNow() {
+    const diff = salesEntriesToSync(orders, journals);
+    if (diff.length === 0) return toast("Ledger already up to date with sales.", "info");
+    try {
+      await upsertJournals(diff);
+      setJournals((p) => diff.reduce((acc, e) => upsertLocal(acc, e), p));
+      toast(`${diff.length} sales entr${diff.length === 1 ? "y" : "ies"} posted to the ledger.`);
+    } catch { toast("Could not post sales entries.", "error"); }
+  }
 
   useEffect(() => {
     if (!canUse) return;
@@ -97,7 +129,7 @@ export default function AccountingPage() {
       </div>
 
       {tab === "coa" && <ChartOfAccounts accounts={accounts} onSave={async (a) => { setAccounts((p) => upsertLocal(p, a)); try { await upsertAccount(a); toast("Account saved."); } catch { toast("Could not save.", "error"); void load(); } }} email={user.email} />}
-      {tab === "journal" && <Journals accounts={accounts} journals={journals}
+      {tab === "journal" && <Journals accounts={accounts} journals={journals} onSyncSales={syncSalesNow}
         onSave={async (e) => { setJournals((p) => upsertLocal(p, e)); try { await upsertJournal(e); toast(e.status === "posted" ? "Entry posted." : "Draft saved."); } catch { toast("Could not save.", "error"); void load(); } }}
         onDelete={async (id) => { if (!confirm("Delete this draft entry?")) return; setJournals((p) => p.filter((x) => x.id !== id)); try { await deleteJournal(id); toast("Draft deleted."); } catch { toast("Could not delete.", "error"); void load(); } }}
         email={user.email} />}
@@ -164,9 +196,9 @@ function ChartOfAccounts({ accounts, onSave, email }: { accounts: Account[]; onS
 
 const emptyLine = (): JournalLine => ({ accountCode: "", debit: 0, credit: 0 });
 
-function Journals({ accounts, journals, onSave, onDelete, email }: {
+function Journals({ accounts, journals, onSave, onDelete, onSyncSales, email }: {
   accounts: Account[]; journals: JournalEntry[];
-  onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; email: string;
+  onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; onSyncSales: () => void; email: string;
 }) {
   const active = useMemo(() => accounts.filter((a) => a.active), [accounts]);
   const acctOpts = useMemo(() => [{ value: "", label: "Select account" }, ...active.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }))], [active]);
@@ -200,7 +232,13 @@ function Journals({ accounts, journals, onSave, onDelete, email }: {
 
   return (
     <div className="space-y-5">
-      <div className="flex justify-end"><Button onClick={() => setShow((v) => !v)}>{show ? "Cancel" : "＋ New journal entry"}</Button></div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs text-muted">Sales are auto-posted from delivered orders and verified receipts. Use “Sync from Sales” to post the latest manually.</p>
+        <div className="flex gap-2">
+          <Button variant="secondary" onClick={onSyncSales}>Sync from Sales</Button>
+          <Button onClick={() => setShow((v) => !v)}>{show ? "Cancel" : "＋ New journal entry"}</Button>
+        </div>
+      </div>
 
       {show && (
         <Card>
