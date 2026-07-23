@@ -78,9 +78,9 @@ export default function VerificationPage() {
   );
   const visibleIds = useMemo(() => new Set(myOrders.map((o) => o.id)), [myOrders]);
 
-  // Orders with at least one unverified payment.
+  // Orders with at least one unverified payment (voided ones don't count).
   const pending = useMemo(
-    () => myOrders.filter((o) => o.payments.some((p) => !p.verified)),
+    () => myOrders.filter((o) => o.payments.some((p) => !p.verified && !p.voided)),
     [myOrders]
   );
 
@@ -241,9 +241,9 @@ export default function VerificationPage() {
   function adminReject(order: Order, payIndex: number) {
     const p0 = order.payments[payIndex];
     patchPayment(order, payIndex,
-      { verified: false, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" },
-      `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")})`);
-    toast("Payment rejected.", "info");
+      { verified: false, voided: true, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" },
+      `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatRWF(p0.amt)} removed from paid`);
+    toast("Payment rejected and voided — no longer counts as paid.", "info");
   }
 
   return (
@@ -461,7 +461,12 @@ export default function VerificationPage() {
                     {p.flag && <div className="text-xs text-status-refunded">{p.flag}</div>}
                   </Td>
                   <Td>
-                    {p.verified ? (
+                    {p.voided ? (
+                      <div>
+                        <Pill tone="red">Rejected · voided</Pill>
+                        <div className="text-xs text-muted">not counted as paid</div>
+                      </div>
+                    ) : p.verified ? (
                       <div>
                         <Pill tone="fulfilled">Checked ✓</Pill>
                         <div className="text-xs text-muted">by {p.verifiedBy ?? "—"}{p.verifiedOn ? ` · ${formatDateTime(p.verifiedOn)}` : ""}</div>
@@ -479,7 +484,9 @@ export default function VerificationPage() {
                     {(() => { const m = payMatch(o); return <Pill tone={m.tone === "green" ? "fulfilled" : m.tone === "blue" ? "info" : "gold"}>{m.label}</Pill>; })()}
                   </Td>
                   <Td>
-                    {p.verified ? (
+                    {p.voided ? (
+                      <span className="text-xs text-muted">—</span>
+                    ) : p.verified ? (
                       <span className="text-xs text-muted">—</span>
                     ) : p.pendingApproval ? (
                       isAdmin ? (

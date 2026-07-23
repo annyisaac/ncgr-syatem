@@ -43,8 +43,9 @@ export function paymentCheckState(order: Order): {
   verified: number;
   total: number;
 } {
-  const total = order.payments.length;
-  const verified = order.payments.filter((p) => p.verified).length;
+  const active = order.payments.filter((p) => !p.voided);
+  const total = active.length;
+  const verified = active.filter((p) => p.verified).length;
   if (total === 0) return { state: "none", verified, total };
   if (verified === 0) return { state: "awaiting", verified, total };
   if (verified < total) return { state: "partial", verified, total };
