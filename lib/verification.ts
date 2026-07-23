@@ -62,6 +62,7 @@ export function runAutoCheck(
 
     const payments = order.payments.map((p) => {
       if (p.verified) return p;
+      if (p.voided) return p; // Admin-rejected — never auto-re-verify.
 
       const matches = allRows.filter((r) => norm(r.ref) === norm(p.ref));
       // Identical repeats (same ref + amount) are one transaction listed twice.
@@ -106,7 +107,7 @@ export function runAutoCheck(
           detail: "Auto-verified from statement",
         });
         changed = true;
-        return { ...base, comment: "Auto-verified from bank statement", flag: undefined };
+        return { ...base, comment: "Auto-verified from bank statement", flag: undefined, pendingApproval: undefined };
       }
       // Adopt the bank amount.
       const was = p.amt;
@@ -126,6 +127,7 @@ export function runAutoCheck(
         amt: bank.amt,
         comment: "Auto-verified; amount adopted from bank statement",
         flag: `Amount corrected from ${was.toLocaleString()}`,
+        pendingApproval: undefined,
       };
     });
 

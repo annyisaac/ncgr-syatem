@@ -144,7 +144,21 @@ export default function VerificationPage() {
     // checker uploaded since this tab loaded.
     void upsertStatement(stmt);
     setStaged(null);
-    toast(`Added statement "${stmt.fileName}" (${rows.length} rows).`);
+
+    // Auto-check every unverified payment (including the ones held for Admin
+    // approval) against the updated statements — anything that now matches is
+    // verified without manual approval. State isn't updated yet, so include the
+    // new statement explicitly.
+    const res = runAutoCheck(orders, [...statements, stmt], user!, visibleIds);
+    const before = new Map(orders.map((o) => [o.id, o]));
+    res.orders.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
+    const cleared = res.outcomes.filter((x) => x.result === "verified" || x.result === "corrected").length;
+    setOutcomes(res.outcomes);
+    toast(
+      cleared > 0
+        ? `Added "${stmt.fileName}" (${rows.length} rows) — ${cleared} payment(s) auto-verified.`
+        : `Added "${stmt.fileName}" (${rows.length} rows).`
+    );
   }
 
   function onRemoveStatement(id: string) {
