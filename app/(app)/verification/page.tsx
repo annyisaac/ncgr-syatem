@@ -15,8 +15,11 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import type { BankStatement, Order, Payment } from "@/lib/types";
 import { orderTotal } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
-import { formatDateTime, nowISO } from "@/lib/format";
+import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
+import { SearchTimeBar } from "@/components/dashboard/DashKit";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
 import {
   buildStatementRows,
   guessAmountColumn,
@@ -61,7 +64,7 @@ function payMatch(o: Order): { tone: "green" | "gold" | "blue"; label: string } 
 
 export default function VerificationPage() {
   const { user } = useAuth();
-  const { orders, statements, upsertStatement, removeStatement, upsertOrder, newId } = useData();
+  const { orders, statements, availability, upsertStatement, removeStatement, upsertOrder, newId } = useData();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -71,6 +74,15 @@ export default function VerificationPage() {
   const [staged, setStaged] = useState<Staged | null>(null);
   const [outcomes, setOutcomes] = useState<AutoOutcome[]>([]);
   const [manual, setManual] = useState<{ order: Order; payIndex: number } | null>(null);
+
+  // Filters for the payments table.
+  const [query, setQuery] = useState("");
+  const [productFilter, setProductFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [dateFilter, setDateFilter] = useState("");
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const range = presetToRange(preset, custom, todayISO());
 
   const myOrders = useMemo(
     () => (user ? visibleOrders(orders, user).filter((o) => o.confirmedOk) : []),
@@ -99,6 +111,24 @@ export default function VerificationPage() {
   const approvalRows = useMemo(
     () => myOrders.flatMap((o) => o.payments.map((p, i) => ({ o, p, i })).filter((x) => x.p.pendingApproval && !x.p.verified)),
     [myOrders]
+  );
+
+  const payStatus = (p: Payment) => p.voided ? "rejected" : p.verified ? "checked" : p.pendingApproval ? "awaiting" : "unverified";
+  const shownPayRows = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    return payRows.filter(({ o, p }) => {
+      if (productFilter !== "all" && o.product !== productFilter) return false;
+      if (statusFilter !== "all" && payStatus(p) !== statusFilter) return false;
+      if (dateFilter && o.date !== dateFilter) return false;
+      else if (!dateFilter && (range.from || range.to) && !inRange(o.date, range)) return false;
+      if (q && !(o.name.toLowerCase().includes(q) || o.phone.toLowerCase().includes(q) || p.ref.toLowerCase().includes(q))) return false;
+      return true;
+    });
+  }, [payRows, query, productFilter, statusFilter, dateFilter, range]);
+
+  const deliveryDateOptions = useMemo(
+    () => [{ value: "", label: "All delivery dates" }, ...availability.slice().sort((a, b) => (a.id < b.id ? -1 : 1)).map((a) => ({ value: a.id, label: formatDate(a.date) }))],
+    [availability]
   );
 
   if (!user) return null;
@@ -441,12 +471,31 @@ export default function VerificationPage() {
 
       {/* Payments — awaiting + already checked */}
       <Card>
-        <CardHeader title={`Payments (${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`} />
-        <p className="mb-3 text-sm text-ink/60">
-          Unverified payments are checked against the statements by the automatic
-          check, or verify manually (cash allowed — write CASH). Payments already
-          checked show who verified them.
-        </p>
+        <CardHeader title={`Payments (${shownPayRows.length} shown · ${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`} />
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
+          </div>
+          <div className="w-44">
+            <Select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} options={[
+              { value: "all", label: "All products" },
+              { value: "Tetra Super Harco", label: "Tetra Super Harco" },
+              { value: "Ross 308", label: "Ross 308" },
+            ]} />
+          </div>
+          <div className="w-48">
+            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={[
+              { value: "all", label: "All statuses" },
+              { value: "unverified", label: "Unverified" },
+              { value: "awaiting", label: "Awaiting admin" },
+              { value: "checked", label: "Checked ✓" },
+              { value: "rejected", label: "Rejected · voided" },
+            ]} />
+          </div>
+          <div className="w-48">
+            <Select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} options={deliveryDateOptions} />
+          </div>
+        </div>
         <TableWrap>
           <thead>
             <tr>
@@ -461,10 +510,10 @@ export default function VerificationPage() {
             </tr>
           </thead>
           <tbody>
-            {payRows.length === 0 ? (
-              <EmptyRow colSpan={8} text="No payments recorded on confirmed orders yet." />
+            {shownPayRows.length === 0 ? (
+              <EmptyRow colSpan={8} text="No payments match these filters." />
             ) : (
-              payRows.map(({ o, p, i }) => (
+              shownPayRows.map(({ o, p, i }) => (
                 <tr key={`${o.id}-${i}`} className={p.verified ? "bg-green-bg" : undefined}>
                   <Td>{o.name}</Td>
                   <Td>{o.product}</Td>
