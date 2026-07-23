@@ -47,6 +47,8 @@ export default function AgrishowPage() {
   const [preset, setPreset] = useState<PeriodPreset>("all");
 
   const isAdmin = user?.role === "Admin" || user?.role === "Ross Payment Checker";
+  // Only a true Admin manages existing links (copy / close / reopen).
+  const canManageLinks = user?.role === "Admin";
 
   const load = useCallback(async () => {
     try {
@@ -204,6 +206,7 @@ export default function AgrishowPage() {
         )}
       </Card>
 
+      {canManageLinks && (
       <Card>
         <CardHeader title={`Manage links (${links.length})`} />
         <TableWrap>
@@ -231,6 +234,7 @@ export default function AgrishowPage() {
           </tbody>
         </TableWrap>
       </Card>
+      )}
 
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-3">
