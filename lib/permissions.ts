@@ -130,6 +130,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Verification", href: "/verification" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
+    { label: "Agrishow", href: "/agrishow" },
   ],
 
   // ---- DSR portal (code + single-device login) ----
