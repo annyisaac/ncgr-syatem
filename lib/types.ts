@@ -188,6 +188,9 @@ export interface Payment {
    * bank statement — the payment is held for the Admin's final decision.
    */
   pendingApproval?: { by: string; on: string; refs: string[]; note?: string };
+  /** Admin rejected this payment (not in any statement). A voided payment is
+   *  kept for the record but no longer counts toward Paid/Balance or delivery. */
+  voided?: boolean;
 }
 
 export interface Order {
@@ -406,7 +409,8 @@ export function orderTotal(
 }
 
 export function paidAmount(order: Pick<Order, "payments">): number {
-  return order.payments.reduce((sum, p) => sum + p.amt, 0);
+  // Voided (Admin-rejected) payments don't count toward what's been paid.
+  return order.payments.reduce((sum, p) => (p.voided ? sum : sum + p.amt), 0);
 }
 
 /** Outstanding cash on this order. Applied customer credit counts toward it,
@@ -475,7 +479,9 @@ export function customerCredit(
 }
 
 export function allVerified(order: Pick<Order, "payments">): boolean {
-  return order.payments.length > 0 && order.payments.every((p) => p.verified);
+  // Voided payments are ignored — they neither count nor block delivery.
+  const active = order.payments.filter((p) => !p.voided);
+  return active.length > 0 && active.every((p) => p.verified);
 }
 
 /** Number of verified payments over total, e.g. for a "Partially checked" pill. */
