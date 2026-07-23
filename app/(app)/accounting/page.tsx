@@ -35,9 +35,13 @@ import {
   type JournalLine,
 } from "@/lib/accounting";
 import { salesEntriesToSync } from "@/lib/salesLedger";
+import { balanceSheet, cashSummary, incomeStatement, type StmtGroup } from "@/lib/financialStatements";
+import { ALL_TIME } from "@/components/ui/DateRange";
+import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
 
-type Tab = "coa" | "journal" | "trial" | "ledger";
+type Tab = "coa" | "journal" | "trial" | "ledger" | "reports";
 const TABS: { id: Tab; label: string }[] = [
+  { id: "reports", label: "Financial Statements" },
   { id: "coa", label: "Chart of Accounts" },
   { id: "journal", label: "Journal Entries" },
   { id: "trial", label: "Trial Balance" },
@@ -50,7 +54,7 @@ export default function AccountingPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [journals, setJournals] = useState<JournalEntry[]>([]);
-  const [tab, setTab] = useState<Tab>("coa");
+  const [tab, setTab] = useState<Tab>("reports");
 
   const canUse = user?.role === "Admin" || user?.role === "Accountant";
 
@@ -135,6 +139,108 @@ export default function AccountingPage() {
         email={user.email} />}
       {tab === "trial" && <TrialBalanceView accounts={accounts} journals={journals} />}
       {tab === "ledger" && <LedgerView accounts={accounts} journals={journals} />}
+      {tab === "reports" && <Reports accounts={accounts} journals={journals} />}
+    </div>
+  );
+}
+
+// --------------------------------------------------------------------------- Financial Statements
+
+function GroupRows({ g }: { g: StmtGroup }) {
+  return (
+    <>
+      {g.lines.map((l) => (
+        <div key={l.code} className="flex items-center justify-between py-1 pl-4 text-sm text-ink/80">
+          <span><span className="font-mono text-xs text-muted">{l.code}</span> {l.name}</span>
+          <span>{formatRWF(l.amount)}</span>
+        </div>
+      ))}
+      {g.lines.length === 0 && <div className="py-1 pl-4 text-sm text-muted">None</div>}
+    </>
+  );
+}
+function StmtTotal({ label, value, strong }: { label: string; value: number; strong?: boolean }) {
+  return (
+    <div className={`flex items-center justify-between py-1.5 ${strong ? "border-t border-line font-bold text-ink" : "font-semibold text-ink/90"}`}>
+      <span>{label}</span><span className={value < 0 ? "text-red" : ""}>{formatRWF(value)}</span>
+    </div>
+  );
+}
+
+function Reports({ accounts, journals }: { accounts: Account[]; journals: JournalEntry[] }) {
+  const [preset, setPreset] = useState<PeriodPreset>("month");
+  const range = presetToRange(preset, ALL_TIME, todayISO());
+  const from = range.from || undefined;
+  const to = range.to || todayISO();
+  const periodLabel = PERIODS.find((p) => p.value === preset)?.label ?? "All time";
+
+  const pl = useMemo(() => incomeStatement(accounts, journals, from, to), [accounts, journals, from, to]);
+  const bs = useMemo(() => balanceSheet(accounts, journals, to), [accounts, journals, to]);
+  const cash = useMemo(() => cashSummary(journals, from, to), [journals, from, to]);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted">Straight from the posted general ledger.</p>
+        <div className="w-40"><Select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} options={PERIODS.filter((p) => p.value !== "custom")} /></div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Net profit" value={formatRWF(pl.netProfit)} tone={pl.netProfit >= 0 ? "green" : "red"} />
+        <StatTile label="Gross profit" value={formatRWF(pl.grossProfit)} />
+        <StatTile label="Total assets" value={formatRWF(bs.totalAssets)} />
+        <StatTile label="Cash & bank (closing)" value={formatRWF(cash.closing)} tone={cash.closing >= 0 ? "green" : "red"} />
+      </div>
+
+      <Card>
+        <CardHeader title={`Profit & Loss — ${periodLabel}`} />
+        <div className="mx-auto max-w-xl">
+          <div className="mb-1 mt-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Revenue</div>
+          <GroupRows g={pl.revenue} /><StmtTotal label="Total revenue" value={pl.revenue.total} />
+          <div className="mb-1 mt-3 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Cost of Sales</div>
+          <GroupRows g={pl.costOfSales} /><StmtTotal label="Total cost of sales" value={pl.costOfSales.total} />
+          <StmtTotal label="Gross profit" value={pl.grossProfit} strong />
+          <div className="mb-1 mt-3 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Operating Expenses</div>
+          <GroupRows g={pl.opex} /><StmtTotal label="Total operating expenses" value={pl.opex.total} />
+          <StmtTotal label="Operating profit" value={pl.operatingProfit} strong />
+          {(pl.otherIncome.lines.length > 0 || pl.otherExpense.lines.length > 0) && (
+            <>
+              <StmtTotal label="Other income" value={pl.otherIncome.total} />
+              <StmtTotal label="Other expenses" value={pl.otherExpense.total} />
+            </>
+          )}
+          <StmtTotal label="Net profit" value={pl.netProfit} strong />
+        </div>
+      </Card>
+
+      <Card>
+        <CardHeader title={`Balance Sheet — as at ${formatDate(to)}`} />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <div>
+            <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Assets</div>
+            <GroupRows g={bs.assets} /><StmtTotal label="Total assets" value={bs.totalAssets} strong />
+          </div>
+          <div>
+            <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Liabilities</div>
+            <GroupRows g={bs.liabilities} /><StmtTotal label="Total liabilities" value={bs.liabilities.total} />
+            <div className="mb-1 mt-3 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Equity</div>
+            <GroupRows g={bs.equity} />
+            <StmtTotal label="Current period earnings" value={bs.currentEarnings} />
+            <StmtTotal label="Total liabilities & equity" value={bs.totalLiabilitiesEquity} strong />
+          </div>
+        </div>
+        {!bs.balanced && <p className="mt-3 text-center text-sm text-red">Out of balance by {formatRWF(Math.abs(bs.totalAssets - bs.totalLiabilitiesEquity))}</p>}
+      </Card>
+
+      <Card>
+        <CardHeader title={`Cash movement — ${periodLabel}`} />
+        <div className="mx-auto max-w-md">
+          <StmtTotal label="Opening cash & bank" value={cash.opening} />
+          <StmtTotal label="Receipts (in)" value={cash.inflow} />
+          <StmtTotal label="Payments (out)" value={-cash.outflow} />
+          <StmtTotal label="Closing cash & bank" value={cash.closing} strong />
+        </div>
+      </Card>
     </div>
   );
 }
