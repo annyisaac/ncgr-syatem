@@ -293,7 +293,8 @@ export default function VerificationPage() {
   return (
     <div className="space-y-6">
 
-      {/* Statements — Admin uploads; checkers can see the list to verify against. */}
+      {/* Bank statements — uploaded files are visible only to the Admin & Accountant. */}
+      {isAdmin && (
       <Card>
         <CardHeader title="Bank statements" />
         {isAdmin ? (
@@ -379,6 +380,7 @@ export default function VerificationPage() {
           </TableWrap>
         </div>
       </Card>
+      )}
 
       {/* Automatic check */}
       <Card>
