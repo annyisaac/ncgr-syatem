@@ -148,6 +148,8 @@ function OrdersInner() {
             return paidAmount(o) === 0;
           case "debt":
             return isDebtApproved(o) || !!o.debtOk;
+          case "payrejected":
+            return o.payments.some((p) => p.voided);
           default:
             return true;
         }
@@ -451,6 +453,7 @@ function OrdersInner() {
               { value: "partial", label: "Payment: Partially paid" },
               { value: "unpaid", label: "Payment: Unpaid" },
               { value: "debt", label: "Payment: On debt" },
+              { value: "payrejected", label: "Payment: Rejected" },
             ]}
           />
         </div>
