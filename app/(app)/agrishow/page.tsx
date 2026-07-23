@@ -41,6 +41,7 @@ export default function AgrishowPage() {
   const [loading, setLoading] = useState(true);
   const [eventName, setEventName] = useState("Agrishow 2026");
   const [creating, setCreating] = useState(false);
+  const [showCreate, setShowCreate] = useState(false);
   const [eventFilter, setEventFilter] = useState("all");
   const [productFilter, setProductFilter] = useState("all");
   const [preset, setPreset] = useState<PeriodPreset>("all");
@@ -112,6 +113,7 @@ export default function AgrishowPage() {
     try {
       await createEventLink(eventName, user!.email);
       toast("Registration link created.");
+      setShowCreate(false);
       await load();
     } catch {
       toast("Could not create the link.", "error");
@@ -180,16 +182,30 @@ export default function AgrishowPage() {
       </div>
 
       <Card>
-        <CardHeader title="Create a registration link" />
-        <p className="-mt-1 mb-3 text-xs text-muted">Make a link and send it to your team — anyone who opens it can register to visit us. No login needed.</p>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Event name"><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Agrishow 2026" /></Field>
-          <div className="flex items-end"><Button onClick={create} disabled={creating}>{creating ? "Creating…" : "Create link"}</Button></div>
+        <CardHeader title="Registration links" />
+        <p className="-mt-1 mb-3 text-xs text-muted">Create a link and send it to your team. Click an active link to open its registration form.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => setShowCreate((v) => !v)}>{showCreate ? "Cancel" : "＋ Create link"}</Button>
+          {links.filter((l) => l.active).map((l) => (
+            <Button key={l.id} variant="secondary" onClick={() => window.open(linkUrl(l.token), "_blank", "noopener,noreferrer")}>
+              {l.event} · open form
+            </Button>
+          ))}
+          {!loading && links.filter((l) => l.active).length === 0 && (
+            <span className="text-sm text-muted">No active links yet — create one.</span>
+          )}
         </div>
+
+        {showCreate && (
+          <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-line p-3 sm:grid-cols-3">
+            <Field label="Event name"><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Agrishow 2026" /></Field>
+            <div className="flex items-end"><Button onClick={create} disabled={creating}>{creating ? "Creating…" : "Create link"}</Button></div>
+          </div>
+        )}
       </Card>
 
       <Card>
-        <CardHeader title={`Registration links (${links.length})`} />
+        <CardHeader title={`Manage links (${links.length})`} />
         <TableWrap>
           <thead><tr><Th>Event</Th><Th>Link</Th><Th>Status</Th><Th className="text-right">Registered</Th><Th></Th></tr></thead>
           <tbody>
