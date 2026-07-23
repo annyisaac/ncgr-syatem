@@ -38,14 +38,20 @@ import { salesEntriesToSync } from "@/lib/salesLedger";
 import { balanceSheet, cashSummary, incomeStatement, type StmtGroup } from "@/lib/financialStatements";
 import { ALL_TIME } from "@/components/ui/DateRange";
 import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
+import {
+  isPeriodClosed, listAudit, listPeriods, logAudit, recentMonths, upsertPeriod,
+  type AccountingPeriod, type AuditEntry,
+} from "@/lib/closing";
 
-type Tab = "coa" | "journal" | "trial" | "ledger" | "reports";
+type Tab = "coa" | "journal" | "trial" | "ledger" | "reports" | "periods" | "audit";
 const TABS: { id: Tab; label: string }[] = [
   { id: "reports", label: "Financial Statements" },
   { id: "coa", label: "Chart of Accounts" },
   { id: "journal", label: "Journal Entries" },
   { id: "trial", label: "Trial Balance" },
   { id: "ledger", label: "General Ledger" },
+  { id: "periods", label: "Period Closing" },
+  { id: "audit", label: "Audit Trail" },
 ];
 
 export default function AccountingPage() {
@@ -54,15 +60,19 @@ export default function AccountingPage() {
   const { toast } = useToast();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [journals, setJournals] = useState<JournalEntry[]>([]);
+  const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
+  const [audit, setAudit] = useState<AuditEntry[]>([]);
   const [tab, setTab] = useState<Tab>("reports");
 
   const canUse = user?.role === "Admin" || user?.role === "Accountant";
 
   const load = useCallback(async () => {
     try {
-      const [a, j] = await Promise.all([listAccounts(), listJournals()]);
+      const [a, j, p, au] = await Promise.all([listAccounts(), listJournals(), listPeriods(), listAudit()]);
       setAccounts(a);
       setJournals(j);
+      setPeriods(p);
+      setAudit(au);
     } catch { /* keep */ }
   }, []);
 
@@ -86,6 +96,17 @@ export default function AccountingPage() {
       } catch { /* realtime/next load will retry */ }
     })();
   }, [orders, canUse]);
+
+  async function togglePeriod(period: string, close: boolean) {
+    const p: AccountingPeriod = { id: period, period, status: close ? "closed" : "open", ...(close ? { closedBy: user!.email, closedOn: nowISO() } : {}) };
+    setPeriods((prev) => { const i = prev.findIndex((x) => x.id === period); const next = prev.slice(); if (i === -1) next.push(p); else next[i] = p; return next; });
+    try {
+      await upsertPeriod(p);
+      await logAudit(user!.email, "Accounting", close ? "Close period" : "Reopen period", period);
+      setAudit(await listAudit());
+      toast(close ? `${period} closed.` : `${period} reopened.`);
+    } catch { toast("Could not update period.", "error"); void load(); }
+  }
 
   async function syncSalesNow() {
     const diff = salesEntriesToSync(orders, journals);
@@ -134,13 +155,80 @@ export default function AccountingPage() {
 
       {tab === "coa" && <ChartOfAccounts accounts={accounts} onSave={async (a) => { setAccounts((p) => upsertLocal(p, a)); try { await upsertAccount(a); toast("Account saved."); } catch { toast("Could not save.", "error"); void load(); } }} email={user.email} />}
       {tab === "journal" && <Journals accounts={accounts} journals={journals} onSyncSales={syncSalesNow}
-        onSave={async (e) => { setJournals((p) => upsertLocal(p, e)); try { await upsertJournal(e); toast(e.status === "posted" ? "Entry posted." : "Draft saved."); } catch { toast("Could not save.", "error"); void load(); } }}
+        onSave={async (e) => {
+          if (isPeriodClosed(periods, e.date)) { toast(`${e.date.slice(0, 7)} is closed — reopen it first.`, "error"); return; }
+          setJournals((p) => upsertLocal(p, e));
+          try {
+            await upsertJournal(e);
+            if (e.status === "posted") void logAudit(user.email, "Accounting", "Post journal", `${e.narration} — ${formatRWF(sumDebits(e))}`).then(() => listAudit().then(setAudit));
+            else if (e.status === "void") void logAudit(user.email, "Accounting", "Void journal", e.narration).then(() => listAudit().then(setAudit));
+            toast(e.status === "posted" ? "Entry posted." : e.status === "void" ? "Entry voided." : "Draft saved.");
+          } catch { toast("Could not save.", "error"); void load(); }
+        }}
         onDelete={async (id) => { if (!confirm("Delete this draft entry?")) return; setJournals((p) => p.filter((x) => x.id !== id)); try { await deleteJournal(id); toast("Draft deleted."); } catch { toast("Could not delete.", "error"); void load(); } }}
         email={user.email} />}
       {tab === "trial" && <TrialBalanceView accounts={accounts} journals={journals} />}
       {tab === "ledger" && <LedgerView accounts={accounts} journals={journals} />}
       {tab === "reports" && <Reports accounts={accounts} journals={journals} />}
+      {tab === "periods" && <Periods periods={periods} journals={journals} onToggle={togglePeriod} />}
+      {tab === "audit" && <AuditTrail audit={audit} />}
     </div>
+  );
+}
+
+// --------------------------------------------------------------------------- Period Closing
+
+function Periods({ periods, journals, onToggle }: { periods: AccountingPeriod[]; journals: JournalEntry[]; onToggle: (period: string, close: boolean) => void }) {
+  const months = recentMonths(todayISO().slice(0, 7), 12);
+  const countIn = (m: string) => journals.filter((j) => j.status === "posted" && j.date.slice(0, 7) === m).length;
+  return (
+    <Card>
+      <CardHeader title="Period closing" />
+      <p className="-mt-1 mb-2 text-xs text-muted">Closing a month locks it — no journal entries can be posted to or changed in a closed period until it is reopened.</p>
+      <TableWrap>
+        <thead><tr><Th>Month</Th><Th className="text-right">Posted entries</Th><Th>Status</Th><Th>Closed by</Th><Th></Th></tr></thead>
+        <tbody>
+          {months.map((m) => {
+            const p = periods.find((x) => x.period === m);
+            const closed = p?.status === "closed";
+            return (
+              <tr key={m}>
+                <Td className="font-medium">{m}</Td>
+                <Td className="text-right">{countIn(m)}</Td>
+                <Td>{closed ? <Pill tone="neutral">Closed</Pill> : <Pill tone="green">Open</Pill>}</Td>
+                <Td className="text-xs text-muted">{closed ? `${p?.closedBy ?? ""}${p?.closedOn ? " · " + formatDateTime(p.closedOn) : ""}` : "—"}</Td>
+                <Td><Button size="sm" variant={closed ? "ghost" : "secondary"} onClick={() => onToggle(m, !closed)}>{closed ? "Reopen" : "Close"}</Button></Td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </TableWrap>
+    </Card>
+  );
+}
+
+// --------------------------------------------------------------------------- Audit Trail
+
+function AuditTrail({ audit }: { audit: AuditEntry[] }) {
+  return (
+    <Card>
+      <CardHeader title={`Audit trail (${audit.length})`} />
+      <p className="-mt-1 mb-2 text-xs text-muted">Append-only record of finance actions — never deleted.</p>
+      <TableWrap>
+        <thead><tr><Th>When</Th><Th>User</Th><Th>Module</Th><Th>Action</Th><Th>Detail</Th></tr></thead>
+        <tbody>
+          {audit.length === 0 ? <EmptyRow colSpan={5} text="No audit entries yet." /> : audit.map((a) => (
+            <tr key={a.id}>
+              <Td className="whitespace-nowrap text-xs">{formatDateTime(a.on)}</Td>
+              <Td className="text-xs">{a.user}</Td>
+              <Td>{a.module}</Td>
+              <Td className="font-medium">{a.action}</Td>
+              <Td className="text-sm text-ink/80">{a.detail}</Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableWrap>
+    </Card>
   );
 }
 
