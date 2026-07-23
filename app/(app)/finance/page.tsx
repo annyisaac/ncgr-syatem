@@ -59,6 +59,7 @@ export default function FinancePage() {
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [preset, setPreset] = useState<PeriodPreset>("month");
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const [pickedDate, setPickedDate] = useState(""); // one real delivery day, overrides the period
   const [tab, setTab] = useState<Tab>("overview");
 
   const canUse = user?.role === "Admin" || user?.role === "Accountant";
@@ -82,9 +83,20 @@ export default function FinancePage() {
     return () => { if (timer) clearTimeout(timer); void sb.removeChannel(channel); };
   }, [canUse, load]);
 
-  const range = presetToRange(preset, custom, todayISO());
+  // The delivery days that actually exist, newest first — the dates delivery
+  // planning has already put on the calendar, not every date on a calendar.
+  const deliveryDates = useMemo(() => {
+    const byDate = new Map<string, number>();
+    for (const o of orders) if (o.date) byDate.set(o.date, (byDate.get(o.date) ?? 0) + 1);
+    return [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [orders]);
+
+  const range = useMemo(
+    () => (pickedDate ? { from: pickedDate, to: pickedDate } : presetToRange(preset, custom, todayISO())),
+    [pickedDate, preset, custom]
+  );
   const pred = useCallback((d: string) => (!range.from && !range.to ? true : dateInRange(d, range)), [range]);
-  const periodLabel = rangeLabel(preset, range);
+  const periodLabel = pickedDate ? formatDate(pickedDate) : rangeLabel(preset, range);
 
   const summary = useMemo(() => financeSummary(orders, commissions, expenses, pred), [orders, commissions, expenses, pred]);
   const shownExpenses = useMemo(() => expenses.filter((e) => pred(e.date)).sort((a, b) => (a.date < b.date ? 1 : -1)), [expenses, pred]);
@@ -100,11 +112,34 @@ export default function FinancePage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-muted">Financial overview — revenue, cash, receivables, commissions, expenses and tax.</p>
-          <p className="mt-0.5 text-xs text-muted">Orders are filtered by <strong className="font-semibold">delivery date</strong>; commissions and expenses by their own dates.</p>
+          <p className="mt-0.5 text-xs text-muted">
+            {pickedDate
+              ? <>Showing the delivery day <strong className="font-semibold">{formatDate(pickedDate)}</strong> only. Pick “All delivery dates” to go back to filtering by period.</>
+              : <>Orders are filtered by <strong className="font-semibold">delivery date</strong>; commissions and expenses by their own dates.</>}
+          </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="w-36"><Select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} options={PERIODS} /></div>
-          {preset === "custom" && (
+          <div className="w-52">
+            <Select
+              aria-label="Delivery date"
+              value={pickedDate}
+              onChange={(e) => setPickedDate(e.target.value)}
+              options={[
+                { value: "", label: `All delivery dates (${deliveryDates.length})` },
+                ...deliveryDates.map(([d, n]) => ({ value: d, label: `${formatDate(d)} · ${n} order${n === 1 ? "" : "s"}` })),
+              ]}
+            />
+          </div>
+          <div className="w-36">
+            <Select
+              aria-label="Period"
+              value={preset}
+              onChange={(e) => setPreset(e.target.value as PeriodPreset)}
+              options={PERIODS}
+              disabled={!!pickedDate}
+            />
+          </div>
+          {!pickedDate && preset === "custom" && (
             <div className="flex items-center gap-1.5">
               <Input type="date" aria-label="Delivery date from" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className="w-auto" />
               <span className="text-muted">–</span>
