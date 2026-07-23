@@ -79,16 +79,22 @@ const H_ALL: NavItem[] = [
 ];
 
 const NAV: Record<Role, NavItem[]> = {
+  // Grouped by department in the side menu (AppShell.groupNav): the order here
+  // decides the section order — Sales, then Accounting, then Hatchery, then Admin.
   Admin: [
+    // Sales
     { label: "Dashboard", href: "/dashboard" },
-    { label: "Users", href: "/users" },
-    { label: "DSRs", href: "/dsrs" },
+    { label: "Orders", href: "/orders" },
     { label: "Clients", href: "/clients" },
+    { label: "DSRs", href: "/dsrs" },
     { label: "Requests", href: "/requests" },
     { label: "Farm visits", href: "/farm-visits" },
     { label: "Availability", href: "/availability" },
+    { label: "Delivery planning", href: "/planning" },
     { label: "Commission", href: "/commission" },
     { label: "Verification", href: "/verification" },
+    { label: "Agrishow", href: "/agrishow" },
+    // Accounting
     { label: "Finance", href: "/finance" },
     { label: "Accounting", href: "/accounting" },
     { label: "Purchasing", href: "/purchasing" },
@@ -98,10 +104,10 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Budgets", href: "/budgets" },
     { label: "Banking", href: "/banking" },
     { label: "Costing & COGS", href: "/costing" },
-    { label: "Delivery planning", href: "/planning" },
-    { label: "Orders", href: "/orders" },
-    { label: "Agrishow", href: "/agrishow" },
+    // Hatchery
     ...H_ALL,
+    // Admin
+    { label: "Users", href: "/users" },
   ],
   "Tetra Zone Manager": [
     { label: "Dashboard", href: "/dashboard" },
