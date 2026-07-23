@@ -45,7 +45,7 @@ export default function AgrishowPage() {
   const [productFilter, setProductFilter] = useState("all");
   const [preset, setPreset] = useState<PeriodPreset>("all");
 
-  const isAdmin = user?.role === "Admin";
+  const isAdmin = user?.role === "Admin" || user?.role === "Ross Payment Checker";
 
   const load = useCallback(async () => {
     try {
