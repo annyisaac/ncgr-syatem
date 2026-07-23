@@ -260,10 +260,25 @@ function NotAuthorized({ role }: { role: string }) {
 
 type NavItem = { href: string; label: string };
 
-/** Split a role's flat nav into ordered sections so long menus stay scannable. */
+/** Finance/accounting routes — their own department, not part of Sales. */
+const ACCOUNTING_ROUTES = [
+  "/finance", "/accounting", "/purchasing", "/payroll", "/assets",
+  "/tax", "/budgets", "/banking", "/costing",
+];
+
+/**
+ * Split a role's flat nav into ordered sections so long menus stay scannable.
+ * Sections appear in the order their first item appears in the role's nav, so
+ * each role leads with its own department (Admin: Sales → Accounting →
+ * Hatchery → Admin; the Accountant leads with Accounting).
+ */
 function groupNav(nav: NavItem[]): { name: string; items: NavItem[] }[] {
-  const sectionOf = (href: string) =>
-    href.startsWith("/hatchery") ? "Hatchery" : href === "/users" ? "Admin" : "Sales";
+  const sectionOf = (href: string) => {
+    if (href.startsWith("/hatchery")) return "Hatchery";
+    if (ACCOUNTING_ROUTES.some((r) => href === r || href.startsWith(r + "/"))) return "Accounting";
+    if (href === "/users") return "Admin";
+    return "Sales";
+  };
   const groups: { name: string; items: NavItem[] }[] = [];
   for (const item of nav) {
     const name = sectionOf(item.href);
