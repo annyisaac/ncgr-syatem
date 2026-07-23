@@ -49,6 +49,9 @@ export default function DashboardPage() {
   if (user.role === "Tetra Zone Manager") {
     return <ZoneDashboard user={user} orders={visible} availability={availability} />;
   }
+  if (user.role === "Accountant") {
+    return <AccountantDashboard user={user} orders={visible} availability={availability} />;
+  }
   if (user.role === "Admin") {
     return (
       <AdminDashboard
@@ -564,7 +567,7 @@ function SalesOverview({
   user: User;
   orders: Order[];
   availability: Availability[];
-  focus: "Ross 308" | "Tetra Super Harco";
+  focus: "Ross 308" | "Tetra Super Harco" | "both";
   Tail: React.ComponentType<{ active: Order[]; scoped: Order[] }>;
 }) {
   const [preset, setPreset] = useState<PeriodPreset>("month");
@@ -683,6 +686,35 @@ function SalesOverview({
       </div>
 
       <Tail active={active} scoped={scoped} />
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Accountant dashboard — the sales picture across both products
+// ---------------------------------------------------------------------------
+
+function AccountantDashboard(props: {
+  user: User;
+  orders: Order[];
+  availability: Availability[];
+}) {
+  return <SalesOverview {...props} focus="both" Tail={FinanceTail} />;
+}
+
+/** Finance tail: what each product billed and collected, and the DSR
+ *  commissions those sales earned — the largest cost against gross profit. */
+function FinanceTail({ scoped }: { active: Order[]; scoped: Order[] }) {
+  return (
+    <div className="space-y-5">
+      <ProductSummary orders={scoped} />
+      <DSRPerformance orders={scoped} />
+      <Card>
+        <p className="text-sm text-muted">
+          This is the sales picture. For the books — P&amp;L, receivables, cash flow and VAT — open{" "}
+          <Link href="/finance" className="font-semibold text-gold-dark underline">Finance</Link>.
+        </p>
+      </Card>
     </div>
   );
 }
