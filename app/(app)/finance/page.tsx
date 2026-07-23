@@ -11,7 +11,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { StatTile } from "@/components/dashboard/DashKit";
-import { ALL_TIME, inRange as dateInRange } from "@/components/ui/DateRange";
+import { ALL_TIME, inRange as dateInRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
@@ -41,6 +41,16 @@ const TABS: { id: Tab; label: string }[] = [
   { id: "vat", label: "VAT" },
 ];
 
+/** Names the active period — a custom range reads out its real dates, so the
+ *  PDF/Excel headers and card titles say exactly what was filtered. */
+function rangeLabel(preset: PeriodPreset, range: { from: string; to: string }): string {
+  if (preset !== "custom") return PERIODS.find((p) => p.value === preset)?.label ?? "All time";
+  if (range.from && range.to) return `${formatDate(range.from)} – ${formatDate(range.to)}`;
+  if (range.from) return `From ${formatDate(range.from)}`;
+  if (range.to) return `Up to ${formatDate(range.to)}`;
+  return "All time";
+}
+
 export default function FinancePage() {
   const { user } = useAuth();
   const { orders, commissions } = useData();
@@ -48,6 +58,7 @@ export default function FinancePage() {
 
   const [expenses, setExpenses] = useState<Expense[]>([]);
   const [preset, setPreset] = useState<PeriodPreset>("month");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
   const [tab, setTab] = useState<Tab>("overview");
 
   const canUse = user?.role === "Admin" || user?.role === "Accountant";
@@ -71,9 +82,9 @@ export default function FinancePage() {
     return () => { if (timer) clearTimeout(timer); void sb.removeChannel(channel); };
   }, [canUse, load]);
 
-  const range = presetToRange(preset, ALL_TIME, todayISO());
+  const range = presetToRange(preset, custom, todayISO());
   const pred = useCallback((d: string) => (!range.from && !range.to ? true : dateInRange(d, range)), [range]);
-  const periodLabel = PERIODS.find((p) => p.value === preset)?.label ?? "All time";
+  const periodLabel = rangeLabel(preset, range);
 
   const summary = useMemo(() => financeSummary(orders, commissions, expenses, pred), [orders, commissions, expenses, pred]);
   const shownExpenses = useMemo(() => expenses.filter((e) => pred(e.date)).sort((a, b) => (a.date < b.date ? 1 : -1)), [expenses, pred]);
@@ -87,9 +98,19 @@ export default function FinancePage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Financial overview — revenue, cash, receivables, commissions, expenses and tax.</p>
+        <div className="min-w-0">
+          <p className="text-sm text-muted">Financial overview — revenue, cash, receivables, commissions, expenses and tax.</p>
+          <p className="mt-0.5 text-xs text-muted">Orders are filtered by <strong className="font-semibold">delivery date</strong>; commissions and expenses by their own dates.</p>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
-          <div className="w-36"><Select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} options={PERIODS.filter((p) => p.value !== "custom")} /></div>
+          <div className="w-36"><Select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} options={PERIODS} /></div>
+          {preset === "custom" && (
+            <div className="flex items-center gap-1.5">
+              <Input type="date" aria-label="Delivery date from" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className="w-auto" />
+              <span className="text-muted">–</span>
+              <Input type="date" aria-label="Delivery date to" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className="w-auto" />
+            </div>
+          )}
           <Button variant="secondary" onClick={() => void financePDF(summary, shownExpenses, periodLabel)}>PDF</Button>
           <Button variant="secondary" onClick={() => void financeExcel(summary, shownExpenses, debtors.rows, periodLabel)}>Excel</Button>
         </div>
