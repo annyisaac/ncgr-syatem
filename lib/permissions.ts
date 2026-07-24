@@ -119,6 +119,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Drivers", href: "/logistics/drivers" },
     // Parent stock
     { label: "Breeder farm", href: "/parent-stock" },
+    { label: "Daily records", href: "/parent-stock/daily" },
     { label: "Male breeders", href: "/parent-stock/males" },
     { label: "Female breeders", href: "/parent-stock/females" },
     // Hatchery
@@ -214,6 +215,7 @@ const NAV: Record<Role, NavItem[]> = {
   // with Operations, Finance or the CEO.
   "Parent Stock Manager": [
     { label: "Dashboard", href: "/parent-stock" },
+    { label: "Daily records", href: "/parent-stock/daily" },
     { label: "Male breeders", href: "/parent-stock/males" },
     { label: "Female breeders", href: "/parent-stock/females" },
   ],
