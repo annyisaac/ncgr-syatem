@@ -33,6 +33,8 @@ export default function InventoryPage() {
   const [cat, setCat] = useState<"all" | SupplyKind>("all");
   const [q, setQ] = useState("");
   const [buyFor, setBuyFor] = useState<Supply | null>(null);
+  const [editItem, setEditItem] = useState<Supply | null>(null);
+  const [ef, setEf] = useState({ name: "", unit: "", kind: "hygiene" as SupplyKind });
   const [adjust, setAdjust] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
@@ -118,6 +120,23 @@ export default function InventoryPage() {
     });
     toast(`Recorded ${qty} ${buyFor.unit} of ${buyFor.name} (${rwf(qty * cost)}).`);
     setBuyFor(null);
+  }
+
+  function openEdit(s: Supply) {
+    setEditItem(s);
+    setEf({ name: s.name, unit: s.unit, kind: s.kind });
+  }
+  function saveEdit() {
+    if (!editItem) return;
+    const name = ef.name.trim();
+    if (!name) return;
+    const on = nowISO();
+    upsertSupply({
+      ...editItem, name, unit: ef.unit.trim() || editItem.unit, kind: ef.kind,
+      history: [...editItem.history, `${on} — details edited by ${user!.name}`], on,
+    });
+    toast(`${name} updated.`);
+    setEditItem(null);
   }
 
   function applyAdjust(s: Supply) {
@@ -210,6 +229,7 @@ export default function InventoryPage() {
                         <input type="number" value={adjust[s.id] ?? ""} onChange={(e) => setAdjust({ ...adjust, [s.id]: e.target.value })}
                           className="w-16 rounded-md border border-line bg-transparent px-2 py-1 text-sm" placeholder="±" />
                         <Button size="sm" variant="secondary" onClick={() => applyAdjust(s)}>Adjust</Button>
+                        <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
                       </div>
                     </Td>
                   )}
@@ -258,6 +278,20 @@ export default function InventoryPage() {
             {buyFor && <> · new stock <strong className="text-ink">{(buyFor.quantity + num(buy.qty)).toLocaleString()} {buyFor.unit}</strong></>}
           </div>
           {buyErr && <p className="sm:col-span-2 text-sm text-status-refunded">{buyErr}</p>}
+        </div>
+      </Modal>
+
+      <Modal
+        open={!!editItem}
+        onClose={() => setEditItem(null)}
+        title={editItem ? `Edit item — ${editItem.name}` : "Edit item"}
+        footer={<><Button variant="ghost" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={saveEdit}>Save changes</Button></>}
+      >
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Category"><Select value={ef.kind} onChange={(e) => setEf({ ...ef, kind: e.target.value as SupplyKind })} options={SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))} /></Field>
+          <Field label="Unit"><Input value={ef.unit} onChange={(e) => setEf({ ...ef, unit: e.target.value })} /></Field>
+          <div className="sm:col-span-2"><Field label="Name"><Input value={ef.name} onChange={(e) => setEf({ ...ef, name: e.target.value })} /></Field></div>
+          <p className="sm:col-span-2 text-xs text-muted">Editing renames or recategorises the item. Stock quantity is changed with Adjust, and purchases with Buy.</p>
         </div>
       </Modal>
     </div>

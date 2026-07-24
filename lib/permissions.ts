@@ -203,6 +203,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Record machines", href: "/hatchery/machines" },
     { label: "Box making", href: "/hatchery/boxes" },
     H_BIO,
+    H_HANDOVER,
   ],
   "Hatchery Veterinary": [
     H_DASH, H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
