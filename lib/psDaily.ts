@@ -79,7 +79,7 @@ export function recomputeFlock(flock: BreederFlock, allLogs: DailyLog[]): Breede
   const laying = flock.laying || (flock.sex === "Female" && logs.some((l) => num(l.eggsProduced) > 0));
   return {
     ...flock,
-    currentPopulation: Math.max(0, (flock.initialPopulation || 0) - lost),
+    currentPopulation: Math.max(0, (flock.initialPopulation || 0) - lost - (flock.transferredOut || 0)),
     bodyWeightG: newest?.bodyWeightG ?? flock.bodyWeightG,
     uniformityPct: newest?.uniformityPct ?? flock.uniformityPct,
     laying,

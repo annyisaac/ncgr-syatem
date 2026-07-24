@@ -30,7 +30,8 @@ export interface BreederFlock {
   placementDate?: string;    // ISO date placed on this farm
   house?: string;
   initialPopulation: number;
-  currentPopulation: number; // updated by daily mortality / transfers in later phases
+  currentPopulation: number; // updated by daily mortality and male transfers
+  transferredOut?: number;   // males cumulatively moved out to production houses (incl. transfer mortality)
   bodyWeightG?: number;      // latest average body weight (grams)
   uniformityPct?: number;    // latest uniformity %
   laying?: boolean;          // females: laying has begun
