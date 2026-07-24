@@ -109,6 +109,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Costing & COGS", href: "/costing" },
     // Logistics
     { label: "Logistics", href: "/logistics" },
+    { label: "Dispatch", href: "/logistics/dispatch" },
     { label: "Procurement", href: "/logistics/purchasing" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
@@ -185,6 +186,7 @@ const NAV: Record<Role, NavItem[]> = {
   // dispatch, but no ledger, payroll or financial reports.
   "Logistics Officer": [
     { label: "Dashboard", href: "/logistics" },
+    { label: "Dispatch", href: "/logistics/dispatch" },
     { label: "Deliveries", href: "/planning" },
     { label: "Orders", href: "/orders" },
     { label: "Procurement", href: "/logistics/purchasing" },
