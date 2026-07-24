@@ -39,6 +39,7 @@ import { logisticsEntriesToSync } from "@/lib/logisticsLedger";
 import { listReceipts, type GoodsReceipt } from "@/lib/procurement";
 import { listLogisticsExpenses, type LogisticsExpense } from "@/lib/logisticsOps";
 import { listTrips, type Trip } from "@/lib/trips";
+import { productionCostEntriesToSync, listProductionCosts, type ProductionCost } from "@/lib/psCosting";
 import { balanceSheet, cashSummary, incomeStatement, type StmtGroup } from "@/lib/financialStatements";
 import { ALL_TIME } from "@/components/ui/DateRange";
 import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
@@ -69,13 +70,14 @@ export default function AccountingPage() {
   const [receipts, setReceipts] = useState<GoodsReceipt[]>([]);
   const [logisticsExp, setLogisticsExp] = useState<LogisticsExpense[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [prodCosts, setProdCosts] = useState<ProductionCost[]>([]);
   const [tab, setTab] = useState<Tab>("reports");
 
   const canUse = user?.role === "Admin" || user?.role === "Accountant";
 
   const load = useCallback(async () => {
     try {
-      const [a, j, p, au, r, le, t] = await Promise.all([listAccounts(), listJournals(), listPeriods(), listAudit(), listReceipts(), listLogisticsExpenses(), listTrips()]);
+      const [a, j, p, au, r, le, t, pc] = await Promise.all([listAccounts(), listJournals(), listPeriods(), listAudit(), listReceipts(), listLogisticsExpenses(), listTrips(), listProductionCosts()]);
       setAccounts(a);
       setJournals(j);
       setPeriods(p);
@@ -83,6 +85,7 @@ export default function AccountingPage() {
       setReceipts(r);
       setLogisticsExp(le);
       setTrips(t);
+      setProdCosts(pc);
     } catch { /* keep */ }
   }, []);
 
@@ -128,11 +131,15 @@ export default function AccountingPage() {
     } catch { toast("Could not post sales entries.", "error"); }
   }
 
-  // Auto-post logistics to the ledger — goods received (AP), posted logistics
-  // expenses, and completed-trip transport costs. Same idempotent pattern.
+  // Auto-post operations to the ledger — logistics (goods received AP, posted
+  // logistics expenses, completed-trip transport) and breeder-farm operating
+  // costs. Same idempotent pattern (deterministic ids, diffing sync).
   useEffect(() => {
     if (!canUse) return;
-    const diff = logisticsEntriesToSync(receipts, logisticsExp, trips, journalsRef.current);
+    const diff = [
+      ...logisticsEntriesToSync(receipts, logisticsExp, trips, journalsRef.current),
+      ...productionCostEntriesToSync(prodCosts, journalsRef.current),
+    ];
     if (diff.length === 0) return;
     (async () => {
       try {
@@ -140,23 +147,26 @@ export default function AccountingPage() {
         setJournals((p) => diff.reduce((acc, e) => upsertLocal(acc, e), p));
       } catch { /* realtime/next load will retry */ }
     })();
-  }, [receipts, logisticsExp, trips, canUse]);
+  }, [receipts, logisticsExp, trips, prodCosts, canUse]);
 
   async function syncLogisticsNow() {
-    const diff = logisticsEntriesToSync(receipts, logisticsExp, trips, journals);
-    if (diff.length === 0) return toast("Ledger already up to date with logistics.", "info");
+    const diff = [
+      ...logisticsEntriesToSync(receipts, logisticsExp, trips, journals),
+      ...productionCostEntriesToSync(prodCosts, journals),
+    ];
+    if (diff.length === 0) return toast("Ledger already up to date with operations.", "info");
     try {
       await upsertJournals(diff);
       setJournals((p) => diff.reduce((acc, e) => upsertLocal(acc, e), p));
-      toast(`${diff.length} logistics entr${diff.length === 1 ? "y" : "ies"} posted to the ledger.`);
-    } catch { toast("Could not post logistics entries.", "error"); }
+      toast(`${diff.length} operations entr${diff.length === 1 ? "y" : "ies"} posted to the ledger.`);
+    } catch { toast("Could not post operations entries.", "error"); }
   }
 
   useEffect(() => {
     if (!canUse) return;
     let t: ReturnType<typeof setTimeout> | null = null;
     const sb = getSupabase();
-    const watched = ["coa_accounts", "journal_entries", "goods_receipts", "logistics_expenses", "trips"];
+    const watched = ["coa_accounts", "journal_entries", "goods_receipts", "logistics_expenses", "trips", "ps_costs"];
     const ch = sb.channel("accounting-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (p: { table?: string }) => {
         if (watched.includes(p.table ?? "")) { if (t) clearTimeout(t); t = setTimeout(() => void load(), 350); }
@@ -462,10 +472,10 @@ function Journals({ accounts, journals, onSave, onDelete, onSyncSales, onSyncLog
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">Sales, and logistics goods-received / expenses / trip costs, are auto-posted to the ledger. Use the Sync buttons to post the latest manually.</p>
+        <p className="text-xs text-muted">Sales, logistics (goods-received / expenses / trip costs) and breeder-farm operating costs are auto-posted to the ledger. Use the Sync buttons to post the latest manually.</p>
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={onSyncSales}>Sync from Sales</Button>
-          <Button variant="secondary" onClick={onSyncLogistics}>Sync from Logistics</Button>
+          <Button variant="secondary" onClick={onSyncLogistics}>Sync from Operations</Button>
           <Button onClick={() => setShow((v) => !v)}>{show ? "Cancel" : "＋ New journal entry"}</Button>
         </div>
       </div>
