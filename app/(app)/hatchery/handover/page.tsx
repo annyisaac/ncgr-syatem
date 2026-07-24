@@ -12,7 +12,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
+import { todayISO, formatDate, formatDateTime } from "@/lib/format";
 import type { HandoverMachine, HandoverStatus, ShiftHandover, ShiftName, Machine } from "@/lib/hatchery/types";
 
 const AREA = "w-full rounded-[9px] border border-line bg-field px-3.5 py-2.5 text-[0.9rem] text-ink outline-none focus:border-gold";
@@ -30,7 +30,6 @@ function defaultMachines(machines: Machine[]): HandoverMachine[] {
 }
 
 const blankForm = (machines: Machine[]) => ({
-  date: todayISO(),
   shift: "day" as ShiftName,
   outgoingLeader: "",
   incomingLeader: "",
@@ -40,7 +39,6 @@ const blankForm = (machines: Machine[]) => ({
   problems: "",
   pending: "",
   consumables: "",
-  time: new Date().toTimeString().slice(0, 5),
 });
 
 export default function HandoverPage() {
@@ -67,9 +65,11 @@ export default function HandoverPage() {
     e.preventDefault();
     setErr(null);
     if (!f.summary.trim()) return setErr("Add a short note of the work completed this shift.");
+    // The system stamps the date and time the handover is recorded — not chosen.
+    const now = new Date();
     const h: ShiftHandover = {
       id: newId("shift"),
-      date: f.date,
+      date: todayISO(),
       shift: f.shift,
       outgoingLeader: f.outgoingLeader.trim() || undefined,
       incomingLeader: f.incomingLeader.trim() || undefined,
@@ -79,10 +79,10 @@ export default function HandoverPage() {
       problems: f.problems.trim() || undefined,
       pending: f.pending.trim(),
       consumables: f.consumables.trim() || undefined,
-      time: f.time || undefined,
+      time: now.toTimeString().slice(0, 5),
       by: user!.email,
       byName: sessionOp?.name ?? user!.name,
-      on: nowISO(),
+      on: now.toISOString(),
     };
     void upsertShiftHandover(h);
     toast("Shift handover recorded.");
@@ -106,10 +106,13 @@ export default function HandoverPage() {
         <Card>
           <CardHeader title="Hatchery shift handover log" />
           <form onSubmit={submit} className="space-y-5">
-            {/* Header */}
+            {/* Header — the date & time are stamped by the system when you save. */}
+            <p className="rounded-lg border border-line bg-field px-3 py-2 text-xs text-muted">
+              Recording now — <strong className="text-ink">{formatDate(todayISO())}</strong>. The time is saved automatically when you press Save.
+            </p>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Date"><Input type="date" value={f.date} onChange={(e) => set({ date: e.target.value })} /></Field>
               <Field label="Shift"><Select value={f.shift} onChange={(e) => set({ shift: e.target.value as ShiftName })} options={[{ value: "day", label: "Day" }, { value: "night", label: "Night" }]} /></Field>
+              <div />
               <Field label="Outgoing team leader"><Input value={f.outgoingLeader} onChange={(e) => set({ outgoingLeader: e.target.value })} placeholder={sessionOp?.name ?? user.name} /></Field>
               <Field label="Incoming team leader"><Input value={f.incomingLeader} onChange={(e) => set({ incomingLeader: e.target.value })} /></Field>
             </div>
@@ -172,8 +175,6 @@ export default function HandoverPage() {
               <h3 className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-gold-dark">6 · Consumables needed</h3>
               <textarea className={AREA} rows={2} value={f.consumables} onChange={(e) => set({ consumables: e.target.value })} placeholder="Vaccines, boxes, gas, disinfectant…" />
             </section>
-
-            <div className="w-40"><Field label="Handover time"><Input type="time" value={f.time} onChange={(e) => set({ time: e.target.value })} /></Field></div>
 
             {err && <p className="text-sm text-status-refunded">{err}</p>}
             <div className="flex justify-end gap-2">
