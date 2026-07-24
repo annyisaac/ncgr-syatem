@@ -536,14 +536,60 @@ export interface MachineIssue {
 
 export type ShiftName = "day" | "night";
 
-/** End-of-shift handover so the incoming shift knows the state of the floor. */
+/** One machine's status on a handover (✓/✗ + remarks). */
+export interface HandoverMachine {
+  name: string;
+  ok: boolean;
+  remarks?: string;
+}
+
+/** Current hatchery counts at the moment of handover. */
+export interface HandoverStatus {
+  eggsReceived?: number;
+  eggsSet?: number;
+  candlingDone?: boolean;
+  eggsTransferred?: number;
+  chicksHatched?: number;
+  chicksPacked?: number; // vaccinated / packed
+}
+
+/** Environmental readings handed over. */
+export interface HandoverEnv {
+  setterTemp?: number;
+  setterHumidity?: number;
+  hatcherTemp?: number;
+  hatcherHumidity?: number;
+  roomTemp?: number;
+}
+
+/** End-of-shift safety & biosecurity checklist. */
+export interface HandoverChecks {
+  footbath?: boolean;   // footbath charged
+  doors?: boolean;      // doors / locks secured
+  generator?: boolean;  // generator & fuel ready
+  cleaning?: boolean;   // cleaning done
+}
+
+/** End-of-shift handover so the incoming shift knows the state of the floor.
+ *  Structured to match the NCGR paper handover log; older records only carry
+ *  summary/pending, so every new field is optional. */
 export interface ShiftHandover {
   id: string;
   date: string; // yyyy-mm-dd
   shift: ShiftName;
-  summary: string; // what happened this shift
-  pending: string; // tasks / issues for the next shift
-  machinesNote?: string; // machine-specific notes
+  outgoingLeader?: string;
+  incomingLeader?: string;
+  attendants?: string;    // operators on the shift being handed over
+  summary: string;        // 1. Work completed
+  status?: HandoverStatus; // 2. Current hatchery status
+  env?: HandoverEnv;      // environmental readings
+  machines?: HandoverMachine[]; // 3. Machine status
+  problems?: string;      // 4. Problems encountered
+  pending: string;        // 5. Tasks for the next shift
+  consumables?: string;   // 6. Consumables needed
+  checks?: HandoverChecks; // safety & biosecurity check
+  time?: string;          // handover time
+  machinesNote?: string;  // legacy free-text machine note
   by: string; // account email
   byName?: string; // operator / user name
   on: string; // ISO datetime
