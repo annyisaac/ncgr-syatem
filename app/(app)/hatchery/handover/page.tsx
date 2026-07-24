@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { todayISO, formatDate, formatDateTime } from "@/lib/format";
-import type { HandoverMachine, HandoverStatus, ShiftHandover, ShiftName, Machine } from "@/lib/hatchery/types";
+import type { Batch, HandoverChecks, HandoverEnv, HandoverMachine, HandoverStatus, Reception, ShiftHandover, ShiftName, Machine } from "@/lib/hatchery/types";
 
 const AREA = "w-full rounded-[9px] border border-line bg-field px-3.5 py-2.5 text-[0.9rem] text-ink outline-none focus:border-gold";
 
@@ -29,26 +29,44 @@ function defaultMachines(machines: Machine[]): HandoverMachine[] {
   ];
 }
 
-const blankForm = (machines: Machine[]) => ({
+/** Today's hatchery activity, computed from live batches & receptions, used to
+ *  pre-fill the status so the leader confirms rather than re-types. */
+function liveStatus(batches: Batch[], receptions: Reception[]): HandoverStatus {
+  const today = todayISO();
+  const isToday = (iso?: string) => !!iso && iso.slice(0, 10) === today;
+  return {
+    eggsReceived: receptions.filter((r) => r.date === today).reduce((s, r) => s + (r.eggsReceived || 0), 0) || undefined,
+    eggsSet: batches.filter((b) => b.setDate === today).reduce((s, b) => s + (b.eggsSet || 0), 0) || undefined,
+    candlingDone: batches.some((b) => (b.candlings ?? []).some((c) => isToday(c.on))),
+    eggsTransferred: batches.filter((b) => isToday(b.steps?.["transfer"]?.on)).reduce((s, b) => s + (b.transfers ?? []).reduce((t, a) => t + (a.eggs || 0), 0), 0) || undefined,
+    chicksHatched: batches.filter((b) => isToday(b.steps?.["hatching"]?.on)).reduce((s, b) => s + (b.hatchedCount || 0), 0) || undefined,
+    chicksPacked: batches.filter((b) => isToday(b.steps?.["counting"]?.on)).reduce((s, b) => s + (b.countedTotal || 0), 0) || undefined,
+  };
+}
+
+const blankForm = (machines: Machine[], batches: Batch[], receptions: Reception[]) => ({
   shift: "day" as ShiftName,
   outgoingLeader: "",
   incomingLeader: "",
+  attendants: "",
   summary: "",
-  status: {} as HandoverStatus,
+  status: liveStatus(batches, receptions),
+  env: {} as HandoverEnv,
   machines: defaultMachines(machines),
   problems: "",
   pending: "",
   consumables: "",
+  checks: {} as HandoverChecks,
 });
 
 export default function HandoverPage() {
   const { user } = useAuth();
-  const { shiftHandovers, upsertShiftHandover, newId, machines } = useHatchery();
+  const { shiftHandovers, upsertShiftHandover, newId, machines, batches, receptions } = useHatchery();
   const { operator: sessionOp } = useOperator();
   const { toast } = useToast();
 
   const [show, setShow] = useState(false);
-  const [f, setF] = useState(() => blankForm(machines));
+  const [f, setF] = useState(() => blankForm(machines, batches, receptions));
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<ShiftHandover | null>(null);
 
@@ -57,9 +75,11 @@ export default function HandoverPage() {
 
   const set = (p: Partial<ReturnType<typeof blankForm>>) => setF((x) => ({ ...x, ...p }));
   const setStatus = (p: Partial<HandoverStatus>) => setF((x) => ({ ...x, status: { ...x.status, ...p } }));
+  const setEnv = (p: Partial<HandoverEnv>) => setF((x) => ({ ...x, env: { ...x.env, ...p } }));
+  const setChecks = (p: Partial<HandoverChecks>) => setF((x) => ({ ...x, checks: { ...x.checks, ...p } }));
   const setMachine = (i: number, p: Partial<HandoverMachine>) => setF((x) => ({ ...x, machines: x.machines.map((m, j) => (j === i ? { ...m, ...p } : m)) }));
 
-  function open() { setF(blankForm(machines)); setErr(null); setShow(true); }
+  function open() { setF(blankForm(machines, batches, receptions)); setErr(null); setShow(true); }
 
   function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,12 +93,15 @@ export default function HandoverPage() {
       shift: f.shift,
       outgoingLeader: f.outgoingLeader.trim() || undefined,
       incomingLeader: f.incomingLeader.trim() || undefined,
+      attendants: f.attendants.trim() || undefined,
       summary: f.summary.trim(),
       status: f.status,
+      env: f.env,
       machines: f.machines.filter((m) => m.name.trim()),
       problems: f.problems.trim() || undefined,
       pending: f.pending.trim(),
       consumables: f.consumables.trim() || undefined,
+      checks: f.checks,
       time: now.toTimeString().slice(0, 5),
       by: user!.email,
       byName: sessionOp?.name ?? user!.name,
@@ -94,6 +117,12 @@ export default function HandoverPage() {
       <Input type="number" min={0} value={(f.status[key] as number | undefined) ?? ""} onChange={(e) => setStatus({ [key]: Number(e.target.value) || undefined } as Partial<HandoverStatus>)} />
     </Field>
   );
+  const envField = (label: string, key: keyof HandoverEnv, unit: string) => (
+    <Field label={`${label} (${unit})`}>
+      <Input type="number" value={(f.env[key] as number | undefined) ?? ""} onChange={(e) => setEnv({ [key]: Number(e.target.value) || undefined } as Partial<HandoverEnv>)} />
+    </Field>
+  );
+  const CHECK_ITEMS: [keyof HandoverChecks, string][] = [["footbath", "Footbath charged"], ["doors", "Doors & locks secured"], ["generator", "Generator & fuel ready"], ["cleaning", "Cleaning done"]];
 
   return (
     <div className="space-y-5">
@@ -115,6 +144,7 @@ export default function HandoverPage() {
               <div />
               <Field label="Outgoing team leader"><Input value={f.outgoingLeader} onChange={(e) => set({ outgoingLeader: e.target.value })} placeholder={sessionOp?.name ?? user.name} /></Field>
               <Field label="Incoming team leader"><Input value={f.incomingLeader} onChange={(e) => set({ incomingLeader: e.target.value })} /></Field>
+              <div className="sm:col-span-2"><Field label="Attendants on this shift"><Input value={f.attendants} onChange={(e) => set({ attendants: e.target.value })} placeholder="Names of the operators who worked the shift" /></Field></div>
             </div>
 
             {/* 1. Work completed */}
@@ -125,7 +155,11 @@ export default function HandoverPage() {
 
             {/* 2. Current hatchery status */}
             <section>
-              <h3 className="mb-2 text-[0.72rem] font-bold uppercase tracking-wide text-gold-dark">2 · Current hatchery status</h3>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-[0.72rem] font-bold uppercase tracking-wide text-gold-dark">2 · Current hatchery status</h3>
+                <Button size="sm" variant="ghost" onClick={() => set({ status: liveStatus(batches, receptions) })}>↻ Refill from system</Button>
+              </div>
+              <p className="-mt-1 mb-2 text-xs text-muted">Pre-filled from today&apos;s batches &amp; receptions — check and adjust before saving.</p>
               <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
                 {numField("Eggs received", "eggsReceived")}
                 {numField("Eggs set", "eggsSet")}
@@ -135,6 +169,18 @@ export default function HandoverPage() {
                 {numField("Eggs transferred", "eggsTransferred")}
                 {numField("Chicks hatched", "chicksHatched")}
                 {numField("Chicks vaccinated / packed", "chicksPacked")}
+              </div>
+            </section>
+
+            {/* Environment */}
+            <section>
+              <h3 className="mb-2 text-[0.72rem] font-bold uppercase tracking-wide text-gold-dark">Environment readings</h3>
+              <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+                {envField("Setter temp", "setterTemp", "°F")}
+                {envField("Setter humidity", "setterHumidity", "%")}
+                {envField("Hatcher temp", "hatcherTemp", "°F")}
+                {envField("Hatcher humidity", "hatcherHumidity", "%")}
+                {envField("Room temp", "roomTemp", "°C")}
               </div>
             </section>
 
@@ -174,6 +220,18 @@ export default function HandoverPage() {
             <section>
               <h3 className="mb-1 text-[0.72rem] font-bold uppercase tracking-wide text-gold-dark">6 · Consumables needed</h3>
               <textarea className={AREA} rows={2} value={f.consumables} onChange={(e) => set({ consumables: e.target.value })} placeholder="Vaccines, boxes, gas, disinfectant…" />
+            </section>
+
+            {/* Safety & biosecurity check */}
+            <section>
+              <h3 className="mb-2 text-[0.72rem] font-bold uppercase tracking-wide text-gold-dark">7 · Safety &amp; biosecurity check</h3>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                {CHECK_ITEMS.map(([key, label]) => (
+                  <label key={key} className="flex items-center gap-2 rounded-lg border border-line bg-field px-3 py-2 text-sm text-ink">
+                    <input type="checkbox" checked={!!f.checks[key]} onChange={(e) => setChecks({ [key]: e.target.checked } as Partial<HandoverChecks>)} /> {label}
+                  </label>
+                ))}
+              </div>
             </section>
 
             {err && <p className="text-sm text-status-refunded">{err}</p>}
@@ -232,6 +290,7 @@ function HandoverView({ h, onClose }: { h: ShiftHandover; onClose: () => void })
           <div><span className="text-muted">Outgoing:</span> <strong>{h.outgoingLeader || "—"}</strong></div>
           <div><span className="text-muted">Incoming:</span> <strong>{h.incomingLeader || "—"}</strong></div>
         </div>
+        {h.attendants && <Detail label="Attendants on shift" value={h.attendants} />}
 
         <Detail label="1 · Work completed" value={h.summary} />
 
@@ -263,9 +322,36 @@ function HandoverView({ h, onClose }: { h: ShiftHandover; onClose: () => void })
           </div>
         )}
 
+        {h.env && Object.values(h.env).some((v) => v != null) && (
+          <div>
+            <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Environment readings</p>
+            <p className="text-sm text-ink">
+              {[
+                h.env.setterTemp != null && `Setter ${h.env.setterTemp}°F`,
+                h.env.setterHumidity != null && `${h.env.setterHumidity}% RH`,
+                h.env.hatcherTemp != null && `Hatcher ${h.env.hatcherTemp}°F`,
+                h.env.hatcherHumidity != null && `${h.env.hatcherHumidity}% RH`,
+                h.env.roomTemp != null && `Room ${h.env.roomTemp}°C`,
+              ].filter(Boolean).join(" · ") || "—"}
+            </p>
+          </div>
+        )}
+
         {h.problems && <Detail label="4 · Problems encountered" value={h.problems} />}
         <Detail label="5 · Tasks for the next shift" value={h.pending || "—"} />
         {h.consumables && <Detail label="6 · Consumables needed" value={h.consumables} />}
+
+        {h.checks && Object.values(h.checks).some((v) => v != null) && (
+          <div>
+            <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">7 · Safety &amp; biosecurity check</p>
+            <div className="flex flex-wrap gap-2">
+              {([["footbath", "Footbath"], ["doors", "Doors & locks"], ["generator", "Generator & fuel"], ["cleaning", "Cleaning done"]] as [keyof typeof h.checks, string][]).map(([k, label]) => (
+                <Pill key={k} tone={h.checks?.[k] ? "green" : "neutral"}>{h.checks?.[k] ? "✓" : "○"} {label}</Pill>
+              ))}
+            </div>
+          </div>
+        )}
+
         {h.machinesNote && <Detail label="Machine notes" value={h.machinesNote} />}
 
         <div className="border-t border-line pt-3 text-xs text-muted">
