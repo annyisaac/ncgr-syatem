@@ -125,6 +125,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Production houses", href: "/parent-stock/production" },
     { label: "Egg transfers", href: "/parent-stock/eggs" },
     { label: "Farm health", href: "/parent-stock/health" },
+    { label: "Farm inventory", href: "/parent-stock/inventory" },
     // Hatchery
     ...H_ALL,
     // Admin
@@ -224,6 +225,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Production houses", href: "/parent-stock/production" },
     { label: "Egg transfers", href: "/parent-stock/eggs" },
     { label: "Health", href: "/parent-stock/health" },
+    { label: "Inventory", href: "/parent-stock/inventory" },
   ],
 
   // ---- DSR portal (code + single-device login) ----
