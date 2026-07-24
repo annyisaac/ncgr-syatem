@@ -117,6 +117,10 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Logistics reports", href: "/logistics/reports" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
+    // Parent stock
+    { label: "Breeder farm", href: "/parent-stock" },
+    { label: "Male breeders", href: "/parent-stock/males" },
+    { label: "Female breeders", href: "/parent-stock/females" },
     // Hatchery
     ...H_ALL,
     // Admin
@@ -202,6 +206,16 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Reports", href: "/logistics/reports" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
+  ],
+
+  // ---- Parent stock (breeder farm) ----
+  // Manages the breeder farm: male & female flocks, production houses, fertile
+  // eggs, farm operations. Records and submits; capital/payroll/payments stay
+  // with Operations, Finance or the CEO.
+  "Parent Stock Manager": [
+    { label: "Dashboard", href: "/parent-stock" },
+    { label: "Male breeders", href: "/parent-stock/males" },
+    { label: "Female breeders", href: "/parent-stock/females" },
   ],
 
   // ---- DSR portal (code + single-device login) ----

@@ -44,6 +44,8 @@ export type Role =
   | "Accountant"
   // Logistics
   | "Logistics Officer"
+  // Parent stock (breeder farm)
+  | "Parent Stock Manager"
   // Hatchery
   | "Hatchery Manager"
   | "Hatchery Operations Manager"
@@ -63,6 +65,7 @@ export const ROLES: Role[] = [
   "DSR",
   "Accountant",
   "Logistics Officer",
+  "Parent Stock Manager",
   "Hatchery Manager",
   "Hatchery Operations Manager",
   "Production Technician",
