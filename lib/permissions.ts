@@ -107,6 +107,11 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Budgets", href: "/budgets" },
     { label: "Banking", href: "/banking" },
     { label: "Costing & COGS", href: "/costing" },
+    // Logistics
+    { label: "Logistics", href: "/logistics" },
+    { label: "Procurement", href: "/logistics/purchasing" },
+    { label: "Vehicles", href: "/logistics/vehicles" },
+    { label: "Drivers", href: "/logistics/drivers" },
     // Hatchery
     ...H_ALL,
     // Admin
@@ -182,6 +187,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/logistics" },
     { label: "Deliveries", href: "/planning" },
     { label: "Orders", href: "/orders" },
+    { label: "Procurement", href: "/logistics/purchasing" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
   ],
@@ -202,6 +208,8 @@ const NAV: Record<Role, NavItem[]> = {
   "Operations Manager": [
     H_DASH, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_HATCH, H_BOXES,
     H_VACCINATION, H_VAC_REQUESTS, H_FARM_VISITS, H_SPAREPARTS, H_BIO, H_MAINT,
+    // Approves purchase requests and purchase orders raised by Logistics.
+    { label: "Procurement approvals", href: "/logistics/purchasing" },
   ],
   "Hatchery Operations Manager": [
     H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_BIO, H_HATCH, H_BOXES,
