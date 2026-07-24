@@ -112,6 +112,8 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dispatch", href: "/logistics/dispatch" },
     { label: "Procurement", href: "/logistics/purchasing" },
     { label: "Trips & fuel", href: "/logistics/trips" },
+    { label: "Transfers & returns", href: "/logistics/transfers" },
+    { label: "Logistics expenses", href: "/logistics/expenses" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
     // Hatchery
@@ -177,6 +179,8 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Orders", href: "/orders" },
     { label: "Verification", href: "/verification" },
     { label: "Commission", href: "/commission" },
+    // Approves and posts logistics expenses submitted by Logistics.
+    { label: "Logistics expenses", href: "/logistics/expenses" },
     H_INVENTORY,
     H_SPAREPARTS,
   ],
@@ -192,6 +196,8 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Orders", href: "/orders" },
     { label: "Procurement", href: "/logistics/purchasing" },
     { label: "Trips & fuel", href: "/logistics/trips" },
+    { label: "Transfers & returns", href: "/logistics/transfers" },
+    { label: "Expenses", href: "/logistics/expenses" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
   ],
@@ -212,8 +218,10 @@ const NAV: Record<Role, NavItem[]> = {
   "Operations Manager": [
     H_DASH, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_HATCH, H_BOXES,
     H_VACCINATION, H_VAC_REQUESTS, H_FARM_VISITS, H_SPAREPARTS, H_BIO, H_MAINT,
-    // Approves purchase requests and purchase orders raised by Logistics.
+    // Approves purchase requests and purchase orders raised by Logistics,
+    // and verifies logistics expenses before Finance.
     { label: "Procurement approvals", href: "/logistics/purchasing" },
+    { label: "Logistics expenses", href: "/logistics/expenses" },
   ],
   "Hatchery Operations Manager": [
     H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_BIO, H_HATCH, H_BOXES,
