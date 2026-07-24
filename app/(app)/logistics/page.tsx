@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
@@ -13,8 +14,13 @@ import { toDeliver, type Order } from "@/lib/types";
 import { formatDate, todayISO } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
 import {
-  expiryState, vehicleReady, listDrivers, listVehicles, type Driver, type Vehicle,
+  expiryState, vehicleReady, listDispatches, listDrivers, listVehicles,
+  type DeliveryDispatch, type Driver, type Vehicle,
 } from "@/lib/logistics";
+import { listPurchaseOrders, listReceipts, poOrderedQty, poReceivedQty, type GoodsReceipt, type PurchaseOrder } from "@/lib/procurement";
+import { listLogisticsExpenses, type LogisticsExpense } from "@/lib/logisticsOps";
+import { formatRWF } from "@/lib/config";
+import { listTrips, tripFuelLitres, type Trip } from "@/lib/trips";
 
 const isClosed = (o: Order) => o.status === "refunded" || o.status === "rejected";
 const isDelivered = (o: Order) => o.deliverOk || o.status === "fulfilled";
@@ -24,13 +30,22 @@ const openForDelivery = (o: Order) => !isClosed(o) && !isDelivered(o);
 export default function LogisticsDashboard() {
   const { user } = useAuth();
   const { orders } = useData();
+  const router = useRouter();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
+  const [dispatches, setDispatches] = useState<DeliveryDispatch[]>([]);
+  const [pos, setPos] = useState<PurchaseOrder[]>([]);
+  const [grns, setGrns] = useState<GoodsReceipt[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
+  const [expenses, setExpenses] = useState<LogisticsExpense[]>([]);
 
   const canUse = user?.role === "Admin" || user?.role === "Logistics Officer";
 
   const load = useCallback(async () => {
-    try { const [v, d] = await Promise.all([listVehicles(), listDrivers()]); setVehicles(v); setDrivers(d); } catch { /* keep */ }
+    try {
+      const [v, d, dp, p, g, t, e] = await Promise.all([listVehicles(), listDrivers(), listDispatches(), listPurchaseOrders(), listReceipts(), listTrips(), listLogisticsExpenses()]);
+      setVehicles(v); setDrivers(d); setDispatches(dp); setPos(p); setGrns(g); setTrips(t); setExpenses(e);
+    } catch { /* keep */ }
   }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (canUse) void load(); }, [load, canUse]);
@@ -38,9 +53,7 @@ export default function LogisticsDashboard() {
     if (!canUse) return;
     const sb = getSupabase();
     let t: ReturnType<typeof setTimeout> | null = null;
-    const ch = sb.channel("logistics-live").on("postgres_changes", { event: "*", schema: "public" }, (p: { table?: string }) => {
-      if (p.table === "vehicles" || p.table === "drivers") { if (t) clearTimeout(t); t = setTimeout(() => void load(), 400); }
-    }).subscribe();
+    const ch = sb.channel("logistics-live").on("postgres_changes", { event: "*", schema: "public" }, () => { if (t) clearTimeout(t); t = setTimeout(() => void load(), 500); }).subscribe();
     return () => { if (t) clearTimeout(t); void sb.removeChannel(ch); };
   }, [canUse, load]);
 
@@ -67,6 +80,17 @@ export default function LogisticsDashboard() {
   const expiringPapers = vehicles.filter((v) => v.active && [v.insuranceExpiry, v.inspectionExpiry].some((d) => { const s = expiryState(d, today); return s === "soon" || s === "expired"; }));
   const expiringLicences = drivers.filter((d) => d.active && (() => { const s = expiryState(d.licenceExpiry, today); return s === "soon" || s === "expired"; })());
 
+  // Cross-module KPIs (spec §21).
+  const awaitingVehicle = useMemo(() => dispatches.filter((d) => ["Ready for Planning", "Scheduled"].includes(d.status)).length, [dispatches]);
+  const inTransit = useMemo(() => dispatches.filter((d) => d.status === "Dispatched" || d.status === "In Transit").length, [dispatches]);
+  const missingPod = useMemo(() => dispatches.filter((d) => (d.status === "Dispatched" || d.status === "In Transit") && d.stops.some((s) => !s.outcome || s.outcome === "pending")).length, [dispatches]);
+  const openPOs = useMemo(() => pos.filter((p) => !["Cancelled", "Closed", "Fully Received"].includes(p.status)).length, [pos]);
+  const overduePOs = useMemo(() => pos.filter((p) => p.deliveryDate && p.deliveryDate < today && !["Cancelled", "Closed", "Fully Received"].includes(p.status)).length, [pos, today]);
+  const goodsAwaiting = useMemo(() => pos.filter((p) => ["Approved", "Sent to Supplier", "Partially Received"].includes(p.status) && poReceivedQty(p.id, grns) < poOrderedQty(p)).length, [pos, grns]);
+  const fuelThisMonth = useMemo(() => Math.round(trips.filter((t) => (t.departAt ?? t.on).slice(0, 7) === today.slice(0, 7)).reduce((s, t) => s + tripFuelLitres(t), 0)), [trips, today]);
+  const expensesAwaiting = useMemo(() => expenses.filter((e) => ["Submitted", "Verified", "Approved"].includes(e.status)).length, [expenses]);
+  const expensesValue = useMemo(() => expenses.filter((e) => ["Submitted", "Verified", "Approved"].includes(e.status)).reduce((s, e) => s + e.amount, 0), [expenses]);
+
   if (!user) return null;
   if (!canUse) return <Card><p className="text-sm text-muted">This page is for Logistics and Admin.</p></Card>;
 
@@ -83,6 +107,18 @@ export default function LogisticsDashboard() {
         <StatTile label="Failed / retry" value={String(failed.length)} tone={failed.length > 0 ? "gold" : "default"} />
         <StatTile label="Vehicles ready" value={String(readyVehicles)} tone="green" />
         <StatTile label="In maintenance" value={String(maintVehicles)} tone={maintVehicles > 0 ? "gold" : "default"} />
+      </div>
+
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
+        <StatTile label="Awaiting vehicle" value={String(awaitingVehicle)} tone={awaitingVehicle > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/dispatch")} />
+        <StatTile label="In transit" value={String(inTransit)} tone={inTransit > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/dispatch")} />
+        <StatTile label="Missing proof" value={String(missingPod)} tone={missingPod > 0 ? "red" : "default"} onClick={() => router.push("/logistics/dispatch")} />
+        <StatTile label="Open POs" value={String(openPOs)} onClick={() => router.push("/logistics/purchasing")} />
+        <StatTile label="Overdue supplier" value={String(overduePOs)} tone={overduePOs > 0 ? "red" : "default"} onClick={() => router.push("/logistics/purchasing")} />
+        <StatTile label="Goods awaiting" value={String(goodsAwaiting)} tone={goodsAwaiting > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/purchasing")} />
+        <StatTile label="Fuel this month" value={`${fuelThisMonth.toLocaleString()} L`} onClick={() => router.push("/logistics/trips")} />
+        <StatTile label="Expenses to approve" value={String(expensesAwaiting)} tone={expensesAwaiting > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/expenses")} />
+        <StatTile label="Expense value pending" value={formatRWF(expensesValue)} onClick={() => router.push("/logistics/expenses")} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

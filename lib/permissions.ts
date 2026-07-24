@@ -114,6 +114,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Trips & fuel", href: "/logistics/trips" },
     { label: "Transfers & returns", href: "/logistics/transfers" },
     { label: "Logistics expenses", href: "/logistics/expenses" },
+    { label: "Logistics reports", href: "/logistics/reports" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
     // Hatchery
@@ -198,6 +199,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Trips & fuel", href: "/logistics/trips" },
     { label: "Transfers & returns", href: "/logistics/transfers" },
     { label: "Expenses", href: "/logistics/expenses" },
+    { label: "Reports", href: "/logistics/reports" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
   ],
