@@ -24,6 +24,7 @@ import {
 } from "@/lib/hatchery/lifecycle";
 
 const CAN_ACT = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
+const CAN_EDIT = ["Admin", "Hatchery Manager"];
 
 interface FlockRow { batch: Batch; flock: BatchFlock; idx: number; }
 
@@ -43,11 +44,14 @@ export default function CandlingPage() {
 
   const [mode, setMode] = useState<"c1" | "c2">("c1");
   const [sel, setSel] = useState<{ batchId: string; idx: number } | null>(null);
+  const [editStage, setEditStage] = useState<1 | 2 | null>(null); // set when correcting a recorded candling
   const [cats, setCats] = useState<Record<string, string>>({});
   const [tRows, setTRows] = useState<{ machineCode: string; eggs: string }[]>([{ machineCode: "", eggs: "" }]);
   const [err, setErr] = useState<string | null>(null);
 
   const canAct = !!user && CAN_ACT.includes(user.role);
+  // Correcting an already-recorded candling is limited to the Admin & Hatchery Manager.
+  const canEdit = !!user && CAN_EDIT.includes(user.role);
   // Idle hatchers are inactive; transferring eggs into one activates it, so the
   // picker lists all hatchers (free capacity guards over-filling).
   const hatchers = machines.filter((m) => m.type === "hatcher");
@@ -91,6 +95,8 @@ export default function CandlingPage() {
 
   const phase: "c1" | "c2" | "transfer" | null = !selected
     ? null
+    : editStage === 1 ? "c1"
+    : editStage === 2 ? "c2"
     : !flockHasCandling(selected.flock, 1) ? "c1"
     : !flockHasCandling(selected.flock, 2) ? "c2"
     : "transfer";
@@ -109,8 +115,21 @@ export default function CandlingPage() {
 
   if (!user) return null;
 
-  function switchMode(m: "c1" | "c2") { setMode(m); setSel(null); setCats({}); setTRows([{ machineCode: "", eggs: "" }]); setErr(null); }
-  function selectFlock(batchId: string, idx: number) { setSel({ batchId, idx }); setCats({}); setTRows([{ machineCode: "", eggs: "" }]); setErr(null); }
+  function switchMode(m: "c1" | "c2") { setMode(m); setSel(null); setEditStage(null); setCats({}); setTRows([{ machineCode: "", eggs: "" }]); setErr(null); }
+  function selectFlock(batchId: string, idx: number) { setSel({ batchId, idx }); setEditStage(null); setCats({}); setTRows([{ machineCode: "", eggs: "" }]); setErr(null); }
+  /** Re-open a recorded candling to correct its category counts. */
+  function editFlock(batchId: string, idx: number, stage: 1 | 2) {
+    const b = batches.find((x) => x.id === batchId);
+    if (!b) return;
+    const flock = batchFlocks(b)[idx];
+    const rec = [...(flock?.candlings ?? [])].reverse().find((c) => c.stage === stage);
+    setSel({ batchId, idx });
+    setEditStage(stage);
+    setCats(rec ? Object.fromEntries(Object.entries(rec.categories).map(([k, v]) => [k, String(v)])) : {});
+    setTRows([{ machineCode: "", eggs: "" }]);
+    setErr(null);
+  }
+  function closeModal() { setSel(null); setEditStage(null); setCats({}); setErr(null); }
 
   function saveCandling(stage: 1 | 2) {
     setErr(null);
@@ -121,16 +140,26 @@ export default function CandlingPage() {
     const total = candlingTotal(categories);
     const avail = stage === 1 ? target.eggsSet : flockFertileAfterC1(target);
     if (total > avail) return setErr(`Cannot remove more than ${avail.toLocaleString()} eggs from this flock.`);
-    const rec: Candling = { stage, date: todayISO(), categories, totalRemoved: total, by: user!.email, on: nowISO() };
-    target.candlings = [...target.candlings, rec];
+    if (editStage) {
+      // Correcting a recorded candling — replace that stage's record in place.
+      const existingIdx = target.candlings.map((c, i) => ({ c, i })).filter((x) => x.c.stage === stage).map((x) => x.i).pop();
+      if (existingIdx != null) {
+        target.candlings = target.candlings.map((c, i) => i === existingIdx ? { ...c, categories, totalRemoved: total, by: user!.email, on: nowISO() } : c);
+      } else {
+        target.candlings = [...target.candlings, { stage, date: todayISO(), categories, totalRemoved: total, by: user!.email, on: nowISO() }];
+      }
+    } else {
+      const rec: Candling = { stage, date: todayISO(), categories, totalRemoved: total, by: user!.email, on: nowISO() };
+      target.candlings = [...target.candlings, rec];
+    }
     flocks[sel.idx] = target;
     let nb: Batch = recomputeBatchAggregates({ ...selected.batch, flocks });
-    if (batchFlocks(nb).every((f) => flockHasCandling(f, stage))) {
+    if (!editStage && batchFlocks(nb).every((f) => flockHasCandling(f, stage))) {
       nb = markStep(nb, stage === 1 ? "candling-1" : "candling-2", user!);
     }
     upsertBatch(nb);
-    toast(`Candling ${stage === 1 ? "I" : "II"} recorded for flock ${target.flockId} — ${total.toLocaleString()} removed.`);
-    setSel(null); setCats({});
+    toast(`Candling ${stage === 1 ? "I" : "II"} ${editStage ? "updated" : "recorded"} for flock ${target.flockId} — ${total.toLocaleString()} removed.`);
+    closeModal();
   }
 
   function saveTransfer() {
@@ -175,8 +204,8 @@ export default function CandlingPage() {
       {selected && canAct && (phase === "c1" || phase === "c2") && (
         <Modal
           open
-          onClose={() => setSel(null)}
-          title={`Candling ${phase === "c1" ? "I" : "II"} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`}
+          onClose={closeModal}
+          title={`${editStage ? "Edit " : ""}Candling ${phase === "c1" ? "I" : "II"} — ${selected.flock.farm} · flock ${selected.flock.flockId} (${selected.batch.batchNo})`}
           footer={
             <>
               <Button variant="ghost" onClick={() => setSel(null)}>Cancel</Button>
@@ -296,6 +325,9 @@ export default function CandlingPage() {
                           <Button size="sm" onClick={() => selectFlock(batch.id, idx)}>{actionLabel}</Button>
                         ) : (
                           <Pill tone="green">{mode === "c1" ? "C1 ✓" : flockHasCandling(flock, 2) ? "Transferred" : "C2 ✓"}</Pill>
+                        )}
+                        {canEdit && flockHasCandling(flock, stage) && (
+                          <Button size="sm" variant="ghost" onClick={() => editFlock(batch.id, idx, stage)}>Edit</Button>
                         )}
                         <Link href={`/hatchery/batches/${batch.id}`} className="inline-flex items-center rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-ink transition hover:border-gold hover:bg-gold-bg">View</Link>
                       </div>
