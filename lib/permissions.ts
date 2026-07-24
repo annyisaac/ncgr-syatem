@@ -123,6 +123,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Male breeders", href: "/parent-stock/males" },
     { label: "Female breeders", href: "/parent-stock/females" },
     { label: "Production houses", href: "/parent-stock/production" },
+    { label: "Egg transfers", href: "/parent-stock/eggs" },
     // Hatchery
     ...H_ALL,
     // Admin
@@ -220,6 +221,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Male breeders", href: "/parent-stock/males" },
     { label: "Female breeders", href: "/parent-stock/females" },
     { label: "Production houses", href: "/parent-stock/production" },
+    { label: "Egg transfers", href: "/parent-stock/eggs" },
   ],
 
   // ---- DSR portal (code + single-device login) ----
