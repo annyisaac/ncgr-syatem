@@ -8,19 +8,27 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { StatTile } from "@/components/dashboard/DashKit";
-import { todayISO } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
 import {
   ageWeeks, avgBodyWeight, depletionPct, listFlocks, totalsForSex, type BreederFlock,
 } from "@/lib/parentStock";
+import { listDailyLogs, recentMortality, type DailyLog } from "@/lib/psDaily";
+import { activeWithdrawals, expiringStock, listHealth, vaccinationsDue, type HealthRecord } from "@/lib/psHealth";
+import { isLow, listItems, type InventoryItem } from "@/lib/psInventory";
 
 export default function ParentStockDashboard() {
   const { user } = useAuth();
   const [flocks, setFlocks] = useState<BreederFlock[]>([]);
+  const [logs, setLogs] = useState<DailyLog[]>([]);
+  const [health, setHealth] = useState<HealthRecord[]>([]);
+  const [items, setItems] = useState<InventoryItem[]>([]);
 
   const canUse = user?.role === "Admin" || user?.role === "Parent Stock Manager";
 
-  const load = useCallback(async () => { try { setFlocks(await listFlocks()); } catch { /* keep */ } }, []);
+  const load = useCallback(async () => {
+    try { const [f, l, h, i] = await Promise.all([listFlocks(), listDailyLogs(), listHealth(), listItems()]); setFlocks(f); setLogs(l); setHealth(h); setItems(i); } catch { /* keep */ }
+  }, []);
   // eslint-disable-next-line react-hooks/set-state-in-effect
   useEffect(() => { if (canUse) void load(); }, [load, canUse]);
   useEffect(() => {
@@ -28,7 +36,7 @@ export default function ParentStockDashboard() {
     const sb = getSupabase();
     let t: ReturnType<typeof setTimeout> | null = null;
     const ch = sb.channel("ps-dash").on("postgres_changes", { event: "*", schema: "public" }, (p: { table?: string }) => {
-      if (p.table === "ps_flocks") { if (t) clearTimeout(t); t = setTimeout(() => void load(), 400); }
+      if (["ps_flocks", "ps_daily", "ps_health", "ps_inventory"].includes(p.table ?? "")) { if (t) clearTimeout(t); t = setTimeout(() => void load(), 400); }
     }).subscribe();
     return () => { if (t) clearTimeout(t); void sb.removeChannel(ch); };
   }, [canUse, load]);
@@ -40,6 +48,14 @@ export default function ParentStockDashboard() {
   const inLay = active.filter((f) => f.sex === "Female" && f.laying).length;
   const inProduction = active.filter((f) => f.stage === "Production").length;
   const mfRatio = females.birds > 0 ? (males.birds / females.birds) : 0;
+
+  // Attention items (spec §20 — surfaced live in place of push notifications).
+  const vaccDue = useMemo(() => vaccinationsDue(health).filter((v) => v.date <= today), [health, today]);
+  const expiring = useMemo(() => expiringStock(health, today), [health, today]);
+  const withdrawals = useMemo(() => activeWithdrawals(health, today), [health, today]);
+  const lowStock = useMemo(() => items.filter(isLow), [items]);
+  // Flocks losing >0.5% of their birds in the last 7 days.
+  const highMortality = useMemo(() => active.filter((f) => f.currentPopulation > 0 && recentMortality(logs, f.id, 7, today) / f.currentPopulation > 0.005), [active, logs, today]);
 
   if (!user) return null;
   if (!canUse) return <Card><p className="text-sm text-muted">This page is for the Parent Stock Manager and Admin.</p></Card>;
@@ -58,6 +74,20 @@ export default function ParentStockDashboard() {
         <StatTile label="M : F ratio" value={mfRatio ? `1 : ${(1 / mfRatio).toFixed(1)}` : "—"} tone="gold" />
         <StatTile label="In production" value={String(inProduction)} tone="green" />
       </div>
+
+      {(vaccDue.length > 0 || expiring.length > 0 || withdrawals.length > 0 || lowStock.length > 0 || highMortality.length > 0) && (
+        <Card className="border-gold/40">
+          <CardHeader title="Needs attention" />
+          <div className="space-y-1 text-sm">
+            {highMortality.map((f) => <div key={f.id} className="text-red">⚠️ <strong>{f.code}</strong> — high mortality this week ({recentMortality(logs, f.id, 7, today).toLocaleString()} birds)</div>)}
+            {vaccDue.map((v) => <div key={v.id}>💉 <strong>{v.vaccine}</strong> due {formatDate(v.date)}{v.flockCode ? ` · ${v.flockCode}` : ""}</div>)}
+            {expiring.slice(0, 4).map((e, i) => <div key={i} className={e.days < 0 ? "text-red" : ""}>⏳ {e.label} {e.days < 0 ? "expired" : `expires in ${e.days}d`}</div>)}
+            {withdrawals.map((w) => <div key={w.id}>🚫 {w.medicine} withdrawal until {formatDate(w.withdrawalUntil!)}</div>)}
+            {lowStock.map((i) => <div key={i.id}>📦 <strong>{i.name}</strong> low: {i.currentStock} / {i.reorderLevel} {i.unit}</div>)}
+          </div>
+          <p className="mt-2 text-xs text-muted">These update live from health and inventory — the operational alerts the farm watches.</p>
+        </Card>
+      )}
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card>
