@@ -111,6 +111,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Logistics", href: "/logistics" },
     { label: "Dispatch", href: "/logistics/dispatch" },
     { label: "Procurement", href: "/logistics/purchasing" },
+    { label: "Trips & fuel", href: "/logistics/trips" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
     // Hatchery
@@ -190,6 +191,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Deliveries", href: "/planning" },
     { label: "Orders", href: "/orders" },
     { label: "Procurement", href: "/logistics/purchasing" },
+    { label: "Trips & fuel", href: "/logistics/trips" },
     { label: "Vehicles", href: "/logistics/vehicles" },
     { label: "Drivers", href: "/logistics/drivers" },
   ],
