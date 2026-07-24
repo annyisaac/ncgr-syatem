@@ -35,6 +35,10 @@ import {
   type JournalLine,
 } from "@/lib/accounting";
 import { salesEntriesToSync } from "@/lib/salesLedger";
+import { logisticsEntriesToSync } from "@/lib/logisticsLedger";
+import { listReceipts, type GoodsReceipt } from "@/lib/procurement";
+import { listLogisticsExpenses, type LogisticsExpense } from "@/lib/logisticsOps";
+import { listTrips, type Trip } from "@/lib/trips";
 import { balanceSheet, cashSummary, incomeStatement, type StmtGroup } from "@/lib/financialStatements";
 import { ALL_TIME } from "@/components/ui/DateRange";
 import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
@@ -62,17 +66,23 @@ export default function AccountingPage() {
   const [journals, setJournals] = useState<JournalEntry[]>([]);
   const [periods, setPeriods] = useState<AccountingPeriod[]>([]);
   const [audit, setAudit] = useState<AuditEntry[]>([]);
+  const [receipts, setReceipts] = useState<GoodsReceipt[]>([]);
+  const [logisticsExp, setLogisticsExp] = useState<LogisticsExpense[]>([]);
+  const [trips, setTrips] = useState<Trip[]>([]);
   const [tab, setTab] = useState<Tab>("reports");
 
   const canUse = user?.role === "Admin" || user?.role === "Accountant";
 
   const load = useCallback(async () => {
     try {
-      const [a, j, p, au] = await Promise.all([listAccounts(), listJournals(), listPeriods(), listAudit()]);
+      const [a, j, p, au, r, le, t] = await Promise.all([listAccounts(), listJournals(), listPeriods(), listAudit(), listReceipts(), listLogisticsExpenses(), listTrips()]);
       setAccounts(a);
       setJournals(j);
       setPeriods(p);
       setAudit(au);
+      setReceipts(r);
+      setLogisticsExp(le);
+      setTrips(t);
     } catch { /* keep */ }
   }, []);
 
@@ -118,13 +128,38 @@ export default function AccountingPage() {
     } catch { toast("Could not post sales entries.", "error"); }
   }
 
+  // Auto-post logistics to the ledger — goods received (AP), posted logistics
+  // expenses, and completed-trip transport costs. Same idempotent pattern.
+  useEffect(() => {
+    if (!canUse) return;
+    const diff = logisticsEntriesToSync(receipts, logisticsExp, trips, journalsRef.current);
+    if (diff.length === 0) return;
+    (async () => {
+      try {
+        await upsertJournals(diff);
+        setJournals((p) => diff.reduce((acc, e) => upsertLocal(acc, e), p));
+      } catch { /* realtime/next load will retry */ }
+    })();
+  }, [receipts, logisticsExp, trips, canUse]);
+
+  async function syncLogisticsNow() {
+    const diff = logisticsEntriesToSync(receipts, logisticsExp, trips, journals);
+    if (diff.length === 0) return toast("Ledger already up to date with logistics.", "info");
+    try {
+      await upsertJournals(diff);
+      setJournals((p) => diff.reduce((acc, e) => upsertLocal(acc, e), p));
+      toast(`${diff.length} logistics entr${diff.length === 1 ? "y" : "ies"} posted to the ledger.`);
+    } catch { toast("Could not post logistics entries.", "error"); }
+  }
+
   useEffect(() => {
     if (!canUse) return;
     let t: ReturnType<typeof setTimeout> | null = null;
     const sb = getSupabase();
+    const watched = ["coa_accounts", "journal_entries", "goods_receipts", "logistics_expenses", "trips"];
     const ch = sb.channel("accounting-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (p: { table?: string }) => {
-        if (p.table === "coa_accounts" || p.table === "journal_entries") { if (t) clearTimeout(t); t = setTimeout(() => void load(), 350); }
+        if (watched.includes(p.table ?? "")) { if (t) clearTimeout(t); t = setTimeout(() => void load(), 350); }
       }).subscribe();
     return () => { if (t) clearTimeout(t); void sb.removeChannel(ch); };
   }, [canUse, load]);
@@ -154,7 +189,7 @@ export default function AccountingPage() {
       </div>
 
       {tab === "coa" && <ChartOfAccounts accounts={accounts} onSave={async (a) => { setAccounts((p) => upsertLocal(p, a)); try { await upsertAccount(a); toast("Account saved."); } catch { toast("Could not save.", "error"); void load(); } }} email={user.email} />}
-      {tab === "journal" && <Journals accounts={accounts} journals={journals} onSyncSales={syncSalesNow}
+      {tab === "journal" && <Journals accounts={accounts} journals={journals} onSyncSales={syncSalesNow} onSyncLogistics={syncLogisticsNow}
         onSave={async (e) => {
           if (isPeriodClosed(periods, e.date)) { toast(`${e.date.slice(0, 7)} is closed — reopen it first.`, "error"); return; }
           setJournals((p) => upsertLocal(p, e));
@@ -390,9 +425,9 @@ function ChartOfAccounts({ accounts, onSave, email }: { accounts: Account[]; onS
 
 const emptyLine = (): JournalLine => ({ accountCode: "", debit: 0, credit: 0 });
 
-function Journals({ accounts, journals, onSave, onDelete, onSyncSales, email }: {
+function Journals({ accounts, journals, onSave, onDelete, onSyncSales, onSyncLogistics, email }: {
   accounts: Account[]; journals: JournalEntry[];
-  onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; onSyncSales: () => void; email: string;
+  onSave: (e: JournalEntry) => void; onDelete: (id: string) => void; onSyncSales: () => void; onSyncLogistics: () => void; email: string;
 }) {
   const active = useMemo(() => accounts.filter((a) => a.active), [accounts]);
   const acctOpts = useMemo(() => [{ value: "", label: "Select account" }, ...active.map((a) => ({ value: a.code, label: `${a.code} — ${a.name}` }))], [active]);
@@ -427,9 +462,10 @@ function Journals({ accounts, journals, onSave, onDelete, onSyncSales, email }: 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-xs text-muted">Sales are auto-posted from delivered orders and verified receipts. Use “Sync from Sales” to post the latest manually.</p>
-        <div className="flex gap-2">
+        <p className="text-xs text-muted">Sales, and logistics goods-received / expenses / trip costs, are auto-posted to the ledger. Use the Sync buttons to post the latest manually.</p>
+        <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={onSyncSales}>Sync from Sales</Button>
+          <Button variant="secondary" onClick={onSyncLogistics}>Sync from Logistics</Button>
           <Button onClick={() => setShow((v) => !v)}>{show ? "Cancel" : "＋ New journal entry"}</Button>
         </div>
       </div>
