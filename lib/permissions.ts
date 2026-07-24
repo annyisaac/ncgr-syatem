@@ -30,6 +30,9 @@ export function canSee(order: Order, user: User): boolean {
     case "Accountant":
       // Finance oversight — every order, across products and zones.
       return true;
+    case "Logistics Officer":
+      // Distribution — needs every order to plan and dispatch deliveries.
+      return true;
     default:
       // Hatchery coordination/oversight roles see all orders for allocation.
       return HATCHERY_ORDER_ROLES.includes(user.role);
@@ -169,6 +172,18 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Commission", href: "/commission" },
     H_INVENTORY,
     H_SPAREPARTS,
+  ],
+
+  // ---- Logistics ----
+  // Distribution & procurement coordination. Records and submits; the
+  // Accountant verifies and posts. Sees orders and delivery planning to
+  // dispatch, but no ledger, payroll or financial reports.
+  "Logistics Officer": [
+    { label: "Dashboard", href: "/logistics" },
+    { label: "Deliveries", href: "/planning" },
+    { label: "Orders", href: "/orders" },
+    { label: "Vehicles", href: "/logistics/vehicles" },
+    { label: "Drivers", href: "/logistics/drivers" },
   ],
 
   // ---- DSR portal (code + single-device login) ----

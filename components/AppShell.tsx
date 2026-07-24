@@ -275,6 +275,7 @@ const ACCOUNTING_ROUTES = [
 function groupNav(nav: NavItem[]): { name: string; items: NavItem[] }[] {
   const sectionOf = (href: string) => {
     if (href.startsWith("/hatchery")) return "Hatchery";
+    if (href.startsWith("/logistics")) return "Logistics";
     if (ACCOUNTING_ROUTES.some((r) => href === r || href.startsWith(r + "/"))) return "Accounting";
     if (href === "/users") return "Admin";
     return "Sales";
