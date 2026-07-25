@@ -74,6 +74,9 @@ const H_BIO: NavItem = { label: "Biosecurity", href: "/hatchery/biosecurity" };
 const H_MAINT: NavItem = { label: "Maintenance", href: "/hatchery/maintenance" };
 const H_HANDOVER: NavItem = { label: "Shift handover", href: "/hatchery/handover" };
 
+/** Materials & spare-parts request — shared across the request → approval → pay chain. */
+const MATERIAL_REQ: NavItem = { label: "Material requests", href: "/logistics/material-requests" };
+
 const H_ALL: NavItem[] = [
   H_DASH, H_RECEPTION, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_BATCHES,
   H_CANDLING, H_HATCH, H_BOXES, H_VACCINATION, H_VAC_REQUESTS,
@@ -111,6 +114,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Logistics", href: "/logistics" },
     { label: "Dispatch", href: "/logistics/dispatch" },
     { label: "Procurement", href: "/logistics/purchasing" },
+    MATERIAL_REQ,
     { label: "Trips & fuel", href: "/logistics/trips" },
     { label: "Transfers & returns", href: "/logistics/transfers" },
     { label: "Logistics expenses", href: "/logistics/expenses" },
@@ -193,6 +197,8 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Commission", href: "/commission" },
     // Approves and posts logistics expenses submitted by Logistics.
     { label: "Logistics expenses", href: "/logistics/expenses" },
+    // Authorises the spend and files paid material/spare-part requests.
+    MATERIAL_REQ,
     H_INVENTORY,
     H_SPAREPARTS,
   ],
@@ -207,6 +213,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Deliveries", href: "/planning" },
     { label: "Orders", href: "/orders" },
     { label: "Procurement", href: "/logistics/purchasing" },
+    MATERIAL_REQ,
     { label: "Trips & fuel", href: "/logistics/trips" },
     { label: "Transfers & returns", href: "/logistics/transfers" },
     { label: "Expenses", href: "/logistics/expenses" },
@@ -242,7 +249,7 @@ const NAV: Record<Role, NavItem[]> = {
   ],
 
   // ---- Hatchery roles ----
-  "Hatchery Manager": H_ALL,
+  "Hatchery Manager": [...H_ALL, MATERIAL_REQ],
   // Specialised in machine upkeep — no egg reception, batches/setting,
   // candling, coordination, chick inventory or general inventory.
   "Operations Manager": [
@@ -252,9 +259,10 @@ const NAV: Record<Role, NavItem[]> = {
     // and verifies logistics expenses before Finance.
     { label: "Procurement approvals", href: "/logistics/purchasing" },
     { label: "Logistics expenses", href: "/logistics/expenses" },
+    MATERIAL_REQ,
   ],
   "Hatchery Operations Manager": [
-    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_BIO, H_HATCH, H_BOXES,
+    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_BIO, H_HATCH, H_BOXES, MATERIAL_REQ,
   ],
   // Shift handover is limited to the Hatchery Manager and Production Technician.
   "Production Technician": [
@@ -274,7 +282,7 @@ const NAV: Record<Role, NavItem[]> = {
     H_DASH, H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
   ],
   "Maintenance Technician": [
-    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS,
+    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, MATERIAL_REQ,
   ],
   "Hatchery Sales & Coordination Officer": [
     H_DASH, H_COORD, H_FARM_VISITS, H_CHICKS, H_INVENTORY, H_BATCHES,
