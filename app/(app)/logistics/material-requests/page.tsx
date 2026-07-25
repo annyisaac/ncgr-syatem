@@ -14,11 +14,45 @@ import { StatTile } from "@/components/dashboard/DashKit";
 import { formatRWF } from "@/lib/config";
 import { formatDate, nowISO } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
+import { fetchTable, upsertRow } from "@/lib/hatchery/db";
+import type { Purchase, SparePart, Supply } from "@/lib/hatchery/types";
 import {
   MSR_PAYMENT_METHODS, MSR_PRIORITIES, MSR_TYPES, MSR_UNITS, NEXT_STATUS, isOpen, listMaterialRequests,
   newMaterialRequestId, nextRef, stamp, upsertMaterialRequest, whoActs,
   type MSRItem, type MSRStatus, type MaterialRequest,
 } from "@/lib/materialRequests";
+
+/** Add a paid request's items to stock: spare parts → spare-parts store,
+ *  materials → hatchery inventory. Merges into an existing item by name. */
+async function receiveIntoStock(r: MaterialRequest, actor: { email: string; name: string }) {
+  const isSpare = r.type === "Spare parts";
+  const [supplies, spares] = await Promise.all([fetchTable<Supply>("supplies"), fetchTable<SparePart>("spare_parts")]);
+  const totalQty = r.items.reduce((s, i) => s + (Number(i.quantity) || 0), 0) || 1;
+  const perUnit = Math.round((Number(r.payment?.amount) || 0) / totalQty);
+  const supplier = r.payment?.supplier?.trim() ?? "";
+  const on = new Date().toISOString();
+  const rid = () => `${isSpare ? "spr" : "sup"}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+
+  for (const it of r.items) {
+    const qty = Number(it.quantity) || 0;
+    if (qty <= 0 || !it.name.trim()) continue;
+    const purchase: Purchase = { qty, unitCost: perUnit, supplier, on, by: actor.email };
+    const key = it.name.trim().toLowerCase();
+    if (isSpare) {
+      const ex = spares.find((s) => s.name.trim().toLowerCase() === key);
+      const row: SparePart = ex
+        ? { ...ex, quantity: ex.quantity + qty, purchases: [...(ex.purchases ?? []), purchase], history: [...ex.history, `${on} — +${qty} ${ex.unit} from ${r.ref} by ${actor.name}`], on }
+        : { id: rid(), name: it.name.trim(), unit: it.unit, quantity: qty, purchases: [purchase], history: [`${on} — created (${qty} ${it.unit}) from ${r.ref} by ${actor.name}`], by: actor.email, on };
+      await upsertRow("spare_parts", row);
+    } else {
+      const ex = supplies.find((s) => s.name.trim().toLowerCase() === key);
+      const row: Supply = ex
+        ? { ...ex, quantity: ex.quantity + qty, purchases: [...(ex.purchases ?? []), purchase], history: [...ex.history, `${on} — +${qty} ${ex.unit} from ${r.ref} by ${actor.name}`], on }
+        : { id: rid(), kind: "hygiene", name: it.name.trim(), unit: it.unit, quantity: qty, purchases: [purchase], history: [`${on} — created (${qty} ${it.unit}) from ${r.ref} by ${actor.name}`], by: actor.email, on };
+      await upsertRow("supplies", row);
+    }
+  }
+}
 
 const tone = (s: MSRStatus) =>
   s === "Filed" ? "green" : s === "Rejected" ? "red" : s === "Paid" ? "info"
@@ -64,6 +98,22 @@ export default function MaterialRequestsPage() {
     try { await upsertMaterialRequest(r); } catch { toast("Could not save.", "error"); void load(); }
   }
 
+  /** On payment confirmation, add the bought items to stock (once). */
+  async function saveFromDetail(r: MaterialRequest) {
+    let next = r;
+    if (r.status === "Paid" && !r.receivedToStock && r.payment) {
+      try {
+        await receiveIntoStock(r, { email: user!.email, name: user!.name });
+        next = { ...r, receivedToStock: true, history: [...r.history, stamp(user!.email, `received into ${r.type === "Spare parts" ? "spare parts" : "inventory"}`)] };
+        toast(`Payment confirmed — items added to ${r.type === "Spare parts" ? "spare parts" : "inventory"}.`);
+      } catch { toast("Payment saved, but could not update stock — add it manually.", "error"); }
+    } else {
+      toast("Request updated.");
+    }
+    await save(next);
+    setView(null);
+  }
+
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -103,7 +153,7 @@ export default function MaterialRequestsPage() {
       {view && (
         <DetailModal key={view.id} initial={view} email={user.email} isLogistics={isLogistics} isAdmin={isAdmin} isFinance={isFinance}
           onClose={() => setView(null)}
-          onSave={(r) => { void save(r); setView(null); toast("Request updated."); }} />
+          onSave={(r) => { void saveFromDetail(r); }} />
       )}
     </div>
   );
@@ -255,6 +305,7 @@ function DetailModal({ initial, email, isLogistics, isAdmin, isFinance, onClose,
               <Field label="Supplier"><Input value={pay.supplier} onChange={(e) => setPay({ ...pay, supplier: e.target.value })} /></Field>
               <Field label="Reference"><Input value={pay.ref} onChange={(e) => setPay({ ...pay, ref: e.target.value })} placeholder="receipt / txn" /></Field>
             </div>
+            <p className="mt-2 text-xs text-muted">Confirming adds these items to {r.type === "Spare parts" ? "the spare-parts store" : "inventory"} and posts the spend to the ledger.</p>
           </div>
         )}
 

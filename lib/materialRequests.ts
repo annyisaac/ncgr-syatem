@@ -48,6 +48,7 @@ export interface MaterialRequest {
   financeBy?: string;
   financeOn?: string;
   payment?: MSRPayment;
+  receivedToStock?: boolean; // items added to inventory / spare parts on payment
   filedBy?: string;
   filedOn?: string;
   decisionNote?: string;  // rejection reason
