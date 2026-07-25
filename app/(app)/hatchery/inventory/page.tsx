@@ -8,7 +8,6 @@ import { useHatchery } from "@/components/HatcheryProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
@@ -20,30 +19,22 @@ const CAN_MANAGE = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery
 const num = (v: string) => Number(v) || 0;
 const catLabel = (k: SupplyKind) => SUPPLY_CATEGORIES.find((c) => c.value === k)?.label ?? k;
 const rwf = (n: number) => `${Math.round(n).toLocaleString()} RWF`;
-const totalBought = (s: Supply) => (s.purchases ?? []).reduce((a, p) => a + p.qty, 0);
 const totalSpent = (s: Supply) => (s.purchases ?? []).reduce((a, p) => a + p.qty * p.unitCost, 0);
 const lastBuy = (s: Supply) => (s.purchases ?? []).map((p) => p.on).sort().slice(-1)[0];
+
+const blankForm = () => ({ kind: "hygiene" as SupplyKind, name: "", unit: "units", qty: "", unitCost: "", supplier: "", date: todayISO() });
 
 export default function InventoryPage() {
   const { user } = useAuth();
   const { supplies, inventory, upsertSupply, newId } = useHatchery();
   const { toast } = useToast();
 
-  const [showAdd, setShowAdd] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
   const [cat, setCat] = useState<"all" | SupplyKind>("all");
   const [q, setQ] = useState("");
-  const [buyFor, setBuyFor] = useState<Supply | null>(null);
-  const [editItem, setEditItem] = useState<Supply | null>(null);
-  const [ef, setEf] = useState({ name: "", unit: "", kind: "hygiene" as SupplyKind, quantity: "" });
-  const [adjust, setAdjust] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
-
-  const [f, setF] = useState({
-    kind: "hygiene" as SupplyKind, name: "", unit: "units",
-    qty: "", unitCost: "", supplier: "", date: todayISO(),
-  });
-  const [buy, setBuy] = useState({ qty: "", unitCost: "", supplier: "", date: todayISO() });
-  const [buyErr, setBuyErr] = useState<string | null>(null);
+  const [f, setF] = useState(blankForm());
 
   const canManage = !!user && CAN_MANAGE.includes(user.role);
 
@@ -75,92 +66,52 @@ export default function InventoryPage() {
     setF((prev) => ({ ...prev, kind, unit }));
   }
 
-  function addItem(e: React.FormEvent) {
+  function openAdd() { setEditingId(null); setF(blankForm()); setErr(null); setShowForm(true); }
+  function openEdit(s: Supply) {
+    const last = s.purchases?.slice(-1)[0];
+    setEditingId(s.id);
+    setF({ kind: s.kind, name: s.name, unit: s.unit, qty: String(s.quantity), unitCost: String(last?.unitCost ?? ""), supplier: last?.supplier ?? "", date: (last?.on ?? todayISO()).slice(0, 10) });
+    setErr(null);
+    setShowForm(true);
+  }
+  function closeForm() { setShowForm(false); setEditingId(null); setF(blankForm()); setErr(null); }
+
+  function saveItem(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
-    if (!f.name.trim()) return setErr("Enter a name.");
-    const qty = num(f.qty);
+    const name = f.name.trim();
+    if (!name) return setErr("Enter a name.");
+    const qty = Math.max(0, num(f.qty));
     const cost = num(f.unitCost);
     const on = nowISO();
-    const purchases: Purchase[] = qty > 0
+    // One purchase line captures the item's cost & supplier at this quantity.
+    const purchases: Purchase[] = qty > 0 || cost > 0
       ? [{ qty, unitCost: cost, supplier: f.supplier.trim(), on: `${f.date}T08:00:00Z`, by: user!.email }]
       : [];
-    const s: Supply = {
-      id: newId("sup"), kind: f.kind, name: f.name.trim(),
-      unit: f.unit.trim() || "units", quantity: qty, purchases,
-      history: [`${on} — created${qty > 0 ? ` with ${qty} ${f.unit} @ ${rwf(cost)} from ${f.supplier || "—"}` : ""} by ${user!.name}`],
-      by: user!.email, on,
-    };
-    upsertSupply(s);
-    toast(`${s.name} added to inventory.`);
-    setShowAdd(false);
-    setF({ ...f, name: "", qty: "", unitCost: "", supplier: "" });
-  }
 
-  function openBuy(s: Supply) {
-    setBuyFor(s);
-    setBuy({ qty: "", unitCost: String(s.purchases?.slice(-1)[0]?.unitCost ?? ""), supplier: s.purchases?.slice(-1)[0]?.supplier ?? "", date: todayISO() });
-    setBuyErr(null);
-  }
-
-  function saveBuy() {
-    if (!buyFor) return;
-    setBuyErr(null);
-    const qty = num(buy.qty);
-    if (qty <= 0) return setBuyErr("Enter a quantity bought.");
-    const cost = num(buy.unitCost);
-    const on = nowISO();
-    const p: Purchase = { qty, unitCost: cost, supplier: buy.supplier.trim(), on: `${buy.date}T08:00:00Z`, by: user!.email };
-    upsertSupply({
-      ...buyFor,
-      quantity: buyFor.quantity + qty,
-      purchases: [...(buyFor.purchases ?? []), p],
-      history: [...buyFor.history, `${on} — bought ${qty} ${buyFor.unit} @ ${rwf(cost)} from ${buy.supplier || "—"} by ${user!.name}`],
-      on,
-    });
-    toast(`Recorded ${qty} ${buyFor.unit} of ${buyFor.name} (${rwf(qty * cost)}).`);
-    setBuyFor(null);
-  }
-
-  function openEdit(s: Supply) {
-    setEditItem(s);
-    setEf({ name: s.name, unit: s.unit, kind: s.kind, quantity: String(s.quantity) });
-  }
-  function saveEdit() {
-    if (!editItem) return;
-    const name = ef.name.trim();
-    if (!name) return;
-    const on = nowISO();
-    const qty = Math.max(0, num(ef.quantity));
-    const changes: string[] = [];
-    if (qty !== editItem.quantity) changes.push(`stock ${editItem.quantity}→${qty}`);
-    if (name !== editItem.name) changes.push("name");
-    if (ef.kind !== editItem.kind) changes.push("category");
-    if ((ef.unit.trim() || editItem.unit) !== editItem.unit) changes.push("unit");
-    upsertSupply({
-      ...editItem, name, unit: ef.unit.trim() || editItem.unit, kind: ef.kind, quantity: qty,
-      history: [...editItem.history, `${on} — edited (${changes.join(", ") || "no change"}) by ${user!.name}`], on,
-    });
-    toast(`${name} updated.`);
-    setEditItem(null);
-  }
-
-  function applyAdjust(s: Supply) {
-    const delta = Number(adjust[s.id]) || 0;
-    if (delta === 0) return;
-    const on = nowISO();
-    upsertSupply({
-      ...s, quantity: Math.max(0, s.quantity + delta),
-      history: [...s.history, `${on} — adjust ${delta > 0 ? "+" : ""}${delta} ${s.unit} by ${user!.name}`], on,
-    });
-    toast(`${s.name} adjusted (${delta > 0 ? "+" : ""}${delta}).`);
-    setAdjust({ ...adjust, [s.id]: "" });
+    if (editingId) {
+      const existing = supplies.find((s) => s.id === editingId);
+      if (!existing) return;
+      upsertSupply({
+        ...existing, kind: f.kind, name, unit: f.unit.trim() || "units", quantity: qty, purchases,
+        history: [...existing.history, `${on} — edited by ${user!.name}`], on,
+      });
+      toast(`${name} updated.`);
+    } else {
+      upsertSupply({
+        id: newId("sup"), kind: f.kind, name, unit: f.unit.trim() || "units", quantity: qty, purchases,
+        history: [`${on} — created${qty > 0 ? ` with ${qty} ${f.unit} @ ${rwf(cost)} from ${f.supplier || "—"}` : ""} by ${user!.name}`],
+        by: user!.email, on,
+      });
+      toast(`${name} added to inventory.`);
+    }
+    closeForm();
   }
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        {canManage && <Button onClick={() => setShowAdd((v) => !v)}>{showAdd ? "Hide" : "Add item"}</Button>}
+        {canManage && <Button onClick={() => (showForm ? closeForm() : openAdd())}>{showForm ? "Hide" : "Add item"}</Button>}
       </div>
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -170,27 +121,27 @@ export default function InventoryPage() {
         <Kpi label="Chicks available" value={totals.chicks.toLocaleString()} tone="green" />
       </div>
 
-      {showAdd && canManage && (
+      {showForm && canManage && (
         <Card>
-          <CardHeader title="Add inventory item" />
-          <form onSubmit={addItem} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <CardHeader title={editingId ? "Edit inventory item" : "Add inventory item"} />
+          <form onSubmit={saveItem} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Category">
               <Select value={f.kind} onChange={(e) => pickCategory(e.target.value as SupplyKind)}
                 options={SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))} />
             </Field>
             <Field label="Name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Newcastle vaccine / Soap" /></Field>
             <Field label="Unit"><Input value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></Field>
-            <Field label="Quantity bought"><Input type="number" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></Field>
-            <Field label="Unit cost (RWF)"><Input type="number" value={f.unitCost} onChange={(e) => setF({ ...f, unitCost: e.target.value })} /></Field>
+            <Field label="Quantity in stock"><Input type="number" min={0} value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></Field>
+            <Field label="Unit cost (RWF)"><Input type="number" min={0} value={f.unitCost} onChange={(e) => setF({ ...f, unitCost: e.target.value })} /></Field>
             <Field label="Supplier"><Input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} /></Field>
-            <Field label="Date bought"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+            <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
             <div className="sm:col-span-3 rounded-md border border-line bg-cream/40 px-3 py-2 text-sm">
-              Purchase total: <strong className="text-ink">{rwf(num(f.qty) * num(f.unitCost))}</strong>
+              Total value: <strong className="text-ink">{rwf(num(f.qty) * num(f.unitCost))}</strong>
             </div>
             {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
             <div className="sm:col-span-3 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button type="submit">Save item</Button>
+              <Button variant="ghost" onClick={closeForm}>Cancel</Button>
+              <Button type="submit">{editingId ? "Save changes" : "Save item"}</Button>
             </div>
           </form>
         </Card>
@@ -209,38 +160,34 @@ export default function InventoryPage() {
           <thead>
             <tr>
               <Th>Item</Th><Th>Category</Th><Th className="text-right">In stock</Th>
-              <Th className="text-right">Total bought</Th><Th className="text-right">Total spent</Th><Th>Last buy</Th>
-              {canManage && <Th>Actions</Th>}
+              <Th className="text-right">Unit cost</Th><Th className="text-right">Value</Th><Th>Supplier</Th><Th>Updated</Th>
+              {canManage && <Th></Th>}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={canManage ? 7 : 6} text="Nothing in stock." />
+              <EmptyRow colSpan={canManage ? 8 : 7} text="Nothing in stock." />
             ) : (
-              rows.map((s) => (
-                <tr key={s.id}>
-                  <Td className="font-medium">{s.name}</Td>
-                  <Td>{catLabel(s.kind)}</Td>
-                  <Td className="text-right">
-                    {s.quantity.toLocaleString()} {s.unit}{" "}
-                    {s.quantity <= 0 ? <Pill tone="gold">out</Pill> : s.quantity < 20 && <Pill tone="gold">low</Pill>}
-                  </Td>
-                  <Td className="text-right text-muted">{totalBought(s).toLocaleString()}</Td>
-                  <Td className="text-right text-muted">{rwf(totalSpent(s))}</Td>
-                  <Td className="text-xs text-muted">{lastBuy(s) ? formatDate(lastBuy(s)!.slice(0, 10)) : "—"}</Td>
-                  {canManage && (
-                    <Td>
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Button size="sm" onClick={() => openBuy(s)}>Buy</Button>
-                        <input type="number" value={adjust[s.id] ?? ""} onChange={(e) => setAdjust({ ...adjust, [s.id]: e.target.value })}
-                          className="w-16 rounded-md border border-line bg-transparent px-2 py-1 text-sm" placeholder="±" />
-                        <Button size="sm" variant="secondary" onClick={() => applyAdjust(s)}>Adjust</Button>
-                        <Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button>
-                      </div>
+              rows.map((s) => {
+                const last = s.purchases?.slice(-1)[0];
+                return (
+                  <tr key={s.id}>
+                    <Td className="font-medium">{s.name}</Td>
+                    <Td>{catLabel(s.kind)}</Td>
+                    <Td className="text-right">
+                      {s.quantity.toLocaleString()} {s.unit}{" "}
+                      {s.quantity <= 0 ? <Pill tone="gold">out</Pill> : s.quantity < 20 && <Pill tone="gold">low</Pill>}
                     </Td>
-                  )}
-                </tr>
-              ))
+                    <Td className="text-right text-muted">{last?.unitCost ? rwf(last.unitCost) : "—"}</Td>
+                    <Td className="text-right text-muted">{rwf(totalSpent(s))}</Td>
+                    <Td className="text-xs text-muted">{last?.supplier || "—"}</Td>
+                    <Td className="text-xs text-muted">{lastBuy(s) ? formatDate(lastBuy(s)!.slice(0, 10)) : "—"}</Td>
+                    {canManage && (
+                      <Td><Button size="sm" variant="ghost" onClick={() => openEdit(s)}>Edit</Button></Td>
+                    )}
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </TableWrap>
@@ -262,45 +209,6 @@ export default function InventoryPage() {
         </div>
         <p className="mt-2 text-xs text-muted">Chicks are produced by the hatch/counting flow and consumed by sales allocation — managed there, not bought here.</p>
       </Card>
-
-      <Modal
-        open={!!buyFor}
-        onClose={() => setBuyFor(null)}
-        title={buyFor ? `Record purchase — ${buyFor.name}` : "Record purchase"}
-        footer={
-          <>
-            <Button variant="ghost" onClick={() => setBuyFor(null)}>Cancel</Button>
-            <Button onClick={saveBuy}>Save purchase</Button>
-          </>
-        }
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <Field label={`Quantity (${buyFor?.unit ?? ""})`}><Input type="number" value={buy.qty} onChange={(e) => setBuy({ ...buy, qty: e.target.value })} /></Field>
-          <Field label="Unit cost (RWF)"><Input type="number" value={buy.unitCost} onChange={(e) => setBuy({ ...buy, unitCost: e.target.value })} /></Field>
-          <Field label="Supplier"><Input value={buy.supplier} onChange={(e) => setBuy({ ...buy, supplier: e.target.value })} /></Field>
-          <Field label="Date"><Input type="date" value={buy.date} onChange={(e) => setBuy({ ...buy, date: e.target.value })} /></Field>
-          <div className="sm:col-span-2 rounded-md border border-line bg-cream/40 px-3 py-2 text-sm">
-            Total: <strong className="text-ink">{rwf(num(buy.qty) * num(buy.unitCost))}</strong>
-            {buyFor && <> · new stock <strong className="text-ink">{(buyFor.quantity + num(buy.qty)).toLocaleString()} {buyFor.unit}</strong></>}
-          </div>
-          {buyErr && <p className="sm:col-span-2 text-sm text-status-refunded">{buyErr}</p>}
-        </div>
-      </Modal>
-
-      <Modal
-        open={!!editItem}
-        onClose={() => setEditItem(null)}
-        title={editItem ? `Edit item — ${editItem.name}` : "Edit item"}
-        footer={<><Button variant="ghost" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={saveEdit}>Save changes</Button></>}
-      >
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div className="sm:col-span-2"><Field label="Name"><Input value={ef.name} onChange={(e) => setEf({ ...ef, name: e.target.value })} /></Field></div>
-          <Field label="Category"><Select value={ef.kind} onChange={(e) => setEf({ ...ef, kind: e.target.value as SupplyKind })} options={SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))} /></Field>
-          <Field label="Unit"><Input value={ef.unit} onChange={(e) => setEf({ ...ef, unit: e.target.value })} /></Field>
-          <Field label="Current stock"><Input type="number" min={0} value={ef.quantity} onChange={(e) => setEf({ ...ef, quantity: e.target.value })} /></Field>
-          <p className="sm:col-span-2 text-xs text-muted">Edit any detail here — name, category, unit and current stock. Setting the stock directly is recorded in the item&apos;s history; Buy still logs supplier purchases.</p>
-        </div>
-      </Modal>
     </div>
   );
 }
