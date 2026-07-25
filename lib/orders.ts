@@ -56,11 +56,12 @@ export function paymentCheckState(order: Order): {
 // Gate checks (return a reason string when blocked, or null when allowed)
 // ---------------------------------------------------------------------------
 
-export function canConfirm(order: Order, isAdmin = false): string | null {
+export function canConfirm(order: Order, allowUnpaid = false): string | null {
   if (order.confirmedOk) return "Already confirmed.";
   if (order.status !== "pending") return "Order is not pending.";
-  // Only Admin may confirm an order that has no payment yet.
-  if (order.payments.length === 0 && !isAdmin)
+  // Admin and payment checkers may confirm an order that has no payment yet;
+  // sellers must record a payment first.
+  if (order.payments.length === 0 && !allowUnpaid)
     return "Record at least one payment before confirming.";
   return null;
 }
