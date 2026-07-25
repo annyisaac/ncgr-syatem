@@ -19,6 +19,7 @@ import type { JournalEntry } from "./accounting";
 import { grnAcceptedValue, type GoodsReceipt } from "./procurement";
 import { tripTotalCost, type Trip } from "./trips";
 import type { LogisticsExpense } from "./logisticsOps";
+import type { MaterialRequest } from "./materialRequests";
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -100,12 +101,32 @@ export function deriveTripEntries(trips: Trip[]): JournalEntry[] {
   return out;
 }
 
+/** Materials → Consumables & Supplies (6070); spare parts → Repairs &
+ *  Maintenance (6050). */
+const materialAccount = (type: string) => (type === "Spare parts" ? "6050" : "6070");
+
+/** Paid material/spare-part requests → the expense against cash or bank,
+ *  posted when Logistics confirms the payment (status Paid or Filed). */
+export function deriveMaterialRequestEntries(requests: MaterialRequest[]): JournalEntry[] {
+  const out: JournalEntry[] = [];
+  for (const r of requests) {
+    if (r.status !== "Paid" && r.status !== "Filed") continue;
+    const p = r.payment;
+    const amount = round2(Number(p?.amount) || 0);
+    if (!p || amount <= 0) continue;
+    const credit = p.method === "Bank" ? BANK : CASH;
+    out.push(entry(`je_msr_${r.id}`, p.on.slice(0, 10), r.ref,
+      `${r.type}${p.supplier ? ` · ${p.supplier}` : ""} — ${r.ref}`, materialAccount(r.type), credit, amount, p.on));
+  }
+  return out;
+}
+
 /** All logistics postings that are missing or changed vs the current ledger. */
 export function logisticsEntriesToSync(
-  receipts: GoodsReceipt[], expenses: LogisticsExpense[], trips: Trip[], existing: JournalEntry[]
+  receipts: GoodsReceipt[], expenses: LogisticsExpense[], trips: Trip[], materialRequests: MaterialRequest[], existing: JournalEntry[]
 ): JournalEntry[] {
   const byId = new Map(existing.map((e) => [e.id, e]));
   const sig = (e: JournalEntry) => `${e.date}|${e.status}|${JSON.stringify(e.lines)}`;
-  return [...deriveGrnEntries(receipts), ...deriveLogisticsExpenseEntries(expenses), ...deriveTripEntries(trips)]
+  return [...deriveGrnEntries(receipts), ...deriveLogisticsExpenseEntries(expenses), ...deriveTripEntries(trips), ...deriveMaterialRequestEntries(materialRequests)]
     .filter((d) => { const cur = byId.get(d.id); return !cur || sig(cur) !== sig(d); });
 }

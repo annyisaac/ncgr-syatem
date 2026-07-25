@@ -39,6 +39,7 @@ import { logisticsEntriesToSync } from "@/lib/logisticsLedger";
 import { listReceipts, type GoodsReceipt } from "@/lib/procurement";
 import { listLogisticsExpenses, type LogisticsExpense } from "@/lib/logisticsOps";
 import { listTrips, type Trip } from "@/lib/trips";
+import { listMaterialRequests, type MaterialRequest } from "@/lib/materialRequests";
 import { productionCostEntriesToSync, listProductionCosts, type ProductionCost } from "@/lib/psCosting";
 import { balanceSheet, cashSummary, incomeStatement, type StmtGroup } from "@/lib/financialStatements";
 import { ALL_TIME } from "@/components/ui/DateRange";
@@ -70,6 +71,7 @@ export default function AccountingPage() {
   const [receipts, setReceipts] = useState<GoodsReceipt[]>([]);
   const [logisticsExp, setLogisticsExp] = useState<LogisticsExpense[]>([]);
   const [trips, setTrips] = useState<Trip[]>([]);
+  const [materialReqs, setMaterialReqs] = useState<MaterialRequest[]>([]);
   const [prodCosts, setProdCosts] = useState<ProductionCost[]>([]);
   const [tab, setTab] = useState<Tab>("reports");
 
@@ -77,7 +79,7 @@ export default function AccountingPage() {
 
   const load = useCallback(async () => {
     try {
-      const [a, j, p, au, r, le, t, pc] = await Promise.all([listAccounts(), listJournals(), listPeriods(), listAudit(), listReceipts(), listLogisticsExpenses(), listTrips(), listProductionCosts()]);
+      const [a, j, p, au, r, le, t, pc, mr] = await Promise.all([listAccounts(), listJournals(), listPeriods(), listAudit(), listReceipts(), listLogisticsExpenses(), listTrips(), listProductionCosts(), listMaterialRequests()]);
       setAccounts(a);
       setJournals(j);
       setPeriods(p);
@@ -86,6 +88,7 @@ export default function AccountingPage() {
       setLogisticsExp(le);
       setTrips(t);
       setProdCosts(pc);
+      setMaterialReqs(mr);
     } catch { /* keep */ }
   }, []);
 
@@ -137,7 +140,7 @@ export default function AccountingPage() {
   useEffect(() => {
     if (!canUse) return;
     const diff = [
-      ...logisticsEntriesToSync(receipts, logisticsExp, trips, journalsRef.current),
+      ...logisticsEntriesToSync(receipts, logisticsExp, trips, materialReqs, journalsRef.current),
       ...productionCostEntriesToSync(prodCosts, journalsRef.current),
     ];
     if (diff.length === 0) return;
@@ -147,11 +150,11 @@ export default function AccountingPage() {
         setJournals((p) => diff.reduce((acc, e) => upsertLocal(acc, e), p));
       } catch { /* realtime/next load will retry */ }
     })();
-  }, [receipts, logisticsExp, trips, prodCosts, canUse]);
+  }, [receipts, logisticsExp, trips, materialReqs, prodCosts, canUse]);
 
   async function syncLogisticsNow() {
     const diff = [
-      ...logisticsEntriesToSync(receipts, logisticsExp, trips, journals),
+      ...logisticsEntriesToSync(receipts, logisticsExp, trips, materialReqs, journals),
       ...productionCostEntriesToSync(prodCosts, journals),
     ];
     if (diff.length === 0) return toast("Ledger already up to date with operations.", "info");
@@ -166,7 +169,7 @@ export default function AccountingPage() {
     if (!canUse) return;
     let t: ReturnType<typeof setTimeout> | null = null;
     const sb = getSupabase();
-    const watched = ["coa_accounts", "journal_entries", "goods_receipts", "logistics_expenses", "trips", "ps_costs"];
+    const watched = ["coa_accounts", "journal_entries", "goods_receipts", "logistics_expenses", "trips", "ps_costs", "material_requests"];
     const ch = sb.channel("accounting-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (p: { table?: string }) => {
         if (watched.includes(p.table ?? "")) { if (t) clearTimeout(t); t = setTimeout(() => void load(), 350); }
