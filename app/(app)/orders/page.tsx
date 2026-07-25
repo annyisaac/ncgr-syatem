@@ -117,11 +117,8 @@ function OrdersInner() {
     // Arrived from a notification — show only that order, ignoring other filters.
     if (orderParam) return list.filter((o) => o.id === orderParam);
 
-    // A pure payment checker only needs confirmed orders (payments follow
-    // confirmation). The Tetra Payment Checker also acts as a zone manager, so
-    // they see every order like a manager — including not-yet-confirmed ones,
-    // which is what a creation notification links them to.
-    if (role === "Ross Payment Checker") list = list.filter((o) => o.confirmedOk);
+    // Payment checkers see every order for their product — including
+    // not-yet-confirmed ones — so they can record a payment and confirm it.
 
     // Dashboard tile filter.
     if (tile === "pending") list = list.filter((o) => o.status === "pending");
@@ -186,7 +183,7 @@ function OrdersInner() {
               ? 1
               : 0
       );
-  }, [orders, user, role, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
+  }, [orders, user, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
 
   // Delivery dates the Admin has opened, for the delivery-date filter.
   const deliveryDateOptions = useMemo(
