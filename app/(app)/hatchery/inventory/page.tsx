@@ -34,7 +34,7 @@ export default function InventoryPage() {
   const [q, setQ] = useState("");
   const [buyFor, setBuyFor] = useState<Supply | null>(null);
   const [editItem, setEditItem] = useState<Supply | null>(null);
-  const [ef, setEf] = useState({ name: "", unit: "", kind: "hygiene" as SupplyKind });
+  const [ef, setEf] = useState({ name: "", unit: "", kind: "hygiene" as SupplyKind, quantity: "" });
   const [adjust, setAdjust] = useState<Record<string, string>>({});
   const [err, setErr] = useState<string | null>(null);
 
@@ -124,16 +124,22 @@ export default function InventoryPage() {
 
   function openEdit(s: Supply) {
     setEditItem(s);
-    setEf({ name: s.name, unit: s.unit, kind: s.kind });
+    setEf({ name: s.name, unit: s.unit, kind: s.kind, quantity: String(s.quantity) });
   }
   function saveEdit() {
     if (!editItem) return;
     const name = ef.name.trim();
     if (!name) return;
     const on = nowISO();
+    const qty = Math.max(0, num(ef.quantity));
+    const changes: string[] = [];
+    if (qty !== editItem.quantity) changes.push(`stock ${editItem.quantity}→${qty}`);
+    if (name !== editItem.name) changes.push("name");
+    if (ef.kind !== editItem.kind) changes.push("category");
+    if ((ef.unit.trim() || editItem.unit) !== editItem.unit) changes.push("unit");
     upsertSupply({
-      ...editItem, name, unit: ef.unit.trim() || editItem.unit, kind: ef.kind,
-      history: [...editItem.history, `${on} — details edited by ${user!.name}`], on,
+      ...editItem, name, unit: ef.unit.trim() || editItem.unit, kind: ef.kind, quantity: qty,
+      history: [...editItem.history, `${on} — edited (${changes.join(", ") || "no change"}) by ${user!.name}`], on,
     });
     toast(`${name} updated.`);
     setEditItem(null);
@@ -288,10 +294,11 @@ export default function InventoryPage() {
         footer={<><Button variant="ghost" onClick={() => setEditItem(null)}>Cancel</Button><Button onClick={saveEdit}>Save changes</Button></>}
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2"><Field label="Name"><Input value={ef.name} onChange={(e) => setEf({ ...ef, name: e.target.value })} /></Field></div>
           <Field label="Category"><Select value={ef.kind} onChange={(e) => setEf({ ...ef, kind: e.target.value as SupplyKind })} options={SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))} /></Field>
           <Field label="Unit"><Input value={ef.unit} onChange={(e) => setEf({ ...ef, unit: e.target.value })} /></Field>
-          <div className="sm:col-span-2"><Field label="Name"><Input value={ef.name} onChange={(e) => setEf({ ...ef, name: e.target.value })} /></Field></div>
-          <p className="sm:col-span-2 text-xs text-muted">Editing renames or recategorises the item. Stock quantity is changed with Adjust, and purchases with Buy.</p>
+          <Field label="Current stock"><Input type="number" min={0} value={ef.quantity} onChange={(e) => setEf({ ...ef, quantity: e.target.value })} /></Field>
+          <p className="sm:col-span-2 text-xs text-muted">Edit any detail here — name, category, unit and current stock. Setting the stock directly is recorded in the item&apos;s history; Buy still logs supplier purchases.</p>
         </div>
       </Modal>
     </div>
