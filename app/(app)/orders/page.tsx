@@ -251,10 +251,10 @@ function OrdersInner() {
     if (lastVerified) acts.push({ label: "Payment proof", onClick: () => void paymentProofPDF(o, lastVerified) });
 
     if (!o.confirmedOk && !isClosed(o)) {
-      const r = canConfirm(o, isAdmin);
+      const r = canConfirm(o, isAdmin || isChecker);
       acts.push({
         label:
-          o.payments.length === 0 && isAdmin
+          o.payments.length === 0 && (isAdmin || isChecker)
             ? "Confirm order (no payment)"
             : "Confirm order",
         disabled: !!r,
