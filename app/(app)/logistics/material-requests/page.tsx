@@ -212,7 +212,7 @@ function DetailModal({ initial, email, isLogistics, isAdmin, isFinance, onClose,
   initial: MaterialRequest; email: string; isLogistics: boolean; isAdmin: boolean; isFinance: boolean;
   onClose: () => void; onSave: (r: MaterialRequest) => void;
 }) {
-  const [r] = useState<MaterialRequest>(initial);
+  const [r, setR] = useState<MaterialRequest>(initial);
   const [rejectNote, setRejectNote] = useState("");
   const [pay, setPay] = useState({ amount: "", method: "Cash", ref: "", supplier: "" });
 
@@ -223,6 +223,18 @@ function DetailModal({ initial, email, isLogistics, isAdmin, isFinance, onClose,
     (actor === "finance" && isFinance);
   const isPaymentStage = r.status === "Finance authorized";
   const canReject = isOpen(r) && r.status !== "Paid" && canActNow;
+
+  // Logistics can add/remove/adjust the submitted items before it's paid.
+  const canEditItems = isLogistics && isOpen(r) && r.status !== "Paid";
+  const itemsChanged = JSON.stringify(r.items) !== JSON.stringify(initial.items);
+  const setItem = (i: number, p: Partial<MSRItem>) => setR((x) => ({ ...x, items: x.items.map((it, j) => j === i ? { ...it, ...p } : it) }));
+  const addItem = () => setR((x) => ({ ...x, items: [...x.items, { name: "", quantity: 1, unit: "pcs" }] }));
+  const removeItem = (i: number) => setR((x) => ({ ...x, items: x.items.filter((_, j) => j !== i) }));
+  function saveItems() {
+    const items = r.items.filter((it) => it.name.trim() && (Number(it.quantity) || 0) > 0);
+    if (items.length === 0) return;
+    onSave({ ...r, items, history: [...r.history, stamp(email, "items updated by Logistics")] });
+  }
 
   function advance() {
     const next = NEXT_STATUS[r.status];
@@ -273,11 +285,31 @@ function DetailModal({ initial, email, isLogistics, isAdmin, isFinance, onClose,
         </div>
 
         <div>
-          <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Items</div>
+          <div className="mb-1 flex items-center justify-between">
+            <div className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Items</div>
+            {canEditItems && <span className="text-[0.66rem] text-muted">Logistics can add / remove / adjust</span>}
+          </div>
           <TableWrap>
-            <thead><tr><Th>Item</Th><Th className="text-right">Qty</Th><Th>Unit</Th></tr></thead>
-            <tbody>{r.items.map((it, i) => <tr key={i}><Td className="font-medium">{it.name}</Td><Td className="text-right">{it.quantity.toLocaleString()}</Td><Td>{it.unit}</Td></tr>)}</tbody>
+            <thead><tr><Th>Item</Th><Th className="w-20 text-right">Qty</Th><Th className="w-28">Unit</Th>{canEditItems && <Th></Th>}</tr></thead>
+            <tbody>
+              {canEditItems
+                ? r.items.map((it, i) => (
+                  <tr key={i}>
+                    <Td><Input value={it.name} onChange={(e) => setItem(i, { name: e.target.value })} /></Td>
+                    <Td><Input type="number" min={0} value={it.quantity || ""} onChange={(e) => setItem(i, { quantity: Number(e.target.value) || 0 })} /></Td>
+                    <Td><Select value={it.unit} onChange={(e) => setItem(i, { unit: e.target.value })} options={MSR_UNITS.map((u) => ({ value: u, label: u }))} /></Td>
+                    <Td>{r.items.length > 1 && <Button size="sm" variant="ghost" onClick={() => removeItem(i)}>✕</Button>}</Td>
+                  </tr>
+                ))
+                : r.items.map((it, i) => <tr key={i}><Td className="font-medium">{it.name}</Td><Td className="text-right">{it.quantity.toLocaleString()}</Td><Td>{it.unit}</Td></tr>)}
+            </tbody>
           </TableWrap>
+          {canEditItems && (
+            <div className="mt-2 flex items-center gap-2">
+              <Button size="sm" variant="ghost" onClick={addItem}>＋ Add item</Button>
+              {itemsChanged && <Button size="sm" variant="secondary" onClick={saveItems}>Save item changes</Button>}
+            </div>
+          )}
         </div>
         {r.reason && <div className="text-sm"><span className="text-muted">Reason:</span> {r.reason}</div>}
 
