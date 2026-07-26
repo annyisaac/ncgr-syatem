@@ -73,6 +73,7 @@ const H_SPAREPARTS: NavItem = { label: "Spare parts", href: "/hatchery/sparepart
 const H_BIO: NavItem = { label: "Biosecurity", href: "/hatchery/biosecurity" };
 const H_MAINT: NavItem = { label: "Maintenance", href: "/hatchery/maintenance" };
 const H_HANDOVER: NavItem = { label: "Shift handover", href: "/hatchery/handover" };
+const H_REPORTS: NavItem = { label: "Reports", href: "/hatchery/reports" };
 
 /** Materials & spare-parts request — shared across the request → approval → pay chain. */
 const MATERIAL_REQ: NavItem = { label: "Material requests", href: "/logistics/material-requests" };
@@ -81,7 +82,7 @@ const H_ALL: NavItem[] = [
   H_DASH, H_RECEPTION, H_STORE, H_FUMIGATION, H_MACHINES, H_OPERATORS, H_BATCHES,
   H_CANDLING, H_HATCH, H_BOXES, H_VACCINATION, H_VAC_REQUESTS,
   H_FARM_VISITS, H_COORD, H_CHICKS, H_INVENTORY, H_SPAREPARTS, H_BIO, H_MAINT,
-  H_HANDOVER,
+  H_HANDOVER, H_REPORTS,
 ];
 
 const NAV: Record<Role, NavItem[]> = {
@@ -260,9 +261,10 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Procurement approvals", href: "/logistics/purchasing" },
     { label: "Logistics expenses", href: "/logistics/expenses" },
     MATERIAL_REQ,
+    H_REPORTS,
   ],
   "Hatchery Operations Manager": [
-    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_BIO, H_HATCH, H_BOXES, MATERIAL_REQ,
+    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_BIO, H_HATCH, H_BOXES, MATERIAL_REQ, H_REPORTS,
   ],
   // Shift handover is limited to the Hatchery Manager and Production Technician.
   "Production Technician": [
