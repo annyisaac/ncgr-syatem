@@ -6,6 +6,9 @@ import { useAuth } from "@/components/AuthProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TableWrap, Th, Td } from "@/components/ui/Table";
+import { SearchTimeBar } from "@/components/dashboard/DashKit";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatRWF } from "@/lib/config";
 import { formatDate, todayISO } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
@@ -52,6 +55,9 @@ function Report({ title, cols, rows, note }: { title: string; cols: Col[]; rows:
 export default function ParentStockReports() {
   const { user } = useAuth();
   const [tab, setTab] = useState<Tab>("performance");
+  const [q, setQ] = useState("");
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
   const [flocks, setFlocks] = useState<BreederFlock[]>([]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [houses, setHouses] = useState<ProductionHouse[]>([]);
@@ -81,59 +87,66 @@ export default function ParentStockReports() {
 
   const today = todayISO();
   const flockById = useMemo(() => new Map(flocks.map((f) => [f.id, f])), [flocks]);
-
-  const perf = useMemo(() => flocks.filter((f) => f.active).map((f) => ({
-    flock: f.code, sex: f.sex, breed: f.breed, house: f.house ?? "—",
-    age: ageWeeks(f, today) ?? "—", placed: f.initialPopulation, current: f.currentPopulation,
-    depletion: `${depletionPct(f)}%`, weight: f.bodyWeightG ?? "—", uniformity: f.uniformityPct ?? "—",
-    cumMortality: cumulativeLost(logs, f.id),
-  })), [flocks, logs, today]);
-
-  const houseRows = useMemo(() => houses.filter((h) => h.active).map((h) => {
-    const r = houseRatio(h, flockById.get(h.femaleFlockId ?? ""));
-    return { house: h.name, femaleFlock: h.femaleFlockCode ?? "—", females: r.females, males: r.males, ratio: r.ratioLabel, fertility: h.fertilityPct ? `${h.fertilityPct}%` : "—", hatchability: h.hatchabilityPct ? `${h.hatchabilityPct}%` : "—" };
-  }), [houses, flockById]);
-
-  const eggRows = useMemo(() => flocks.filter((f) => f.sex === "Female").map((f) => {
-    const fl = logsForFlock(logs, f.id);
-    const eggs = fl.reduce((s, l) => s + (Number(l.eggsProduced) || 0), 0);
-    const hatch = fl.reduce((s, l) => s + (Number(l.hatchableEggs) || 0), 0);
-    const reject = fl.reduce((s, l) => s + rejectEggsTotal(l), 0);
-    return { flock: f.code, hens: f.currentPopulation, eggs, hatchable: hatch, reject, hatchablePct: eggs > 0 ? `${Math.round((hatch / eggs) * 100)}%` : "—", rejectPct: eggs > 0 ? `${Math.round((reject / eggs) * 100)}%` : "—" };
-  }).filter((r) => r.eggs > 0), [flocks, logs]);
-
-  const feedRows = useMemo(() => flocks.filter((f) => f.active).map((f) => {
-    const fl = logsForFlock(logs, f.id);
-    const feed = fl.reduce((s, l) => s + (Number(l.feedKg) || 0), 0);
-    const water = fl.reduce((s, l) => s + (Number(l.waterL) || 0), 0);
-    return { flock: f.code, feedKg: Math.round(feed), feedPerBird: f.currentPopulation > 0 ? (feed / f.currentPopulation).toFixed(2) : "—", waterL: Math.round(water), mortality7d: recentMortality(logs, f.id, 7, today), cumMortality: cumulativeLost(logs, f.id) };
-  }), [flocks, logs, today]);
-
-  const vaccinations = useMemo(() => health.filter((r): r is VaccinationRec => r.kind === "vaccination").map((v) => ({ date: formatDate(v.date), vaccine: v.vaccine, flock: v.flockCode ?? "farm", route: v.route ?? "—", batch: v.batchNo ?? "—", status: v.status })), [health]);
-  const medications = useMemo(() => health.filter((r): r is MedicationRec => r.kind === "medication").map((m) => ({ date: formatDate(m.date), medicine: m.medicine, type: m.movement, flock: m.flockCode ?? "—", qty: m.quantity ?? "—", withdrawal: m.withdrawalUntil ? formatDate(m.withdrawalUntil) : "—" })), [health]);
-  const biosecurity = useMemo(() => health.filter((r): r is BiosecurityRec => r.kind === "biosecurity").map((b) => ({ date: formatDate(b.date), type: b.type, location: b.location ?? "—", compliant: b.compliant === false ? "No" : "Yes", incident: b.incident ? (b.severity ?? "Yes") : "—" })), [health]);
-  const mortInvest = useMemo(() => health.filter((r): r is MortalityRec => r.kind === "mortality").map((m) => ({ date: formatDate(m.date), flock: m.flockCode ?? m.house ?? "—", qty: m.quantity, cause: m.cause ?? "—", disposal: m.disposalMethod ?? "—" })), [health]);
-
-  const invRows = useMemo(() => items.filter((i) => i.active).map((i) => ({ item: i.name, category: i.category, stock: `${i.currentStock} ${i.unit}`, reorder: i.reorderLevel ?? "—", low: isLow(i) ? "LOW" : "", value: i.unitCost ? formatRWF(i.currentStock * i.unitCost) : "—" })), [items]);
-  const costRows = useMemo(() => costs.slice().sort((a, b) => (a.period < b.period ? 1 : -1)).map((c) => ({ period: c.period, operatingCost: formatRWF(manualCostTotal(c)), lines: c.lines.filter((l) => l.amount > 0).length })), [costs]);
-
-  const audit = useMemo(() => {
-    const out: { when: string; entity: string; ref: string; line: string }[] = [];
-    const add = (entity: string, ref: string, history?: string[]) => { for (const h of history ?? []) { const [iso, ...rest] = h.split(" · "); out.push({ when: iso, entity, ref, line: rest.join(" · ") }); } };
-    flocks.forEach((f) => add("Flock", f.code, f.history));
-    houses.forEach((h) => add("House", h.name, h.history));
-    transfers.forEach((t) => out.push({ when: t.on, entity: "Male transfer", ref: t.ref, line: `${t.quantity} males ${t.maleFlockCode} → ${t.houseName}` }));
-    reqs.forEach((r) => add("Requisition", r.ref, r.history));
-    return out.sort((a, b) => (a.when < b.when ? 1 : -1)).slice(0, 300).map((r) => ({ when: r.when.replace("T", " ").slice(0, 16), entity: r.entity, ref: r.ref, line: r.line }));
-  }, [flocks, houses, transfers, reqs]);
+  const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
 
   if (!user) return null;
   if (!canUse) return <Card><p className="text-sm text-muted">This page is for the Parent Stock Manager and Admin.</p></Card>;
 
+  // Period + search filters. Daily-log-derived totals use period-scoped logs;
+  // dated records (health, costs, audit) filter by their own date.
+  const noRange = !range.from && !range.to;
+  const mq = q.trim().toLowerCase();
+  const inP = (iso?: string) => (noRange ? true : !!iso && inRange(iso.slice(0, 10), range));
+  const hit = (text: string) => !mq || text.toLowerCase().includes(mq);
+  const fLogs = logs.filter((l) => inP(l.date));
+
+  const perf = flocks.filter((f) => f.active && hit(`${f.code} ${f.breed} ${f.house ?? ""} ${f.sex}`)).map((f) => ({
+    flock: f.code, sex: f.sex, breed: f.breed, house: f.house ?? "—",
+    age: ageWeeks(f, today) ?? "—", placed: f.initialPopulation, current: f.currentPopulation,
+    depletion: `${depletionPct(f)}%`, weight: f.bodyWeightG ?? "—", uniformity: f.uniformityPct ?? "—",
+    cumMortality: cumulativeLost(fLogs, f.id),
+  }));
+
+  const houseRows = houses.filter((h) => h.active && hit(`${h.name} ${h.femaleFlockCode ?? ""}`)).map((h) => {
+    const r = houseRatio(h, flockById.get(h.femaleFlockId ?? ""));
+    return { house: h.name, femaleFlock: h.femaleFlockCode ?? "—", females: r.females, males: r.males, ratio: r.ratioLabel, fertility: h.fertilityPct ? `${h.fertilityPct}%` : "—", hatchability: h.hatchabilityPct ? `${h.hatchabilityPct}%` : "—" };
+  });
+
+  const eggRows = flocks.filter((f) => f.sex === "Female" && hit(f.code)).map((f) => {
+    const fl = logsForFlock(fLogs, f.id);
+    const eggs = fl.reduce((s, l) => s + (Number(l.eggsProduced) || 0), 0);
+    const hatch = fl.reduce((s, l) => s + (Number(l.hatchableEggs) || 0), 0);
+    const reject = fl.reduce((s, l) => s + rejectEggsTotal(l), 0);
+    return { flock: f.code, hens: f.currentPopulation, eggs, hatchable: hatch, reject, hatchablePct: eggs > 0 ? `${Math.round((hatch / eggs) * 100)}%` : "—", rejectPct: eggs > 0 ? `${Math.round((reject / eggs) * 100)}%` : "—" };
+  }).filter((r) => r.eggs > 0);
+
+  const feedRows = flocks.filter((f) => f.active && hit(f.code)).map((f) => {
+    const fl = logsForFlock(fLogs, f.id);
+    const feed = fl.reduce((s, l) => s + (Number(l.feedKg) || 0), 0);
+    const water = fl.reduce((s, l) => s + (Number(l.waterL) || 0), 0);
+    return { flock: f.code, feedKg: Math.round(feed), feedPerBird: f.currentPopulation > 0 ? (feed / f.currentPopulation).toFixed(2) : "—", waterL: Math.round(water), mortality7d: recentMortality(logs, f.id, 7, today), cumMortality: cumulativeLost(fLogs, f.id) };
+  });
+
+  const vaccinations = health.filter((r): r is VaccinationRec => r.kind === "vaccination" && inP(r.date) && hit(`${r.vaccine} ${r.flockCode ?? ""}`)).map((v) => ({ date: formatDate(v.date), vaccine: v.vaccine, flock: v.flockCode ?? "farm", route: v.route ?? "—", batch: v.batchNo ?? "—", status: v.status }));
+  const medications = health.filter((r): r is MedicationRec => r.kind === "medication" && inP(r.date) && hit(`${r.medicine} ${r.flockCode ?? ""}`)).map((m) => ({ date: formatDate(m.date), medicine: m.medicine, type: m.movement, flock: m.flockCode ?? "—", qty: m.quantity ?? "—", withdrawal: m.withdrawalUntil ? formatDate(m.withdrawalUntil) : "—" }));
+  const biosecurity = health.filter((r): r is BiosecurityRec => r.kind === "biosecurity" && inP(r.date) && hit(`${r.type} ${r.location ?? ""}`)).map((b) => ({ date: formatDate(b.date), type: b.type, location: b.location ?? "—", compliant: b.compliant === false ? "No" : "Yes", incident: b.incident ? (b.severity ?? "Yes") : "—" }));
+  const mortInvest = health.filter((r): r is MortalityRec => r.kind === "mortality" && inP(r.date) && hit(`${r.flockCode ?? ""} ${r.house ?? ""} ${r.cause ?? ""}`)).map((m) => ({ date: formatDate(m.date), flock: m.flockCode ?? m.house ?? "—", qty: m.quantity, cause: m.cause ?? "—", disposal: m.disposalMethod ?? "—" }));
+
+  const invRows = items.filter((i) => i.active && hit(`${i.name} ${i.category}`)).map((i) => ({ item: i.name, category: i.category, stock: `${i.currentStock} ${i.unit}`, reorder: i.reorderLevel ?? "—", low: isLow(i) ? "LOW" : "", value: i.unitCost ? formatRWF(i.currentStock * i.unitCost) : "—" }));
+  const costRows = costs.filter((c) => inP(`${c.period}-15`) && hit(c.period)).slice().sort((a, b) => (a.period < b.period ? 1 : -1)).map((c) => ({ period: c.period, operatingCost: formatRWF(manualCostTotal(c)), lines: c.lines.filter((l) => l.amount > 0).length }));
+
+  const auditAll: { when: string; entity: string; ref: string; line: string }[] = [];
+  const addAudit = (entity: string, ref: string, history?: string[]) => { for (const h of history ?? []) { const [iso, ...rest] = h.split(" · "); auditAll.push({ when: iso, entity, ref, line: rest.join(" · ") }); } };
+  flocks.forEach((f) => addAudit("Flock", f.code, f.history));
+  houses.forEach((h) => addAudit("House", h.name, h.history));
+  transfers.forEach((t) => auditAll.push({ when: t.on, entity: "Male transfer", ref: t.ref, line: `${t.quantity} males ${t.maleFlockCode} → ${t.houseName}` }));
+  reqs.forEach((r) => addAudit("Requisition", r.ref, r.history));
+  const audit = auditAll.filter((a) => inP(a.when) && hit(`${a.entity} ${a.ref} ${a.line}`)).sort((a, b) => (a.when < b.when ? 1 : -1)).slice(0, 300).map((r) => ({ when: r.when.replace("T", " ").slice(0, 16), entity: r.entity, ref: r.ref, line: r.line }));
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Breeder-farm reports — export any table to CSV, or print the page.</p>
+        <div className="min-w-0 flex-1"><SearchTimeBar q={q} setQ={setQ} placeholder="Search these reports…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} /></div>
         <Button variant="secondary" size="sm" onClick={() => window.print()}>Print</Button>
       </div>
 

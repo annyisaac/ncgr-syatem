@@ -7,7 +7,9 @@ import { useHatchery } from "@/components/HatcheryProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TableWrap, Th, Td } from "@/components/ui/Table";
-import { StatTile } from "@/components/dashboard/DashKit";
+import { StatTile, SearchTimeBar } from "@/components/dashboard/DashKit";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatDate, todayISO } from "@/lib/format";
 import { removedInStage, settableEggs } from "@/lib/hatchery/lifecycle";
 
@@ -51,11 +53,26 @@ export default function HatcheryReportsPage() {
   const { user } = useAuth();
   const { batches, receptions, inventory, supplies, spareParts, vaccinations, biosecurity, maintenance } = useHatchery();
   const [tab, setTab] = useState<Tab>("production");
+  const [q, setQ] = useState("");
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
 
   const today = todayISO();
   const batchNo = useMemo(() => new Map(batches.map((b) => [b.id, b.batchNo])), [batches]);
+  const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
 
-  const production = useMemo(() => batches.map((b) => {
+  if (!user) return null;
+
+  // Period + search filters (plain — report tables aren't perf-critical).
+  const noRange = !range.from && !range.to;
+  const mq = q.trim().toLowerCase();
+  const inP = (iso?: string) => (noRange ? true : !!iso && inRange(iso, range));
+  const hit = (text: string) => !mq || text.toLowerCase().includes(mq);
+
+  const fBatches = batches.filter((b) => inP(b.setDate ?? b.createdAt) && hit(`${b.batchNo} ${b.productType} ${b.farm}`));
+  const fInventory = inventory.filter((i) => i.availableCount > 0 && inP(i.hatchDate) && hit(`${batchNo.get(i.batchId) ?? ""} ${i.productType}`));
+
+  const production = fBatches.map((b) => {
     const fertile = Math.max(0, b.eggsSet - removedInStage(b, 1) - removedInStage(b, 2));
     return {
       batch: b.batchNo, product: b.productType, farm: b.farm, setDate: b.setDate ? formatDate(b.setDate) : "—",
@@ -64,41 +81,39 @@ export default function HatcheryReportsPage() {
       hatchOfSet: b.hatchedCount ? pct(b.hatchedCount, b.eggsSet) : "—",
       culls: b.culls, saleable: b.saleableCount, status: b.status,
     };
-  }), [batches]);
+  });
 
-  const reception = useMemo(() => receptions.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((r) => ({
+  const reception = receptions.filter((r) => inP(r.date) && hit(`${r.farm} ${r.flockId} ${r.productType}`)).sort((a, b) => (a.date < b.date ? 1 : -1)).map((r) => ({
     date: formatDate(r.date), farm: r.farm, flock: r.flockId, product: r.productType,
     received: r.eggsReceived, cracked: r.crackedOnFarm + r.crackedOnSet, misshapen: r.misshapen, dirty: r.dirty,
     settable: settableEggs(r), ageDays: r.ageOfEggs, flockWeeks: r.ageOfFlock,
-  })), [receptions]);
+  }));
 
-  const chicks = useMemo(() => inventory.filter((i) => i.availableCount > 0).slice().sort((a, b) => (a.hatchDate < b.hatchDate ? 1 : -1)).map((i) => ({
+  const chicks = fInventory.slice().sort((a, b) => (a.hatchDate < b.hatchDate ? 1 : -1)).map((i) => ({
     batch: batchNo.get(i.batchId) ?? i.batchId, product: i.productType, hatchDate: formatDate(i.hatchDate),
     ageDays: daysBetween(i.hatchDate, today), available: i.availableCount,
-  })), [inventory, batchNo, today]);
+  }));
 
-  const supplyRows = useMemo(() => supplies.map((s) => {
+  const supplyRows = supplies.filter((s) => hit(`${s.name} ${s.kind}`)).map((s) => {
     const last = s.purchases?.slice(-1)[0];
     return { item: s.name, category: s.kind, stock: `${s.quantity} ${s.unit}`, unitCost: last?.unitCost ? rwf(last.unitCost) : "—", value: rwf((s.purchases ?? []).reduce((a, p) => a + p.qty * p.unitCost, 0)), supplier: last?.supplier || "—" };
-  }), [supplies]);
-  const spareRows = useMemo(() => spareParts.map((s) => ({ part: s.name, quantity: `${s.quantity} ${s.unit}`, location: s.location || "—" })), [spareParts]);
+  });
+  const spareRows = spareParts.filter((s) => hit(`${s.name} ${s.location ?? ""}`)).map((s) => ({ part: s.name, quantity: `${s.quantity} ${s.unit}`, location: s.location || "—" }));
 
-  const vaccRows = useMemo(() => vaccinations.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).map((v) => ({ date: formatDate(v.date), batch: batchNo.get(v.batchId) ?? v.batchId, vaccine: v.vaccine, doses: v.doses, by: v.administeredBy })), [vaccinations, batchNo]);
-  const bioRows = useMemo(() => biosecurity.slice().sort((a, b) => (a.on < b.on ? 1 : -1)).map((l) => ({ date: formatDate(l.on.slice(0, 10)), kind: l.kind, area: l.area || "—", staff: l.staff, notes: l.notes })), [biosecurity]);
-  const maintRows = useMemo(() => maintenance.slice().sort((a, b) => (a.on < b.on ? 1 : -1)).map((l) => ({ date: formatDate(l.on.slice(0, 10)), kind: l.kind, area: l.area || "—", downtime: l.downtimeHours ?? "—", staff: l.staff, notes: l.notes })), [maintenance]);
+  const vaccRows = vaccinations.filter((v) => inP(v.date) && hit(`${v.vaccine} ${batchNo.get(v.batchId) ?? ""}`)).sort((a, b) => (a.date < b.date ? 1 : -1)).map((v) => ({ date: formatDate(v.date), batch: batchNo.get(v.batchId) ?? v.batchId, vaccine: v.vaccine, doses: v.doses, by: v.administeredBy }));
+  const bioRows = biosecurity.filter((l) => inP(l.on.slice(0, 10)) && hit(`${l.kind} ${l.area ?? ""} ${l.notes} ${l.staff}`)).sort((a, b) => (a.on < b.on ? 1 : -1)).map((l) => ({ date: formatDate(l.on.slice(0, 10)), kind: l.kind, area: l.area || "—", staff: l.staff, notes: l.notes }));
+  const maintRows = maintenance.filter((l) => inP(l.on.slice(0, 10)) && hit(`${l.kind} ${l.area ?? ""} ${l.notes} ${l.staff}`)).sort((a, b) => (a.on < b.on ? 1 : -1)).map((l) => ({ date: formatDate(l.on.slice(0, 10)), kind: l.kind, area: l.area || "—", downtime: l.downtimeHours ?? "—", staff: l.staff, notes: l.notes }));
 
-  if (!user) return null;
-
-  // Top-line KPIs.
-  const totalSet = batches.reduce((s, b) => s + b.eggsSet, 0);
-  const totalHatched = batches.reduce((s, b) => s + b.hatchedCount, 0);
-  const totalFertile = batches.reduce((s, b) => s + Math.max(0, b.eggsSet - removedInStage(b, 1) - removedInStage(b, 2)), 0);
-  const chicksAvail = inventory.filter((i) => i.availableCount > 0).reduce((s, i) => s + i.availableCount, 0);
+  // KPIs reflect the current filter.
+  const totalSet = fBatches.reduce((s, b) => s + b.eggsSet, 0);
+  const totalHatched = fBatches.reduce((s, b) => s + b.hatchedCount, 0);
+  const totalFertile = fBatches.reduce((s, b) => s + Math.max(0, b.eggsSet - removedInStage(b, 1) - removedInStage(b, 2)), 0);
+  const chicksAvail = fInventory.reduce((s, i) => s + i.availableCount, 0);
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Hatchery reports — export any table to CSV, or print the page.</p>
+        <div className="min-w-0 flex-1"><SearchTimeBar q={q} setQ={setQ} placeholder="Search these reports…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} /></div>
         <Button variant="secondary" size="sm" onClick={() => window.print()}>Print</Button>
       </div>
 
@@ -117,18 +132,18 @@ export default function HatcheryReportsPage() {
       </div>
 
       {tab === "production" && (
-        <Report title="Batch production, fertility & hatchability" note="Fertility = fertile ÷ eggs set; hatchability = hatched ÷ fertile."
+        <Report title="Batch production, fertility & hatchability" note="Filtered by set date. Fertility = fertile ÷ eggs set; hatchability = hatched ÷ fertile."
           cols={[{ key: "batch", label: "Batch" }, { key: "product", label: "Product" }, { key: "farm", label: "Farm" }, { key: "setDate", label: "Set date" }, { key: "eggsSet", label: "Eggs set", align: "right" }, { key: "fertile", label: "Fertile", align: "right" }, { key: "fertility", label: "Fertility", align: "right" }, { key: "hatched", label: "Hatched", align: "right" }, { key: "hatchability", label: "Hatchability", align: "right" }, { key: "hatchOfSet", label: "Hatch of set", align: "right" }, { key: "culls", label: "Culls", align: "right" }, { key: "saleable", label: "Saleable", align: "right" }, { key: "status", label: "Status" }]} rows={production} />
       )}
       {tab === "reception" && (
-        <Report title="Egg reception" cols={[{ key: "date", label: "Date" }, { key: "farm", label: "Farm" }, { key: "flock", label: "Flock" }, { key: "product", label: "Product" }, { key: "received", label: "Received", align: "right" }, { key: "cracked", label: "Cracked", align: "right" }, { key: "misshapen", label: "Misshapen", align: "right" }, { key: "dirty", label: "Dirty", align: "right" }, { key: "settable", label: "Settable", align: "right" }, { key: "ageDays", label: "Egg age (d)", align: "right" }, { key: "flockWeeks", label: "Flock (wk)", align: "right" }]} rows={reception} />
+        <Report title="Egg reception" note="Filtered by reception date." cols={[{ key: "date", label: "Date" }, { key: "farm", label: "Farm" }, { key: "flock", label: "Flock" }, { key: "product", label: "Product" }, { key: "received", label: "Received", align: "right" }, { key: "cracked", label: "Cracked", align: "right" }, { key: "misshapen", label: "Misshapen", align: "right" }, { key: "dirty", label: "Dirty", align: "right" }, { key: "settable", label: "Settable", align: "right" }, { key: "ageDays", label: "Egg age (d)", align: "right" }, { key: "flockWeeks", label: "Flock (wk)", align: "right" }]} rows={reception} />
       )}
       {tab === "chicks" && (
-        <Report title="Chick inventory" cols={[{ key: "batch", label: "Batch" }, { key: "product", label: "Product" }, { key: "hatchDate", label: "Hatch date" }, { key: "ageDays", label: "Age (d)", align: "right" }, { key: "available", label: "Available", align: "right" }]} rows={chicks} />
+        <Report title="Chick inventory" note="Filtered by hatch date." cols={[{ key: "batch", label: "Batch" }, { key: "product", label: "Product" }, { key: "hatchDate", label: "Hatch date" }, { key: "ageDays", label: "Age (d)", align: "right" }, { key: "available", label: "Available", align: "right" }]} rows={chicks} />
       )}
       {tab === "inventory" && <div className="space-y-5">
-        <Report title="Supplies inventory" cols={[{ key: "item", label: "Item" }, { key: "category", label: "Category" }, { key: "stock", label: "In stock", align: "right" }, { key: "unitCost", label: "Unit cost", align: "right" }, { key: "value", label: "Value", align: "right" }, { key: "supplier", label: "Supplier" }]} rows={supplyRows} />
-        <Report title="Spare parts" cols={[{ key: "part", label: "Part" }, { key: "quantity", label: "Quantity", align: "right" }, { key: "location", label: "Location" }]} rows={spareRows} />
+        <Report title="Supplies inventory" note="Current stock (search only)." cols={[{ key: "item", label: "Item" }, { key: "category", label: "Category" }, { key: "stock", label: "In stock", align: "right" }, { key: "unitCost", label: "Unit cost", align: "right" }, { key: "value", label: "Value", align: "right" }, { key: "supplier", label: "Supplier" }]} rows={supplyRows} />
+        <Report title="Spare parts" note="Current stock (search only)." cols={[{ key: "part", label: "Part" }, { key: "quantity", label: "Quantity", align: "right" }, { key: "location", label: "Location" }]} rows={spareRows} />
       </div>}
       {tab === "health" && <div className="space-y-5">
         <Report title="Vaccination" cols={[{ key: "date", label: "Date" }, { key: "batch", label: "Batch" }, { key: "vaccine", label: "Vaccine" }, { key: "doses", label: "Doses", align: "right" }, { key: "by", label: "By" }]} rows={vaccRows} />

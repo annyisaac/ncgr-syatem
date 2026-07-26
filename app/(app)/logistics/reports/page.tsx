@@ -7,8 +7,11 @@ import { useData } from "@/components/DataProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { TableWrap, Th, Td } from "@/components/ui/Table";
+import { SearchTimeBar } from "@/components/dashboard/DashKit";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatRWF } from "@/lib/config";
-import { formatDate } from "@/lib/format";
+import { formatDate, todayISO } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
 import {
   expiryState, listDispatches, listDrivers, listVehicles,
@@ -95,13 +98,32 @@ export default function LogisticsReportsPage() {
   const dispById = useMemo(() => new Map(dispatches.map((d) => [d.id, d])), [dispatches]);
   const poById = useMemo(() => new Map(pos.map((p) => [p.id, p])), [pos]);
 
+  const [q, setQ] = useState("");
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const today = todayISO();
+  const range = useMemo(() => presetToRange(preset, custom, today), [preset, custom, today]);
+
   if (!user) return null;
   if (!canUse) return <Card><p className="text-sm text-muted">This page is for Logistics and Admin.</p></Card>;
+
+  // Period + search filters applied to each record's date/ref before reporting.
+  const noRange = !range.from && !range.to;
+  const mq = q.trim().toLowerCase();
+  const inP = (iso?: string) => (noRange ? true : !!iso && inRange(iso.slice(0, 10), range));
+  const hit = (text: string) => !mq || text.toLowerCase().includes(mq);
+  const tripDate = (t: Trip) => (t.departAt && /^\d{4}-\d{2}-\d{2}/.test(t.departAt) ? t.departAt : t.on);
+
+  const fDispatches = dispatches.filter((d) => inP(d.date) && hit(`${d.ref} ${vehName.get(d.vehicleId ?? "") ?? ""} ${drvName.get(d.driverId ?? "") ?? ""}`));
+  const fTrips = trips.filter((t) => inP(tripDate(t)) && hit(`${t.ref} ${t.route ?? ""} ${vehName.get(t.vehicleId ?? "") ?? ""}`));
+  const fPos = pos.filter((p) => inP(p.deliveryDate ?? p.on) && hit(`${p.ref} ${p.supplierName}`));
+  const fGrns = grns.filter((g) => inP(g.receivedDate) && hit(`${g.ref} ${g.poRef} ${g.supplierName}`));
+  const fExpenses = expenses.filter((e) => inP(e.date) && hit(`${e.ref} ${e.category} ${e.payee ?? ""}`));
 
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted">Operational logistics reports — export any table as CSV, or print the page.</p>
+        <div className="min-w-0 flex-1"><SearchTimeBar q={q} setQ={setQ} placeholder="Search these reports…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} /></div>
         <Button variant="secondary" size="sm" onClick={() => window.print()}>Print</Button>
       </div>
 
@@ -112,11 +134,11 @@ export default function LogisticsReportsPage() {
         ))}
       </div>
 
-      {tab === "deliveries" && <DeliveryReports dispatches={dispatches} vehName={vehName} drvName={drvName} />}
-      {tab === "procurement" && <ProcurementReports pos={pos} grns={grns} poById={poById} />}
-      {tab === "fleet" && <FleetReports trips={trips} vehicles={vehicles} vehName={vehName} />}
-      {tab === "costs" && <CostReports trips={trips} dispById={dispById} vehName={vehName} expenses={expenses} orders={orders} />}
-      {tab === "audit" && <AuditReport dispatches={dispatches} trips={trips} pos={pos} grns={grns} expenses={expenses} />}
+      {tab === "deliveries" && <DeliveryReports dispatches={fDispatches} vehName={vehName} drvName={drvName} />}
+      {tab === "procurement" && <ProcurementReports pos={fPos} grns={fGrns} poById={poById} />}
+      {tab === "fleet" && <FleetReports trips={fTrips} vehicles={vehicles} vehName={vehName} />}
+      {tab === "costs" && <CostReports trips={fTrips} dispById={dispById} vehName={vehName} expenses={fExpenses} orders={orders} />}
+      {tab === "audit" && <AuditReport dispatches={fDispatches} trips={fTrips} pos={fPos} grns={fGrns} expenses={fExpenses} />}
     </div>
   );
 }
