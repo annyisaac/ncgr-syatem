@@ -15,6 +15,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthProvider";
 import { isHatcheryRole } from "@/lib/types";
 import { getSupabase } from "@/lib/supabase";
@@ -124,8 +125,16 @@ function upsertLocal<T extends { id: string }>(list: T[], item: T): T[] {
 
 export function HatcheryProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
-  // Accountant needs hatchery cost pages (inventory, spare parts) too.
-  const enabled = !!user && (isHatcheryRole(user.role) || user.role === "Admin" || user.role === "Accountant");
+  const pathname = usePathname();
+  // Hatchery roles live in this module, so load eagerly on login. Admin and
+  // Accountant only visit hatchery data on hatchery/costing pages — so for them
+  // we defer the 25-table load until they actually open one, keeping their
+  // login (dashboard, orders, …) from firing dozens of unused requests.
+  const needsHatchery = pathname.startsWith("/hatchery") || pathname.startsWith("/costing");
+  const enabled =
+    !!user &&
+    (isHatcheryRole(user.role) ||
+      ((user.role === "Admin" || user.role === "Accountant") && needsHatchery));
 
   const [loading, setLoading] = useState(true);
   const [receptions, setReceptions] = useState<Reception[]>([]);
