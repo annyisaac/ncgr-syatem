@@ -38,7 +38,7 @@ const SESSION_KEY = "ncgr.session.v1";
 
 const inBrowser = () => typeof window !== "undefined";
 
-async function fetchCollection<T>(table: string): Promise<T[]> {
+export async function fetchCollection<T>(table: string): Promise<T[]> {
   if (!inBrowser()) return [];
   const { data, error } = await getSupabase()
     .from(table)

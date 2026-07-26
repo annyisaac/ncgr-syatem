@@ -28,6 +28,7 @@ import type {
   User,
 } from "@/lib/types";
 import {
+  fetchCollection,
   getDatabase,
   getNotifications,
   markNotificationsRead,
@@ -123,6 +124,19 @@ const EMPTY: Database = {
   dsrVisits: [],
 };
 
+// Realtime table name → the key it maps to in the in-memory mirror. Only these
+// tables drive the sales dataset; the map also acts as the allow-list.
+const SALES_TABLE_TO_KEY: Record<string, keyof Database> = {
+  users: "users",
+  dsrs: "dsrs",
+  orders: "orders",
+  commissions: "commissions",
+  statements: "statements",
+  routes: "routes",
+  availability: "availability",
+  dsr_visits: "dsrVisits",
+};
+
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [db, setDb] = useState<Database>(EMPTY);
@@ -135,6 +149,19 @@ export function DataProvider({ children }: { children: ReactNode }) {
       setDb(next);
     } catch (err) {
       console.error("Failed to load data from Supabase:", err);
+    }
+  }, []);
+
+  // Refetch a single collection and merge it into the mirror — used by realtime
+  // so one row changing somewhere reloads only its own table, not all eight.
+  const refetchTable = useCallback(async (table: string) => {
+    const key = SALES_TABLE_TO_KEY[table];
+    if (!key) return;
+    try {
+      const rows = await fetchCollection(table);
+      setDb((prev) => ({ ...prev, [key]: rows }) as Database);
+    } catch (err) {
+      console.error(`Failed to refresh ${table}:`, err);
     }
   }, []);
 
@@ -189,30 +216,35 @@ export function DataProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener("ncgr:db-updated", onUpdate);
   }, [load]);
 
-  // Live data: refetch the sales dataset whenever any of its tables changes
-  // anywhere (RLS still scopes what each user receives). Debounced so a burst
-  // of writes triggers a single reload — no manual refresh needed.
+  // Live data: when a sales table changes anywhere, refetch only that table
+  // (RLS still scopes what each user receives). A burst of writes is debounced
+  // and coalesced, so each affected table reloads once — never the whole set.
   useEffect(() => {
     if (!user) return;
-    const SALES_TABLES = new Set([
-      "users", "dsrs", "orders", "commissions", "statements", "routes", "availability", "dsr_visits",
-    ]);
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const bump = () => {
+    const pending = new Set<string>();
+    const flush = () => {
+      const tables = [...pending];
+      pending.clear();
+      for (const t of tables) void refetchTable(t);
+    };
+    const bump = (table: string) => {
+      pending.add(table);
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void load(), 350);
+      timer = setTimeout(flush, 350);
     };
     const channel = getSupabase()
       .channel("sales-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
-        if (SALES_TABLES.has(payload.table ?? "")) bump();
+        const table = payload.table ?? "";
+        if (SALES_TABLE_TO_KEY[table]) bump(table);
       })
       .subscribe();
     return () => {
       if (timer) clearTimeout(timer);
       void getSupabase().removeChannel(channel);
     };
-  }, [user, load]);
+  }, [user, refetchTable]);
 
   /** Optimistic bulk update: reflect in the UI now, persist the whole collection. */
   function apply<K extends keyof Database>(

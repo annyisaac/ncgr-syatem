@@ -115,6 +115,15 @@ interface HatcheryContextValue {
 
 const HatcheryContext = createContext<HatcheryContextValue | null>(null);
 
+// The tables this provider mirrors — also the realtime allow-list.
+const HATCHERY_TABLES = new Set([
+  "receptions", "store_readings", "fumigations", "machines", "operators", "batches",
+  "machine_readings", "chick_counts", "box_logs", "box_targets", "supplies", "vaccinations",
+  "biosecurity_logs", "maintenance_logs", "chick_inventory", "allocations", "dispatches",
+  "farm_visits", "vaccine_requests", "spare_parts", "spare_part_requests", "farms", "flocks",
+  "machine_issues", "shift_handovers",
+]);
+
 function upsertLocal<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id);
   if (i === -1) return [...list, item];
@@ -224,6 +233,42 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  // Refetch a single table and set only its slice of state — used by realtime
+  // so one row changing reloads just that table, not all 25.
+  const refetchTable = useCallback(async (table: string) => {
+    try {
+      switch (table) {
+        case "receptions": setReceptions(await fetchTable<Reception>("receptions")); return;
+        case "store_readings": setStoreReadings(await fetchTable<StoreReading>("store_readings")); return;
+        case "fumigations": setFumigations(await fetchTable<Fumigation>("fumigations")); return;
+        case "machines": setMachines(await fetchTable<Machine>("machines")); return;
+        case "operators": setOperators(await fetchTable<Operator>("operators")); return;
+        case "batches": setBatches(await fetchTable<Batch>("batches")); return;
+        case "machine_readings": setReadings(await fetchTable<MachineReading>("machine_readings")); return;
+        case "chick_counts": setCounts(await fetchTable<ChickCount>("chick_counts")); return;
+        case "box_logs": setBoxLogs(await fetchTable<BoxLog>("box_logs")); return;
+        case "box_targets": setBoxTargets(await fetchTable<BoxTarget>("box_targets")); return;
+        case "supplies": setSupplies(await fetchTable<Supply>("supplies")); return;
+        case "vaccinations": setVaccinations(await fetchTable<Vaccination>("vaccinations")); return;
+        case "biosecurity_logs": setBiosecurity(await fetchTable<LogEntry>("biosecurity_logs")); return;
+        case "maintenance_logs": setMaintenance(await fetchTable<LogEntry>("maintenance_logs")); return;
+        case "chick_inventory": setInventory(await fetchTable<ChickInventory>("chick_inventory")); return;
+        case "allocations": setAllocations(await fetchTable<Allocation>("allocations")); return;
+        case "dispatches": setDispatches(await fetchTable<Dispatch>("dispatches")); return;
+        case "farm_visits": setFarmVisits(await fetchTable<FarmVisit>("farm_visits")); return;
+        case "vaccine_requests": setVaccineRequests(await fetchTable<VaccineRequest>("vaccine_requests")); return;
+        case "spare_parts": setSpareParts(await fetchTable<SparePart>("spare_parts")); return;
+        case "spare_part_requests": setSpareRequests(await fetchTable<SparePartRequest>("spare_part_requests")); return;
+        case "farms": setFarms(await fetchTable<Farm>("farms")); return;
+        case "flocks": setFlocks(await fetchTable<Flock>("flocks")); return;
+        case "machine_issues": setMachineIssues(await fetchTable<MachineIssue>("machine_issues")); return;
+        case "shift_handovers": setShiftHandovers(await fetchTable<ShiftHandover>("shift_handovers")); return;
+      }
+    } catch (err) {
+      console.error(`Failed to refresh ${table}:`, err);
+    }
+  }, []);
+
   useEffect(() => {
     let active = true;
     if (!enabled) {
@@ -241,36 +286,36 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     };
   }, [enabled, load]);
 
-  // Live data: refetch the hatchery dataset whenever any of its tables changes
-  // anywhere. Debounced so a burst of writes triggers a single reload — no
-  // manual refresh needed. (chick_inventory keeps its own realtime through
-  // this same path.)
+  // Live data: when a hatchery table changes anywhere, refetch only that table.
+  // A burst of writes is debounced and coalesced, so each affected table
+  // reloads once — never all 25. (chick_inventory keeps its own realtime
+  // through this same path.)
   useEffect(() => {
     if (!enabled) return;
-    const HATCHERY_TABLES = new Set([
-      "receptions", "store_readings", "fumigations", "machines", "operators", "batches",
-      "machine_readings", "chick_counts", "box_logs", "box_targets", "supplies", "vaccinations",
-      "biosecurity_logs", "maintenance_logs", "chick_inventory", "allocations", "dispatches",
-      "farm_visits", "vaccine_requests", "spare_parts", "spare_part_requests", "farms", "flocks",
-      "machine_issues", "shift_handovers",
-    ]);
     const sb = getSupabase();
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const bump = () => {
+    const pending = new Set<string>();
+    const flush = () => {
+      const tables = [...pending];
+      pending.clear();
+      for (const t of tables) void refetchTable(t);
+    };
+    const bump = (table: string) => {
+      pending.add(table);
       if (timer) clearTimeout(timer);
-      timer = setTimeout(() => void load(), 350);
+      timer = setTimeout(flush, 350);
     };
     const channel = sb
       .channel("hatchery-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
-        if (HATCHERY_TABLES.has(payload.table ?? "")) bump();
+        if (HATCHERY_TABLES.has(payload.table ?? "")) bump(payload.table!);
       })
       .subscribe();
     return () => {
       if (timer) clearTimeout(timer);
       sb.removeChannel(channel);
     };
-  }, [enabled, load]);
+  }, [enabled, refetchTable]);
 
   function persist<T extends { id: string }>(
     table: HatcheryTable,
