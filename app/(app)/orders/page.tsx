@@ -57,6 +57,7 @@ type ModalState =
   | { type: "pay"; order: Order }
   | { type: "fulfill"; order: Order }
   | { type: "reschedule"; order: Order }
+  | { type: "requestReschedule"; order: Order }
   | { type: "edit"; order: Order }
   | { type: "refund"; order: Order }
   | { type: "reject"; order: Order }
@@ -263,7 +264,9 @@ function OrdersInner() {
       });
     }
 
-    {
+    // A fulfilled order only keeps "Add payment" while it still owes money
+    // (delivered on debt); once fully paid there is nothing more to record.
+    if (!o.deliverOk || !isFullyPaid(o)) {
       const r = canAddPayment(o);
       acts.push({
         label: "Add payment",
@@ -293,6 +296,12 @@ function OrdersInner() {
       acts.push({ label: "Edit", onClick: () => setModal({ type: "edit", order: o }) });
     }
 
+    // Once delivered the date can't be changed outright — a reschedule goes
+    // through Admin approval (one pending request at a time).
+    if (o.deliverOk && !isClosed(o) && !o.request) {
+      acts.push({ label: "Request reschedule", onClick: () => setModal({ type: "requestReschedule", order: o }) });
+    }
+
     // Reject/cancel a pending order — Admin, Zone Manager, or Ross receiver.
     {
       const r = canReject(o);
@@ -305,7 +314,9 @@ function OrdersInner() {
       }
     }
 
-    if (isAdmin && o.status !== "refunded" && o.status !== "rejected") {
+    // Refund stays for open orders and for fulfilled orders that still owe
+    // money (delivered on debt); a fully-paid delivered order is settled.
+    if (isAdmin && o.status !== "refunded" && o.status !== "rejected" && (!o.deliverOk || !isFullyPaid(o))) {
       acts.push({
         label: "Refund",
         danger: true,
@@ -314,7 +325,8 @@ function OrdersInner() {
     }
 
     // Admin only, irreversible — the row and its history are gone for good.
-    if (isAdmin) {
+    // Not offered once delivered: a fulfilled order must stay on record.
+    if (isAdmin && !o.deliverOk) {
       acts.push({
         label: "Delete order",
         danger: true,
@@ -636,6 +648,25 @@ function OrdersInner() {
         />
       )}
 
+      {modal?.type === "requestReschedule" && (
+        <RescheduleModal
+          order={modal.order}
+          request
+          onClose={() => setModal(null)}
+          onSave={(date, reason) => {
+            act(
+              withHistory(
+                { ...modal.order, request: { kind: "reschedule", reason, by: user.email, on: nowISO(), status: "open", date } },
+                user,
+                `Requested reschedule to ${formatDate(date)}${reason ? ` — ${reason}` : ""}`
+              ),
+              "Reschedule request submitted for Admin approval."
+            );
+            setModal(null);
+          }}
+        />
+      )}
+
       {modal?.type === "edit" && (
         <EditModal
           order={modal.order}
@@ -721,6 +752,12 @@ function OrdersInner() {
             const req = o.request!;
             if (req.kind === "refund") {
               act(refundOrder(o, `Approved refund — ${req.reason}`, user), "Refund approved.");
+            } else if (req.kind === "reschedule") {
+              const moved = rescheduleOrder(o, req.date!, user, orders);
+              act(
+                { ...moved, request: { ...req, status: "approved" } },
+                `Reschedule approved — moved to ${formatDate(req.date!)}.`
+              );
             } else if (req.kind === "debt") {
               const cleared = approveDebt(o, user, "Approved delivery on debt (requested)");
               act(
@@ -896,29 +933,50 @@ function FulfillModal({
 
 function RescheduleModal({
   order,
+  request = false,
   onClose,
   onSave,
 }: {
   order: Order;
+  /** Post-delivery flow: collect a reason and submit for Admin approval. */
+  request?: boolean;
   onClose: () => void;
-  onSave: (date: string) => void;
+  onSave: (date: string, reason: string) => void;
 }) {
   const [date, setDate] = useState(order.date);
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<string | null>(null);
   return (
     <Modal
       open
       onClose={onClose}
-      title={`Reschedule — ${order.name}`}
+      title={`${request ? "Request reschedule" : "Reschedule"} — ${order.name}`}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => date && onSave(date)}>Save new date</Button>
+          <Button
+            onClick={() => {
+              if (!date) return;
+              if (request && !reason.trim()) return setErr("Give a reason for the reschedule.");
+              onSave(date, reason.trim());
+            }}
+          >
+            {request ? "Send request to Admin" : "Save new date"}
+          </Button>
         </>
       }
     >
-      <Field label="New delivery date">
-        <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
-      </Field>
+      <div className="space-y-3">
+        <Field label="New delivery date">
+          <Input type="date" value={date} onChange={(e) => setDate(e.target.value)} />
+        </Field>
+        {request && (
+          <Field label="Reason">
+            <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why does this delivered order need a new date?" />
+          </Field>
+        )}
+        {err && <p className="text-sm text-status-refunded">{err}</p>}
+      </div>
     </Modal>
   );
 }
@@ -1072,6 +1130,7 @@ function ApproveRequestModal({
   const [extra, setExtra] = useState("");
   const isComp = req.kind === "compensation";
   const isDebt = req.kind === "debt";
+  const isResched = req.kind === "reschedule";
   return (
     <Modal
       open
@@ -1094,6 +1153,12 @@ function ApproveRequestModal({
           <Field label="Extra free chicks to add">
             <Input type="number" min={0} value={extra} onChange={(e) => setExtra(e.target.value)} />
           </Field>
+        ) : isResched ? (
+          <p className="font-semibold text-gold-dark">
+            Approving moves this delivered order to{" "}
+            {req.date ? formatDate(req.date) : "the requested date"} and places it
+            first in that day&apos;s plan.
+          </p>
         ) : isDebt ? (
           <p className="font-semibold text-gold-dark">
             Approving clears this order for delivery on debt: it can be allocated
