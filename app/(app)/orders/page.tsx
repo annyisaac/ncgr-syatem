@@ -358,7 +358,11 @@ function OrdersInner() {
       }
     }
 
-    if (isAdmin && o.request?.status === "open") {
+    // Admin handles every request kind; reschedule requests also go to the
+    // sales owners of the channel — Zone Managers and Ross sellers.
+    const openReq = o.request?.status === "open" ? o.request : null;
+    const canDecide = openReq && (isAdmin || (openReq.kind === "reschedule" && isSales));
+    if (canDecide) {
       acts.push({
         label: "Approve request",
         onClick: () => setModal({ type: "approveReq", order: o }),
