@@ -38,21 +38,35 @@ const SESSION_KEY = "ncgr.session.v1";
 
 const inBrowser = () => typeof window !== "undefined";
 
-async function fetchCollection<T>(table: string): Promise<T[]> {
+// PostgREST caps every response at ~1000 rows, so a single select silently
+// truncates any table past that size. Page through with .range() until a short
+// page proves we've reached the end (see lib/hatchery/db.ts for the bug this
+// fixed on machine_readings).
+const PAGE = 1000;
+
+export async function fetchCollection<T>(table: string): Promise<T[]> {
   if (!inBrowser()) return [];
-  const { data, error } = await getSupabase()
-    .from(table)
-    .select("data")
-    .order("updated_at", { ascending: true });
-  if (error) {
-    // A table this role isn't permitted to read (row-level security) — or a
-    // transient error — must not crash the whole app. Degrade to empty so the
-    // pages a role DOES use keep working. This is what lets RLS be tightened
-    // per-role safely later.
-    console.warn(`Could not load ${table}: ${error.message}`);
-    return [];
+  const sb = getSupabase();
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from(table)
+      .select("data")
+      .order("updated_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) {
+      // A table this role isn't permitted to read (row-level security) — or a
+      // transient error — must not crash the whole app. Degrade to empty so the
+      // pages a role DOES use keep working. This is what lets RLS be tightened
+      // per-role safely later.
+      console.warn(`Could not load ${table}: ${error.message}`);
+      return all;
+    }
+    const rows = (data ?? []).map((r) => r.data as T);
+    all.push(...rows);
+    if (rows.length < PAGE) break;
   }
-  return (data ?? []).map((r) => r.data as T);
+  return all;
 }
 
 /**
