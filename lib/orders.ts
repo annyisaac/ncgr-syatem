@@ -278,10 +278,26 @@ export function rescheduleOrder(
       .map((o) => o.plan);
     plan = (plansOnDate.length ? Math.min(...plansOnDate) : 0) - 1;
   }
+  // Rescheduling a delivered order reopens it: it is no longer fulfilled, so it
+  // goes back to pending and off its old route to be freshly allocated and
+  // re-delivered on the new date. Payments and confirmation are kept.
+  const reopen = order.deliverOk
+    ? {
+        status: "pending" as const,
+        deliverOk: undefined,
+        delivered: undefined,
+        deliveryChicks: undefined,
+        deliveryFail: undefined,
+        routeId: undefined,
+        pickupLocation: undefined,
+      }
+    : {};
   return withHistory(
-    { ...order, date: newDate, created: newDate, plan },
+    { ...order, ...reopen, date: newDate, created: newDate, plan },
     actor,
-    `Rescheduled delivery to ${newDate} — placed first`
+    order.deliverOk
+      ? `Rescheduled delivery to ${newDate} — reopened for delivery, placed first`
+      : `Rescheduled delivery to ${newDate} — placed first`
   );
 }
 
