@@ -34,14 +34,28 @@ export type HatcheryTable =
   | "machine_issues"
   | "shift_handovers";
 
+// PostgREST caps every response at ~1000 rows, so a single select silently
+// truncates any table that has grown past that (machine_readings hit this at
+// 2500+ rows, hiding every reading after the 1000th). Page through with
+// .range() until a short page proves we've reached the end.
+const PAGE = 1000;
+
 export async function fetchTable<T>(table: HatcheryTable): Promise<T[]> {
   if (!inBrowser()) return [];
-  const { data, error } = await getSupabase()
-    .from(table)
-    .select("data")
-    .order("updated_at", { ascending: true });
-  if (error) throw new Error(`Could not load ${table}: ${error.message}`);
-  return (data ?? []).map((r) => r.data as T);
+  const sb = getSupabase();
+  const all: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await sb
+      .from(table)
+      .select("data")
+      .order("updated_at", { ascending: true })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`Could not load ${table}: ${error.message}`);
+    const rows = (data ?? []).map((r) => r.data as T);
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return all;
 }
 
 export async function upsertRow<T extends { id: string }>(
