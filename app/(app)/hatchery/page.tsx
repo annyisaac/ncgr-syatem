@@ -202,9 +202,28 @@ function ManagerView({ user, filter }: { user: User; filter: DashFilter }) {
 // ---------------------------------------------------------------------------
 
 function ProductionView({ filter }: { filter: DashFilter }) {
-  const { batches, inventory, machines } = useHatchery();
+  const { batches, inventory, machines, machineIssues, maintenance, spareParts, spareRequests } = useHatchery();
   const kpis = useMemo(() => computeKpis(batches, inventory), [batches, inventory]);
   const activeMachines = machines.filter((m) => m.active).length;
+
+  // Where every active batch sits in the reception → set → candle → hatch →
+  // count/box → vaccinate flow, so the ops manager sees what the floor owes today.
+  const stages = useMemo(() => {
+    const active = batches.filter((b) => b.status === "active");
+    return {
+      toSet: active.filter((b) => !b.steps["setting"]).length,
+      toCandle: batches.filter(inPipeline).length,
+      inHatchers: batches.filter((b) => b.steps["transfer"] && !b.steps["hatching"]).length,
+      toCount: batches.filter((b) => b.steps["hatching"] && !b.steps["counting"]).length,
+      toVaccinate: batches.filter(awaitingVaccination).length,
+    };
+  }, [batches]);
+
+  const openIssues = machineIssues.filter((i) => i.status === "open").length;
+  const downtime = maintenance.reduce((s, m) => s + (m.downtimeHours ?? 0), 0);
+  const outParts = spareParts.filter((p) => p.quantity <= 0).length;
+  const pendingSpares = spareRequests.filter((r) => r.status === "pending").length;
+
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -215,6 +234,28 @@ function ProductionView({ filter }: { filter: DashFilter }) {
         <StatTile label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
         <StatTile label="Active machines" value={String(activeMachines)} />
       </div>
+
+      <Card>
+        <SectionTitle label="Today's production pipeline" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <StatTile label="To set" value={String(stages.toSet)} tone={stages.toSet ? "gold" : "default"} />
+          <StatTile label="Incubating / to candle" value={String(stages.toCandle)} />
+          <StatTile label="In hatchers" value={String(stages.inHatchers)} />
+          <StatTile label="To count & box" value={String(stages.toCount)} tone={stages.toCount ? "gold" : "default"} />
+          <StatTile label="Awaiting vaccination" value={String(stages.toVaccinate)} tone={stages.toVaccinate ? "gold" : "default"} />
+        </div>
+      </Card>
+
+      <Card>
+        <SectionTitle label="Needs attention" />
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <StatTile label="Open machine issues" value={String(openIssues)} tone={openIssues ? "red" : "green"} />
+          <StatTile label="Maintenance downtime (h)" value={downtime.toLocaleString()} tone={downtime ? "gold" : "default"} />
+          <StatTile label="Spare parts out of stock" value={String(outParts)} tone={outParts ? "red" : "green"} />
+          <StatTile label="Spare requests pending" value={String(pendingSpares)} tone={pendingSpares ? "gold" : "default"} />
+        </div>
+      </Card>
+
       <OverTempCard />
       <BatchesCard batches={batches} filter={filter} />
     </>

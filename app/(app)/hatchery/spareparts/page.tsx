@@ -14,7 +14,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
 import type { SparePart, SparePartRequest, Purchase } from "@/lib/hatchery/types";
 
-const CAN_MANAGE = ["Admin", "Hatchery Manager", "Operations Manager"];
+const CAN_MANAGE = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager"];
 
 const num = (v: string) => Number(v) || 0;
 const rwf = (n: number) => `${Math.round(n).toLocaleString()} RWF`;

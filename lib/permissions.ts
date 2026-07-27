@@ -263,8 +263,15 @@ const NAV: Record<Role, NavItem[]> = {
     MATERIAL_REQ,
     H_REPORTS,
   ],
+  // Runs the production floor end-to-end (second to the Hatchery Manager):
+  // the full reception → set → candle → hatch → count/box → vaccinate flow,
+  // plus machines, maintenance, spare parts and biosecurity. Admin/vet/sales
+  // items (general inventory, vaccine requests, farm visits, coordination,
+  // shift handover) stay with the Hatchery Manager and their owners.
   "Hatchery Operations Manager": [
-    H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, H_BIO, H_HATCH, H_BOXES, MATERIAL_REQ, H_REPORTS,
+    H_DASH, H_RECEPTION, H_STORE, H_FUMIGATION, H_MACHINES, H_BATCHES,
+    H_CANDLING, H_HATCH, H_BOXES, H_VACCINATION, H_CHICKS, H_SPAREPARTS, H_BIO, H_MAINT,
+    MATERIAL_REQ, H_REPORTS,
   ],
   // Shift handover is limited to the Hatchery Manager and Production Technician.
   "Production Technician": [
