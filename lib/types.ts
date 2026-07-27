@@ -304,11 +304,12 @@ export function availableFor(
  *  - "debt"          — deliver the order before it is fully paid
  */
 export interface OrderRequest {
-  kind: "refund" | "compensation" | "debt" | "edit";
+  kind: "refund" | "compensation" | "debt" | "edit" | "reschedule";
   reason: string;
   by: string;
   on: string; // ISO datetime
   status: "open" | "approved" | "rejected";
+  date?: string; // requested new delivery date (reschedule requests)
 }
 
 // ---------------------------------------------------------------------------
