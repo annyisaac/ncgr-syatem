@@ -224,6 +224,19 @@ function ProductionView({ filter }: { filter: DashFilter }) {
   const outParts = spareParts.filter((p) => p.quantity <= 0).length;
   const pendingSpares = spareRequests.filter((r) => r.status === "pending").length;
 
+  const openIssueRows = useMemo(
+    () => machineIssues
+      .filter((i) => i.status === "open" && matches(filter.q, i.machineCode, i.description))
+      .sort((a, b) => (a.on < b.on ? 1 : -1)),
+    [machineIssues, filter]
+  );
+  const recentMaint = useMemo(
+    () => maintenance
+      .filter((m) => matches(filter.q, m.area, m.kind, m.notes) && inFilterRange(m.on, filter.range))
+      .slice().sort((a, b) => (a.on < b.on ? 1 : -1)).slice(0, 8),
+    [maintenance, filter]
+  );
+
   return (
     <>
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
@@ -254,6 +267,42 @@ function ProductionView({ filter }: { filter: DashFilter }) {
           <StatTile label="Spare parts out of stock" value={String(outParts)} tone={outParts ? "red" : "green"} />
           <StatTile label="Spare requests pending" value={String(pendingSpares)} tone={pendingSpares ? "gold" : "default"} />
         </div>
+      </Card>
+
+      {openIssueRows.length > 0 && (
+        <Card>
+          <SectionTitle label={`Open machine issues (${openIssueRows.length})`} />
+          <TableWrap>
+            <thead><tr><Th>Machine</Th><Th>Severity</Th><Th>Issue</Th><Th>Reported</Th></tr></thead>
+            <tbody>
+              {openIssueRows.map((i) => (
+                <tr key={i.id}>
+                  <Td className="font-medium">{i.machineCode}</Td>
+                  <Td><Pill tone={i.severity === "high" ? "red" : i.severity === "medium" ? "gold" : "neutral"}>{i.severity}</Pill></Td>
+                  <Td className="text-sm">{i.description}</Td>
+                  <Td className="text-xs text-muted">{i.reporterName ?? i.reportedBy} · {formatDateTime(i.on)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Card>
+      )}
+
+      <Card>
+        <SectionTitle label="Recent maintenance" />
+        <TableWrap>
+          <thead><tr><Th>When</Th><Th>Area</Th><Th>Note</Th><Th className="text-right">Downtime (h)</Th></tr></thead>
+          <tbody>
+            {recentMaint.length === 0 ? <EmptyRow colSpan={4} text="No maintenance logged." /> : recentMaint.map((m) => (
+              <tr key={m.id}>
+                <Td className="text-xs text-muted">{formatDate(m.on.slice(0, 10))}</Td>
+                <Td>{m.area ?? m.kind}</Td>
+                <Td className="text-sm">{m.notes}</Td>
+                <Td className="text-right">{(m.downtimeHours ?? 0).toFixed(1)}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
       </Card>
 
       <OverTempCard />

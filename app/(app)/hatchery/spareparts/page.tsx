@@ -14,7 +14,11 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
 import type { SparePart, SparePartRequest, Purchase } from "@/lib/hatchery/types";
 
+// Register parts, record purchases (buy) and request them.
 const CAN_MANAGE = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager"];
+// Approve/reject requests to take parts out of the room — kept from the
+// Hatchery Operations Manager: they run the room but don't self-authorise issues.
+const CAN_APPROVE = ["Admin", "Hatchery Manager", "Operations Manager"];
 
 const num = (v: string) => Number(v) || 0;
 const rwf = (n: number) => `${Math.round(n).toLocaleString()} RWF`;
@@ -39,6 +43,7 @@ export default function SparePartsPage() {
   const [reqErr, setReqErr] = useState<string | null>(null);
 
   const canManage = !!user && CAN_MANAGE.includes(user.role);
+  const canApprove = !!user && CAN_APPROVE.includes(user.role);
   const partName = (id: string) => spareParts.find((p) => p.id === id)?.name ?? "—";
 
   const parts = useMemo(() => spareParts.slice().sort((a, b) => a.name.localeCompare(b.name)), [spareParts]);
@@ -156,7 +161,7 @@ export default function SparePartsPage() {
         </Card>
       )}
 
-      {canManage && (
+      {canApprove && (
         <Card>
           <CardHeader title={`Requests to approve (${pending.length})`} />
           <TableWrap>
