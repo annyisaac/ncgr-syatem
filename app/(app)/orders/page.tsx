@@ -58,6 +58,7 @@ type ModalState =
   | { type: "fulfill"; order: Order }
   | { type: "reschedule"; order: Order }
   | { type: "requestReschedule"; order: Order }
+  | { type: "fixPayment"; order: Order }
   | { type: "edit"; order: Order }
   | { type: "refund"; order: Order }
   | { type: "reject"; order: Order }
@@ -250,6 +251,12 @@ function OrdersInner() {
     acts.push({ label: "Download invoice", onClick: () => void invoicePDF(o) });
     const lastVerified = [...o.payments].reverse().find((p) => p.verified);
     if (lastVerified) acts.push({ label: "Payment proof", onClick: () => void paymentProofPDF(o, lastVerified) });
+
+    // A checker couldn't find a transaction id in the statement and returned it
+    // for the seller / zone manager to correct, then re-verify.
+    if ((isSales || isAdmin) && o.payments.some((p) => p.returnedForFix && !p.verified)) {
+      acts.push({ label: "Correct payment ID", onClick: () => setModal({ type: "fixPayment", order: o }) });
+    }
 
     if (!o.confirmedOk && !isClosed(o)) {
       const r = canConfirm(o, isAdmin || isChecker);
@@ -671,6 +678,25 @@ function OrdersInner() {
         />
       )}
 
+      {modal?.type === "fixPayment" && (
+        <FixPaymentModal
+          order={modal.order}
+          onClose={() => setModal(null)}
+          onSave={(fixes) => {
+            const order = modal.order;
+            const payments = order.payments.map((p, i) => {
+              const fx = fixes.find((f) => f.index === i);
+              return fx ? { ...p, ref: fx.ref, refFixed: true, returnedForFix: undefined, flag: undefined } : p;
+            });
+            act(
+              withHistory({ ...order, payments }, user, `Corrected returned payment id(s): ${fixes.map((f) => f.ref).join(", ")}`),
+              "Payment reference corrected — sent back to the checker to verify."
+            );
+            setModal(null);
+          }}
+        />
+      )}
+
       {modal?.type === "edit" && (
         <EditModal
           order={modal.order}
@@ -979,6 +1005,66 @@ function RescheduleModal({
             <Input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Why does this delivered order need a new date?" />
           </Field>
         )}
+        {err && <p className="text-sm text-status-refunded">{err}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+function FixPaymentModal({
+  order,
+  onClose,
+  onSave,
+}: {
+  order: Order;
+  onClose: () => void;
+  onSave: (fixes: { index: number; ref: string }[]) => void;
+}) {
+  const returned = order.payments
+    .map((p, index) => ({ p, index }))
+    .filter((x) => x.p.returnedForFix && !x.p.verified);
+  const [refs, setRefs] = useState<Record<number, string>>(
+    () => Object.fromEntries(returned.map((x) => [x.index, x.p.ref]))
+  );
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Correct payment ID — ${order.name}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              const fixes = returned.map((x) => ({ index: x.index, ref: (refs[x.index] ?? "").trim() }));
+              if (fixes.some((f) => !f.ref)) return setErr("Enter the corrected transaction id for each payment.");
+              onSave(fixes);
+            }}
+          >
+            Send back to checker
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-4">
+        <p className="text-sm text-muted">
+          A payment checker couldn&apos;t find {returned.length > 1 ? "these transaction ids" : "this transaction id"} in the
+          uploaded bank statement. Review and correct {returned.length > 1 ? "them" : "it"} — it goes back to the checker to re-verify.
+        </p>
+        {returned.map((x) => (
+          <div key={x.index} className="rounded-md border border-line p-3 space-y-2">
+            <div className="flex items-center justify-between text-sm">
+              <span className="font-medium text-ink">{formatRWF(x.p.amt)}</span>
+              <span className="text-xs text-muted">recorded {formatDate(x.p.on.slice(0, 10))}</span>
+            </div>
+            {x.p.flag && <p className="text-xs text-status-refunded">{x.p.flag}</p>}
+            {x.p.returnedForFix?.note && <p className="text-xs text-muted">Checker note: {x.p.returnedForFix.note}</p>}
+            <Field label="Transaction ID">
+              <Input value={refs[x.index] ?? ""} onChange={(e) => setRefs({ ...refs, [x.index]: e.target.value })} />
+            </Field>
+          </div>
+        ))}
         {err && <p className="text-sm text-status-refunded">{err}</p>}
       </div>
     </Modal>

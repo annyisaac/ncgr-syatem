@@ -197,6 +197,17 @@ export interface Payment {
    * bank statement — the payment is held for the Admin's final decision.
    */
   pendingApproval?: { by: string; on: string; refs: string[]; note?: string };
+  /**
+   * The checker couldn't find this transaction id in any uploaded statement and
+   * returned it to the seller / zone manager to review and correct the id. While
+   * set, the payment is back in the seller's court; clearing it (after a fix)
+   * puts it back in the checker's queue.
+   */
+  returnedForFix?: { by: string; on: string; refs: string[]; note?: string };
+  /** The seller has corrected the reference at least once. If it is STILL not in
+   *  a statement after that, the checker escalates to the Admin rather than
+   *  bouncing it back to the seller again. */
+  refFixed?: boolean;
   /** Admin rejected this payment (not in any statement). A voided payment is
    *  kept for the record but no longer counts toward Paid/Balance or delivery. */
   voided?: boolean;

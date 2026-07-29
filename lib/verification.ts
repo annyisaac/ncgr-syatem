@@ -63,6 +63,7 @@ export function runAutoCheck(
     const payments = order.payments.map((p) => {
       if (p.verified) return p;
       if (p.voided) return p; // Admin-rejected — never auto-re-verify.
+      if (p.returnedForFix) return p; // with the seller to correct the id
 
       const matches = allRows.filter((r) => norm(r.ref) === norm(p.ref));
       // Identical repeats (same ref + amount) are one transaction listed twice.

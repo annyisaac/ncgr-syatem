@@ -113,7 +113,7 @@ export default function VerificationPage() {
     [myOrders]
   );
 
-  const payStatus = (p: Payment) => p.voided ? "rejected" : p.verified ? "checked" : p.pendingApproval ? "awaiting" : "unverified";
+  const payStatus = (p: Payment) => p.voided ? "rejected" : p.verified ? "checked" : p.pendingApproval ? "awaiting" : p.returnedForFix ? "returned" : "unverified";
   const shownPayRows = useMemo(() => {
     const q = query.trim().toLowerCase();
     return payRows.filter(({ o, p }) => {
@@ -249,12 +249,25 @@ export default function VerificationPage() {
       return setManual(null);
     }
 
-    // Missing or ambiguous transaction id → hold for the Admin's final say.
     const missing = lookups.filter((l) => l.matches.length === 0).map((l) => l.ref);
     const dup = lookups.filter((l) => l.matches.length > 1).map((l) => l.ref);
+
+    // A transaction id that is simply not in the statement is first returned to
+    // the seller / zone manager to review and correct it — unless they already
+    // fixed it once, in which case it escalates to the Admin. Duplicate ids are
+    // ambiguous, not a typo, so those always go straight to the Admin.
+    if (missing.length && !dup.length && !p0.refFixed) {
+      const flag = `Missing in statements: ${missing.join(", ")}`;
+      patchPayment(order, payIndex,
+        { verified: false, pendingApproval: undefined, returnedForFix: { by: user!.email, on, refs, note: comment }, flag },
+        `Payment (${refs.join(", ")}) returned to the seller to correct the transaction id — ${flag} — ${comment}`);
+      toast(`Returned to the seller to correct the transaction id — ${flag}.`, "info");
+      return setManual(null);
+    }
+
     const flag = missing.length ? `Missing in statements: ${missing.join(", ")}` : `Duplicate ref: ${dup.join(", ")}`;
     patchPayment(order, payIndex,
-      { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, flag },
+      { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, returnedForFix: undefined, flag },
       `Payment (${refs.join(", ")}) sent to Admin — ${flag} — ${comment}`);
     toast(`Sent to Admin for approval — ${flag}.`, "info");
     setManual(null);
@@ -541,6 +554,11 @@ export default function VerificationPage() {
                         <Pill tone="gold">Awaiting admin</Pill>
                         <div className="text-xs text-muted">sent by {p.pendingApproval.by}</div>
                       </div>
+                    ) : p.returnedForFix ? (
+                      <div>
+                        <Pill tone="gold">Returned to seller</Pill>
+                        <div className="text-xs text-muted">to correct the id</div>
+                      </div>
                     ) : (
                       <Pill tone="pending">Unverified</Pill>
                     )}
@@ -562,6 +580,8 @@ export default function VerificationPage() {
                       ) : (
                         <span className="text-xs text-muted">with admin</span>
                       )
+                    ) : p.returnedForFix ? (
+                      <span className="text-xs text-muted">with seller</span>
                     ) : (
                       <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
                         Verify manually
