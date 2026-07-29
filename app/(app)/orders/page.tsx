@@ -106,6 +106,7 @@ function OrdersInner() {
   const isAdmin = role === "Admin";
   const isSales = role === "Tetra Zone Manager" || role === "Ross Order Receiver";
   const isChecker = role === "Tetra Payment Checker" || role === "Ross Payment Checker";
+  const isAccountant = role === "Accountant";
   // Payment checkers now get the same order privileges as a seller (add + edit).
   const canSell = isSales || isChecker;
   const canAct = isAdmin || canSell;
@@ -243,20 +244,23 @@ function OrdersInner() {
   }
 
   function buildActions(o: Order): DropdownAction[] {
-    if (!canAct) return [];
     const acts: DropdownAction[] = [];
+
+    // A checker couldn't find a transaction id in the statement and returned it
+    // to be corrected, then re-verified. Open to the sellers/zone managers, the
+    // Admin AND the accountant — even the accountant, who otherwise only views
+    // orders here, gets this one action when a payment is waiting to be fixed.
+    if ((isSales || isAdmin || isAccountant) && o.payments.some((p) => p.returnedForFix && !p.verified)) {
+      acts.push({ label: "Correct payment ID", onClick: () => setModal({ type: "fixPayment", order: o }) });
+    }
+
+    if (!canAct) return acts;
 
     // Documents — a branded invoice for any order, and a proof for its most
     // recent verified payment. Available to every role that reaches this menu.
     acts.push({ label: "Download invoice", onClick: () => void invoicePDF(o) });
     const lastVerified = [...o.payments].reverse().find((p) => p.verified);
     if (lastVerified) acts.push({ label: "Payment proof", onClick: () => void paymentProofPDF(o, lastVerified) });
-
-    // A checker couldn't find a transaction id in the statement and returned it
-    // for the seller / zone manager to correct, then re-verify.
-    if ((isSales || isAdmin) && o.payments.some((p) => p.returnedForFix && !p.verified)) {
-      acts.push({ label: "Correct payment ID", onClick: () => setModal({ type: "fixPayment", order: o }) });
-    }
 
     if (!o.confirmedOk && !isClosed(o)) {
       const r = canConfirm(o, isAdmin || isChecker);
