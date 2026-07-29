@@ -615,6 +615,13 @@ function SalesOverview({
   const ordersMax = Math.max(pendingNew, inProgress, completed, scoped.length, 1);
   const moneyMax = Math.max(recordedPaid, collected, owed, 1);
 
+  // Payments a checker returned for the seller / zone manager to fix the id.
+  // Not period-scoped — these need attention whenever they exist.
+  const toCorrect = useMemo(
+    () => orders.flatMap((o) => o.payments.map((p, i) => ({ o, p, i })).filter((x) => x.p.returnedForFix && !x.p.verified)),
+    [orders]
+  );
+
   return (
     <div className="space-y-5">
       <DashboardHeader user={user} subtitle="here's your sales overview" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
@@ -627,6 +634,32 @@ function SalesOverview({
         <StatTile label="Collected (verified)" value={formatRWF(collected)} />
         <StatTile label="Pending orders" value={String(pendingNew + inProgress)} />
       </div>
+
+      {toCorrect.length > 0 && (
+        <Card>
+          <SectionTitle
+            label={`Payments to correct (${toCorrect.length})`}
+            action={<Link href="/orders" className="text-sm font-semibold text-gold-dark">Open orders →</Link>}
+          />
+          <p className="mb-3 text-sm text-muted">A payment checker couldn&apos;t match these transaction ids to a bank statement. Correct the id and it goes back to the checker to verify.</p>
+          <TableWrap>
+            <thead>
+              <tr><Th>Client</Th><Th className="text-right">Amount</Th><Th>Entered ref</Th><Th>Why</Th><Th></Th></tr>
+            </thead>
+            <tbody>
+              {toCorrect.map(({ o, p, i }) => (
+                <tr key={`${o.id}-${i}`}>
+                  <Td className="font-medium">{o.name}</Td>
+                  <Td className="text-right">{formatRWF(p.amt)}</Td>
+                  <Td className="font-mono text-xs">{p.ref}</Td>
+                  <Td className="text-xs text-status-refunded">{p.flag ?? "Not in statement"}</Td>
+                  <Td><Link href={`/orders?order=${o.id}`} className="text-sm font-semibold text-gold-dark">Correct →</Link></Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Card>
+      )}
 
       <AvailabilityPanel availability={availability} orders={orders} focus={focus} />
 
