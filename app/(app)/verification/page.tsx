@@ -252,24 +252,25 @@ export default function VerificationPage() {
     const missing = lookups.filter((l) => l.matches.length === 0).map((l) => l.ref);
     const dup = lookups.filter((l) => l.matches.length > 1).map((l) => l.ref);
 
-    // A transaction id that is simply not in the statement is first returned to
-    // the seller / zone manager to review and correct it — unless they already
-    // fixed it once, in which case it escalates to the Admin. Duplicate ids are
-    // ambiguous, not a typo, so those always go straight to the Admin.
-    if (missing.length && !dup.length && !p0.refFixed) {
-      const flag = `Missing in statements: ${missing.join(", ")}`;
+    // A duplicate id (found with different amounts) is ambiguous, not a typo, so
+    // it goes straight to the Admin.
+    if (dup.length) {
+      const flag = `Duplicate ref: ${dup.join(", ")}`;
       patchPayment(order, payIndex,
-        { verified: false, pendingApproval: undefined, returnedForFix: { by: user!.email, on, refs, note: comment }, flag },
-        `Payment (${refs.join(", ")}) returned to the seller to correct the transaction id — ${flag} — ${comment}`);
-      toast(`Returned to the seller to correct the transaction id — ${flag}.`, "info");
+        { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, returnedForFix: undefined, flag },
+        `Payment (${refs.join(", ")}) sent to Admin — ${flag} — ${comment}`);
+      toast(`Sent to Admin for approval — ${flag}.`, "info");
       return setManual(null);
     }
 
-    const flag = missing.length ? `Missing in statements: ${missing.join(", ")}` : `Duplicate ref: ${dup.join(", ")}`;
+    // A simply-missing id is only FLAGGED here. The row then offers "Return to
+    // seller" (or "Send to Admin" once already corrected once) — verifying and
+    // returning are never shown side by side.
+    const flag = `Missing in statements: ${missing.join(", ")}`;
     patchPayment(order, payIndex,
-      { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, returnedForFix: undefined, flag },
-      `Payment (${refs.join(", ")}) sent to Admin — ${flag} — ${comment}`);
-    toast(`Sent to Admin for approval — ${flag}.`, "info");
+      { verified: false, pendingApproval: undefined, returnedForFix: undefined, flag },
+      `Payment (${refs.join(", ")}) not found in the statements — ${flag}${comment ? ` — ${comment}` : ""}`);
+    toast(`Not in the statement — use “Return to seller” to send it for correction.`, "info");
     setManual(null);
   }
 
@@ -314,6 +315,17 @@ export default function VerificationPage() {
     toast("Returned to the seller to correct the transaction id.", "info");
   }
 
+  // Still not in any statement after the seller already corrected it once —
+  // escalate to the Admin's final approve/void decision.
+  function sendToAdmin(order: Order, payIndex: number) {
+    const p0 = order.payments[payIndex];
+    const on = nowISO();
+    patchPayment(order, payIndex,
+      { verified: false, returnedForFix: undefined, pendingApproval: { by: user!.email, on, refs: [p0.ref] }, flag: p0.flag ?? "Missing in statements" },
+      `Payment (${p0.ref}) escalated to Admin — still not in any statement after correction`);
+    toast("Sent to the Admin for a final decision.", "info");
+  }
+
   return (
     <div className="space-y-6">
 
@@ -321,9 +333,10 @@ export default function VerificationPage() {
       <Card>
         <CardHeader title="When a transaction ID isn't in the statement" />
         <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink/70">
-          <li>Verifying a payment whose ID isn&apos;t found returns it to the <strong>seller / zone manager / accountant</strong> to review and correct the ID — it is <em>not</em> sent to the Admin yet.</li>
-          <li>They fix the ID and it comes straight back here as unverified — <strong>re-verify it</strong> (or run the auto-check) against the statement.</li>
-          <li>If the ID is <strong>still</strong> missing after they have corrected it once, it escalates to the <strong>Admin&apos;s decision</strong> below — approve (verify) or reject (void).</li>
+          <li>Verify a payment by matching its ID to the statement — automatically, or with <strong>Verify manually</strong> (the amount is shown when the ID is found).</li>
+          <li>When the ID <strong>isn&apos;t found</strong> (auto-check or manual), the row shows <strong>Return to seller</strong>. Use it to hand the payment to the <strong>seller / zone manager / accountant</strong> to correct the ID — it is <em>not</em> sent to the Admin yet.</li>
+          <li>They fix the ID and it comes back here as unverified — <strong>re-verify it</strong> (or run the auto-check).</li>
+          <li>If the ID is <strong>still</strong> missing after they corrected it once, the row shows <strong>Send to Admin</strong> — escalate to the Admin&apos;s decision below (approve or void).</li>
           <li>A <strong>duplicate</strong> ID (found with different amounts) is ambiguous, not a typo, so it goes straight to the Admin.</li>
         </ol>
       </Card>
@@ -581,6 +594,8 @@ export default function VerificationPage() {
                         <Pill tone="gold">Returned to seller</Pill>
                         <div className="text-xs text-muted">to correct the id</div>
                       </div>
+                    ) : p.flag ? (
+                      <Pill tone="gold">Not in statement</Pill>
                     ) : (
                       <Pill tone="pending">Unverified</Pill>
                     )}
@@ -604,15 +619,19 @@ export default function VerificationPage() {
                       )
                     ) : p.returnedForFix ? (
                       <span className="text-xs text-muted">with seller</span>
+                    ) : p.flag ? (
+                      // Checked and NOT found — no longer offer "verify manually";
+                      // return it to the seller to fix, or escalate to the Admin
+                      // if the seller already corrected it once.
+                      p.refFixed ? (
+                        <Button size="sm" onClick={() => sendToAdmin(o, i)}>Send to Admin</Button>
+                      ) : (
+                        <Button size="sm" onClick={() => returnToSeller(o, i)}>Return to seller</Button>
+                      )
                     ) : (
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
-                          Verify manually
-                        </Button>
-                        <Button size="sm" variant="ghost" onClick={() => returnToSeller(o, i)}>
-                          Return to seller
-                        </Button>
-                      </div>
+                      <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
+                        Verify manually
+                      </Button>
                     )}
                   </Td>
                 </tr>
