@@ -303,6 +303,17 @@ export default function VerificationPage() {
     toast("Payment rejected and voided — no longer counts as paid.", "info");
   }
 
+  // Explicit "can't find this id" — hand the payment to the seller / zone
+  // manager / accountant to correct the transaction id, then re-verify here.
+  function returnToSeller(order: Order, payIndex: number) {
+    const p0 = order.payments[payIndex];
+    const on = nowISO();
+    patchPayment(order, payIndex,
+      { verified: false, pendingApproval: undefined, returnedForFix: { by: user!.email, on, refs: [p0.ref] }, flag: p0.flag ?? "Not in any statement" },
+      `Payment (${p0.ref}) returned to the seller to correct the transaction id`);
+    toast("Returned to the seller to correct the transaction id.", "info");
+  }
+
   return (
     <div className="space-y-6">
 
@@ -594,9 +605,14 @@ export default function VerificationPage() {
                     ) : p.returnedForFix ? (
                       <span className="text-xs text-muted">with seller</span>
                     ) : (
-                      <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
-                        Verify manually
-                      </Button>
+                      <div className="flex flex-wrap gap-2">
+                        <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
+                          Verify manually
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => returnToSeller(o, i)}>
+                          Return to seller
+                        </Button>
+                      </div>
                     )}
                   </Td>
                 </tr>
