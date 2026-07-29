@@ -306,6 +306,17 @@ export default function VerificationPage() {
   return (
     <div className="space-y-6">
 
+      {/* How a not-in-statement id is handled — shown to checkers and the Admin. */}
+      <Card>
+        <CardHeader title="When a transaction ID isn't in the statement" />
+        <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink/70">
+          <li>Verifying a payment whose ID isn&apos;t found returns it to the <strong>seller / zone manager / accountant</strong> to review and correct the ID — it is <em>not</em> sent to the Admin yet.</li>
+          <li>They fix the ID and it comes straight back here as unverified — <strong>re-verify it</strong> (or run the auto-check) against the statement.</li>
+          <li>If the ID is <strong>still</strong> missing after they have corrected it once, it escalates to the <strong>Admin&apos;s decision</strong> below — approve (verify) or reject (void).</li>
+          <li>A <strong>duplicate</strong> ID (found with different amounts) is ambiguous, not a typo, so it goes straight to the Admin.</li>
+        </ol>
+      </Card>
+
       {/* Bank statements — uploaded files are visible only to the Admin & Accountant. */}
       {isAdmin && (
       <Card>
