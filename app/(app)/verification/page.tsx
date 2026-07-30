@@ -74,6 +74,7 @@ export default function VerificationPage() {
   const [staged, setStaged] = useState<Staged | null>(null);
   const [outcomes, setOutcomes] = useState<AutoOutcome[]>([]);
   const [manual, setManual] = useState<{ order: Order; payIndex: number } | null>(null);
+  const [approveFor, setApproveFor] = useState<{ order: Order; payIndex: number } | null>(null);
 
   // Filters for the payments table.
   const [query, setQuery] = useState("");
@@ -291,10 +292,10 @@ export default function VerificationPage() {
   }
 
   // Admin's final say on payments a checker couldn't match to a statement.
-  function adminApprove(order: Order, payIndex: number) {
+  // A comment (why it's being approved) is required.
+  function adminApprove(order: Order, payIndex: number, note: string) {
     const p0 = order.payments[payIndex];
     const refs = p0.pendingApproval?.refs ?? [];
-    const wasRequested = !!p0.pendingApproval;
     // If it was never sent for approval, fall back to the payment's own ref and
     // note it — either way the payment is verified, and the trigger notifies the
     // verifier that it was verified.
@@ -305,12 +306,13 @@ export default function VerificationPage() {
         verifiedBy: user!.email,
         verifiedOn: nowISO(),
         checkedRef: ref,
-        comment: `Approved by Admin${p0.pendingApproval?.note ? ` — ${p0.pendingApproval.note}` : wasRequested ? "" : " (not requested)"}`,
+        comment: `Approved by Admin — ${note}`,
         flag: undefined,
         pendingApproval: undefined,
       },
-      `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)}`);
+      `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)} — ${note}`);
     toast("Payment approved and verified.");
+    setApproveFor(null);
   }
   function adminReject(order: Order, payIndex: number) {
     const p0 = order.payments[payIndex];
@@ -504,7 +506,7 @@ export default function VerificationPage() {
                   <Td className="text-xs text-muted">{p.pendingApproval?.by}</Td>
                   <Td>
                     <div className="flex gap-2">
-                      <Button size="sm" onClick={() => adminApprove(o, i)}>Approve payment</Button>
+                      <Button size="sm" onClick={() => setApproveFor({ order: o, payIndex: i })}>Approve payment</Button>
                       <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject payment</Button>
                     </div>
                   </Td>
@@ -607,7 +609,7 @@ export default function VerificationPage() {
                     ) : p.pendingApproval ? (
                       isAdmin ? (
                         <div className="flex gap-2">
-                          <Button size="sm" onClick={() => adminApprove(o, i)}>Approve</Button>
+                          <Button size="sm" onClick={() => setApproveFor({ order: o, payIndex: i })}>Approve</Button>
                           <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button>
                         </div>
                       ) : (
@@ -637,7 +639,64 @@ export default function VerificationPage() {
           onSave={(ref, comment, choice) => saveManual(manual.order, manual.payIndex, ref, comment, choice)}
         />
       )}
+
+      {approveFor && (
+        <ApproveModal
+          order={approveFor.order}
+          payment={approveFor.order.payments[approveFor.payIndex]}
+          onClose={() => setApproveFor(null)}
+          onApprove={(note) => adminApprove(approveFor.order, approveFor.payIndex, note)}
+        />
+      )}
     </div>
+  );
+}
+
+function ApproveModal({
+  order,
+  payment,
+  onClose,
+  onApprove,
+}: {
+  order: Order;
+  payment: Payment;
+  onClose: () => void;
+  onApprove: (note: string) => void;
+}) {
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState<string | null>(null);
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Approve payment — ${order.name}`}
+      footer={
+        <>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button
+            onClick={() => {
+              if (!note.trim()) return setErr("A comment is required to approve this payment.");
+              onApprove(note.trim());
+            }}
+          >
+            Approve payment
+          </Button>
+        </>
+      }
+    >
+      <div className="space-y-3">
+        <p className="text-sm text-ink/60">
+          Approving verifies <strong>{formatRWF(payment.amt)}</strong>
+          {payment.pendingApproval?.refs?.length ? <> · <span className="font-mono text-xs">{payment.pendingApproval.refs.join(", ")}</span></> : null}
+          {" "}even though it wasn&apos;t matched to a statement. Say why (e.g. confirmed with the bank / customer).
+        </p>
+        {payment.pendingApproval?.note && <p className="text-xs text-muted">Checker note: “{payment.pendingApproval.note}”</p>}
+        <Field label="Approval comment (required)">
+          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why is this payment being approved?" />
+        </Field>
+        {err && <p className="text-sm text-status-refunded">{err}</p>}
+      </div>
+    </Modal>
   );
 }
 
