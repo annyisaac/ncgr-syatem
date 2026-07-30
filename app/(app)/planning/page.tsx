@@ -14,7 +14,7 @@ import { cn } from "@/lib/cn";
 import { toDeliver, type Order } from "@/lib/types";
 
 const WEEKDAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
+const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver", "Tetra Payment Checker", "Ross Payment Checker"];
 const isActive = (o: Order) => o.status !== "refunded" && o.status !== "rejected";
 const deliverChicks = (o: Order) => o.deliveryChicks ?? toDeliver(o);
 
