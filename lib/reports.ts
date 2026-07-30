@@ -15,6 +15,7 @@ import {
   toDeliver,
   type Database,
   type Order,
+  type Route,
 } from "./types";
 import type { DSRCommissionRow } from "./commission";
 import type { ClientRecord } from "./clients";
@@ -280,6 +281,47 @@ export async function ordersPDF(orders: Order[], filterLabel: string): Promise<v
 
   addSignatures(doc);
   finalizeAndSave(doc, logo, `NCGR-Orders-${filterLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Delivery manifest (driver run-sheet for one route/date)
+// ---------------------------------------------------------------------------
+
+export async function manifestPDF(
+  route: Pick<Route, "name" | "driver">,
+  dateLabel: string,
+  orders: Order[]
+): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc("Delivery Manifest", [
+    `Route: ${route.name}`,
+    `Driver: ${route.driver}`,
+    `Date: ${dateLabel}`,
+    `Stops: ${orders.length}`,
+  ]);
+
+  const chicksOf = (o: Order) => o.deliveryChicks ?? toDeliver(o);
+  const statusOf = (o: Order) => (o.deliverOk ? "Delivered" : o.deliveryFail ? "Not delivered" : "Pending");
+  let total = 0;
+  const body = orders.map((o, i) => {
+    const c = chicksOf(o);
+    total += c;
+    return [i + 1, o.name, o.phone, o.sector, o.district, o.pickupLocation ?? "—", c, statusOf(o), ""];
+  });
+
+  autoTable(doc, {
+    startY,
+    head: [["#", "Customer", "Phone", "Sector", "District", "Pickup", "Chicks", "Status", "Received (sign)"]],
+    body,
+    foot: [["", "TOTAL CHICKS", "", "", "", "", total, "", ""]],
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    columnStyles: { 8: { cellWidth: 96 } },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Manifest-${route.name.replace(/\s+/g, "_")}-${dateLabel.replace(/\s+/g, "_")}.pdf`);
 }
 
 // ---------------------------------------------------------------------------

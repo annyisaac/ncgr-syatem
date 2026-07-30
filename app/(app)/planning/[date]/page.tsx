@@ -14,11 +14,11 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { visibleOrders } from "@/lib/permissions";
-import { COMPANY, formatRWF } from "@/lib/config";
+import { formatRWF } from "@/lib/config";
 import { ensureDriverLink, listDeliveryLinks } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
 import { canAllocate, fulfillOrder, rescheduleOrder, withHistory } from "@/lib/orders";
-import { deliveryPaymentPDF } from "@/lib/reports";
+import { deliveryPaymentPDF, manifestPDF } from "@/lib/reports";
 import { balance, paidAmount, toDeliver, type Order, type Route } from "@/lib/types";
 
 const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
@@ -29,7 +29,6 @@ const stopStatus = (o: Order) => (o.deliverOk ? "Delivered" : o.deliveryFail ? "
 // ---- reports --------------------------------------------------------------
 
 function csvCell(v: string) { return /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v; }
-function esc(s: string) { return (s || "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]!)); }
 
 function downloadCsv(route: Route, dateLabel: string, orders: Order[]) {
   const rows: string[][] = [
@@ -44,27 +43,6 @@ function downloadCsv(route: Route, dateLabel: string, orders: Order[]) {
   const a = document.createElement("a");
   a.href = url; a.download = `${route.name.replace(/\s+/g, "-")}-${dateLabel}.csv`; a.click();
   URL.revokeObjectURL(url);
-}
-
-function printManifest(route: Route, dateLabel: string, orders: Order[]) {
-  const total = orders.reduce((s, o) => s + deliverChicks(o), 0);
-  const rows = orders.map((o, i) => `<tr><td>${i + 1}</td><td>${esc(o.name)}</td><td>${esc(o.phone)}</td><td>${esc(o.sector)}</td><td>${esc(o.district)}</td><td style="text-align:right">${deliverChicks(o).toLocaleString()}</td><td>${esc(stopStatus(o))}</td><td class="sig"></td></tr>`).join("");
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>${esc(route.name)} — ${dateLabel}</title><style>
-    body{font-family:Arial,Helvetica,sans-serif;color:#20201c;padding:24px}h1{margin:0 0 2px;font-size:20px}.muted{color:#6e6656;font-size:13px}
-    .meta{margin:10px 0 16px;font-size:14px}.meta b{color:#20201c}table{width:100%;border-collapse:collapse;font-size:13px}
-    th,td{border:1px solid #d9d2c2;padding:6px 8px;text-align:left}th{background:#f6f3ea}.sig{width:120px}tfoot td{font-weight:bold;background:#faf7ef}@media print{button{display:none}}
-  </style></head><body>
-    <h1>${esc(COMPANY.name)} — Delivery Manifest</h1><div class="muted">${esc(COMPANY.address)}</div>
-    <div class="meta">Route: <b>${esc(route.name)}</b> &nbsp;·&nbsp; Driver: <b>${esc(route.driver)}</b> &nbsp;·&nbsp; Date: <b>${dateLabel}</b> &nbsp;·&nbsp; Stops: <b>${orders.length}</b></div>
-    <table><thead><tr><th>#</th><th>Customer</th><th>Phone</th><th>Sector</th><th>District</th><th style="text-align:right">Chicks</th><th>Status</th><th>Received (sign)</th></tr></thead>
-    <tbody>${rows || `<tr><td colspan="8" style="text-align:center;color:#6e6656">No stops</td></tr>`}</tbody>
-    <tfoot><tr><td colspan="5">TOTAL CHICKS</td><td style="text-align:right">${total.toLocaleString()}</td><td></td><td></td></tr></tfoot></table>
-    <p class="muted" style="margin-top:20px">Driver signature: ____________________  Date: __________</p>
-    <button onclick="window.print()" style="margin-top:16px;padding:8px 14px">Print</button></body></html>`;
-  const w = window.open("", "_blank", "width=900,height=1000");
-  if (!w) return;
-  w.document.write(html); w.document.close(); w.focus();
-  setTimeout(() => w.print(), 300);
 }
 
 // ---------------------------------------------------------------------------
@@ -310,7 +288,7 @@ export default function DayPlanPage() {
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => printManifest(route, dateLabel, list)} disabled={list.length === 0}>Print manifest</Button>
+                <Button variant="secondary" size="sm" onClick={() => void manifestPDF(route, dateLabel, list)} disabled={list.length === 0}>Download manifest (PDF)</Button>
                 <Button variant="ghost" size="sm" onClick={() => downloadCsv(route, dateLabel, list)} disabled={list.length === 0}>CSV</Button>
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => makeDriverLink(route.driver)}>Driver link</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => deleteRoute(route)}>Delete</Button>}

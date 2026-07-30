@@ -59,6 +59,7 @@ type ModalState =
   | { type: "reschedule"; order: Order }
   | { type: "requestReschedule"; order: Order }
   | { type: "fixPayment"; order: Order }
+  | { type: "deletePayment"; order: Order }
   | { type: "edit"; order: Order }
   | { type: "refund"; order: Order }
   | { type: "reject"; order: Order }
@@ -208,6 +209,15 @@ function OrdersInner() {
     toast(message);
   }
 
+  function deletePayment(order: Order, payIndex: number) {
+    const p = order.payments[payIndex];
+    const payments = order.payments.filter((_, i) => i !== payIndex);
+    act(
+      withHistory({ ...order, payments }, user!, `Deleted payment ${p.ref} (${formatRWF(p.amt)})`),
+      "Payment deleted."
+    );
+  }
+
   function doConfirm(o: Order) {
     act(confirmOrder(o, user!), `Order confirmed for ${o.name}.`);
   }
@@ -261,6 +271,12 @@ function OrdersInner() {
     acts.push({ label: "Download invoice", onClick: () => void invoicePDF(o) });
     const lastVerified = [...o.payments].reverse().find((p) => p.verified);
     if (lastVerified) acts.push({ label: "Payment proof", onClick: () => void paymentProofPDF(o, lastVerified) });
+
+    // Remove a payment recorded in error. Available to whoever manages the
+    // order's money here — sellers, zone managers, payment checkers, Admin.
+    if (o.payments.length > 0) {
+      acts.push({ label: "Delete payment", danger: true, onClick: () => setModal({ type: "deletePayment", order: o }) });
+    }
 
     if (!o.confirmedOk && !isClosed(o)) {
       const r = canConfirm(o, isAdmin || isChecker);
@@ -701,6 +717,14 @@ function OrdersInner() {
         />
       )}
 
+      {modal?.type === "deletePayment" && (
+        <DeletePaymentModal
+          order={rows.find((o) => o.id === modal.order.id) ?? modal.order}
+          onClose={() => setModal(null)}
+          onDelete={(payIndex) => deletePayment(rows.find((o) => o.id === modal.order.id) ?? modal.order, payIndex)}
+        />
+      )}
+
       {modal?.type === "edit" && (
         <EditModal
           order={modal.order}
@@ -1070,6 +1094,52 @@ function FixPaymentModal({
           </div>
         ))}
         {err && <p className="text-sm text-status-refunded">{err}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+function DeletePaymentModal({
+  order,
+  onClose,
+  onDelete,
+}: {
+  order: Order;
+  onClose: () => void;
+  onDelete: (payIndex: number) => void;
+}) {
+  const statusOf = (p: Payment) =>
+    p.voided ? "Voided" : p.verified ? "Verified" : p.pendingApproval ? "Awaiting admin" : p.returnedForFix ? "Returned to seller" : "Unverified";
+  return (
+    <Modal
+      open
+      onClose={onClose}
+      title={`Payments — ${order.name}`}
+      footer={<Button variant="ghost" onClick={onClose}>Close</Button>}
+    >
+      <div className="space-y-2">
+        <p className="text-sm text-muted">Delete a payment recorded in error — it is removed from the order and its paid total. This can&apos;t be undone.</p>
+        {order.payments.length === 0 ? (
+          <p className="text-sm text-muted">No payments on this order.</p>
+        ) : (
+          order.payments.map((p, i) => (
+            <div key={i} className="flex items-center justify-between gap-3 rounded-md border border-line px-3 py-2">
+              <div className="text-sm">
+                <div className="font-medium text-ink">{formatRWF(p.amt)} · <span className="font-mono text-xs">{p.ref}</span></div>
+                <div className="text-xs text-muted">{statusOf(p)} · {formatDate(p.on.slice(0, 10))}{p.by ? ` · ${p.by}` : ""}</div>
+              </div>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => {
+                  if (confirm(`Delete this payment of ${formatRWF(p.amt)} (${p.ref})?\n\nThis removes it from the order and cannot be undone.`)) onDelete(i);
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          ))
+        )}
       </div>
     </Modal>
   );
