@@ -320,7 +320,11 @@ function OrdersInner() {
 
     if (!o.deliverOk && !isClosed(o)) {
       acts.push({ label: "Reschedule", onClick: () => setModal({ type: "reschedule", order: o }) });
-      acts.push({ label: "Edit", onClick: () => setModal({ type: "edit", order: o }) });
+      // A backorder (the continuation of a short delivery) may only be edited by
+      // the Admin; a normal order stays editable by sellers and zone managers.
+      if (!o.backorderOf || isAdmin) {
+        acts.push({ label: "Edit", onClick: () => setModal({ type: "edit", order: o }) });
+      }
     }
 
     // Once delivered the date can't be changed outright — a reschedule goes
