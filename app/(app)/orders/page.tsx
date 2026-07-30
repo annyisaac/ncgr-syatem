@@ -149,6 +149,8 @@ function OrdersInner() {
             return paidAmount(o) === 0;
           case "debt":
             return isDebtApproved(o) || !!o.debtOk;
+          case "backorder":
+            return !!o.backorderOf;
           case "payrejected":
             return o.payments.some((p) => p.voided);
           default:
@@ -493,6 +495,7 @@ function OrdersInner() {
               { value: "fulfilled", label: "Fulfilled" },
               { value: "refunded", label: "Refunded" },
               { value: "rejected", label: "Rejected" },
+              { value: "backorder", label: "Backorders" },
               { value: "paid", label: "Payment: Fully paid" },
               { value: "partial", label: "Payment: Partially paid" },
               { value: "unpaid", label: "Payment: Unpaid" },
@@ -734,7 +737,11 @@ function OrdersInner() {
           order={modal.order}
           onClose={() => setModal(null)}
           onSave={(patch) => {
-            act(withHistory({ ...modal.order, ...patch }, user, "Edited order"), "Order updated.");
+            const o = modal.order;
+            // Changing the delivery date moves the order (re-slots its plan) like a
+            // reschedule; the other field edits are merged on top.
+            const base = patch.date && patch.date !== o.date ? rescheduleOrder(o, patch.date, user, orders) : o;
+            act(withHistory({ ...base, ...patch }, user, "Edited order"), "Order updated.");
             setModal(null);
           }}
         />
@@ -1165,6 +1172,7 @@ function EditModal({
   const [chicks, setChicks] = useState(String(order.chicks));
   const [comp, setComp] = useState(String(order.comp));
   const [price, setPrice] = useState(String(order.price));
+  const [date, setDate] = useState(order.date);
   return (
     <Modal
       open
@@ -1181,6 +1189,7 @@ function EditModal({
                 chicks: Number(chicks) || order.chicks,
                 comp: Number(comp) || 0,
                 price: Number(price) || order.price,
+                date: date || order.date,
               })
             }
           >
@@ -1195,6 +1204,7 @@ function EditModal({
         <Field label="Chicks"><Input type="number" value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
         <Field label="Compensated chicks"><Input type="number" value={comp} onChange={(e) => setComp(e.target.value)} /></Field>
         <Field label="Unit price"><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+        <Field label={order.backorderOf ? "Backorder delivery date" : "Delivery date"}><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
       </div>
     </Modal>
   );
