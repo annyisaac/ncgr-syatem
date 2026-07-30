@@ -976,7 +976,9 @@ function FulfillModal({
             </p>
             <Field label="Backorder delivery date">
               {openDates.length === 0 ? (
-                <p className="text-sm text-status-refunded">No open dates — the backorder keeps this order&apos;s date until you reschedule it.</p>
+                // No open availability dates — still require a chosen date so the
+                // backorder is moved to it (not left on the original date).
+                <Input type="date" value={nextDate} onChange={(e) => setNextDate(e.target.value)} />
               ) : (
                 <Select
                   value={nextDate}
