@@ -219,11 +219,29 @@ export default function VerificationPage() {
     void upsertOrder(withHistory({ ...order, payments }, user!, line));
   }
 
-  function saveManual(order: Order, payIndex: number, input: string, comment: string) {
+  // `choice` is the checker's decision from the modal when an id isn't found:
+  // "seller" hands it back to be corrected, "admin" escalates for approval.
+  // "auto" is the normal statement-based outcome (verify / cash / duplicate).
+  function saveManual(order: Order, payIndex: number, input: string, comment: string, choice: "auto" | "admin" | "seller" = "auto") {
     const p0 = order.payments[payIndex];
     const refs = splitRefs(input);
     const on = nowISO();
-    const base: Partial<Payment> = { verified: true, verifiedBy: user!.email, verifiedOn: on, comment, flag: undefined, pendingApproval: undefined };
+    const base: Partial<Payment> = { verified: true, verifiedBy: user!.email, verifiedOn: on, comment, flag: undefined, pendingApproval: undefined, returnedForFix: undefined };
+
+    if (choice === "seller") {
+      patchPayment(order, payIndex,
+        { verified: false, pendingApproval: undefined, returnedForFix: { by: user!.email, on, refs, note: comment }, flag: `Missing in statements: ${refs.join(", ")}` },
+        `Payment (${refs.join(", ")}) returned to the seller to correct the transaction id — ${comment}`);
+      toast("Returned to the seller to correct the transaction id.", "info");
+      return setManual(null);
+    }
+    if (choice === "admin") {
+      patchPayment(order, payIndex,
+        { verified: false, returnedForFix: undefined, pendingApproval: { by: user!.email, on, refs, note: comment }, flag: `Missing in statements: ${refs.join(", ")}` },
+        `Payment (${refs.join(", ")}) sent to the Admin / Accountant for approval — ${comment}`);
+      toast("Sent to the Admin / Accountant for approval.", "info");
+      return setManual(null);
+    }
 
     // Cash / non-bank verifies at the recorded amount.
     if (refs.length === 1 && refs[0].toLowerCase() === "cash") {
@@ -263,14 +281,12 @@ export default function VerificationPage() {
       return setManual(null);
     }
 
-    // A simply-missing id is only FLAGGED here. The row then offers "Return to
-    // seller" (or "Send to Admin" once already corrected once) — verifying and
-    // returning are never shown side by side.
+    // Fallback: a missing id with no explicit choice escalates to the Admin.
     const flag = `Missing in statements: ${missing.join(", ")}`;
     patchPayment(order, payIndex,
-      { verified: false, pendingApproval: undefined, returnedForFix: undefined, flag },
-      `Payment (${refs.join(", ")}) not found in the statements — ${flag}${comment ? ` — ${comment}` : ""}`);
-    toast(`Not in the statement — use “Return to seller” to send it for correction.`, "info");
+      { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, returnedForFix: undefined, flag },
+      `Payment (${refs.join(", ")}) sent to Admin — ${flag} — ${comment}`);
+    toast(`Sent to Admin for approval — ${flag}.`, "info");
     setManual(null);
   }
 
@@ -304,28 +320,6 @@ export default function VerificationPage() {
     toast("Payment rejected and voided — no longer counts as paid.", "info");
   }
 
-  // Explicit "can't find this id" — hand the payment to the seller / zone
-  // manager / accountant to correct the transaction id, then re-verify here.
-  function returnToSeller(order: Order, payIndex: number) {
-    const p0 = order.payments[payIndex];
-    const on = nowISO();
-    patchPayment(order, payIndex,
-      { verified: false, pendingApproval: undefined, returnedForFix: { by: user!.email, on, refs: [p0.ref] }, flag: p0.flag ?? "Not in any statement" },
-      `Payment (${p0.ref}) returned to the seller to correct the transaction id`);
-    toast("Returned to the seller to correct the transaction id.", "info");
-  }
-
-  // Still not in any statement after the seller already corrected it once —
-  // escalate to the Admin's final approve/void decision.
-  function sendToAdmin(order: Order, payIndex: number) {
-    const p0 = order.payments[payIndex];
-    const on = nowISO();
-    patchPayment(order, payIndex,
-      { verified: false, returnedForFix: undefined, pendingApproval: { by: user!.email, on, refs: [p0.ref] }, flag: p0.flag ?? "Missing in statements" },
-      `Payment (${p0.ref}) escalated to Admin — still not in any statement after correction`);
-    toast("Sent to the Admin for a final decision.", "info");
-  }
-
   return (
     <div className="space-y-6">
 
@@ -333,11 +327,11 @@ export default function VerificationPage() {
       <Card>
         <CardHeader title="When a transaction ID isn't in the statement" />
         <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink/70">
-          <li>Verify a payment by matching its ID to the statement — automatically, or with <strong>Verify manually</strong> (the amount is shown when the ID is found).</li>
-          <li>When the ID <strong>isn&apos;t found</strong> (auto-check or manual), the row shows <strong>Return to seller</strong>. Use it to hand the payment to the <strong>seller / zone manager / accountant</strong> to correct the ID — it is <em>not</em> sent to the Admin yet.</li>
-          <li>They fix the ID and it comes back here as unverified — <strong>re-verify it</strong> (or run the auto-check).</li>
-          <li>If the ID is <strong>still</strong> missing after they corrected it once, the row shows <strong>Send to Admin</strong> — escalate to the Admin&apos;s decision below (approve or void).</li>
-          <li>A <strong>duplicate</strong> ID (found with different amounts) is ambiguous, not a typo, so it goes straight to the Admin.</li>
+          <li>Verify a payment by matching its ID to the statement — automatically, or with <strong>Verify manually</strong> (the amount shows when the ID is found).</li>
+          <li>If the ID <strong>isn&apos;t found</strong>, in the Verify-manually box choose either <strong>Return to seller to fix</strong> (the seller / zone manager / accountant corrects the ID) or <strong>Send to Admin</strong> for approval.</li>
+          <li>When returned, they fix the ID and it comes back here to <strong>re-verify</strong> (or run the auto-check).</li>
+          <li>If the Admin / Accountant also can&apos;t find it, they <strong>reject the payment</strong> below — that voids the <em>payment only</em> (it stops counting as paid); the order stays open.</li>
+          <li>A <strong>duplicate</strong> ID (appears with different amounts) is ambiguous, not a typo, so it goes straight to the Admin.</li>
         </ol>
       </Card>
 
@@ -483,7 +477,9 @@ export default function VerificationPage() {
         <Card className={approvalRows.length ? "border-gold bg-gold-bg/25" : undefined}>
           <CardHeader title={`Missing-payment approvals (${approvalRows.length})`} />
           <p className="mb-3 text-sm text-ink/60">
-            Payments a checker could not match to any bank statement. You have the final say — approve to verify, or reject.
+            Payments a checker could not match to any bank statement. You have the final say — <strong>approve</strong> to
+            verify it, or <strong>reject</strong> if you also can&apos;t find it. Rejecting voids the <em>payment only</em> (it
+            stops counting toward paid/balance); the order itself stays open.
           </p>
           <TableWrap>
             <thead>
@@ -508,8 +504,8 @@ export default function VerificationPage() {
                   <Td className="text-xs text-muted">{p.pendingApproval?.by}</Td>
                   <Td>
                     <div className="flex gap-2">
-                      <Button size="sm" onClick={() => adminApprove(o, i)}>Approve</Button>
-                      <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button>
+                      <Button size="sm" onClick={() => adminApprove(o, i)}>Approve payment</Button>
+                      <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject payment</Button>
                     </div>
                   </Td>
                 </tr>
@@ -619,15 +615,6 @@ export default function VerificationPage() {
                       )
                     ) : p.returnedForFix ? (
                       <span className="text-xs text-muted">with seller</span>
-                    ) : p.flag ? (
-                      // Checked and NOT found — no longer offer "verify manually";
-                      // return it to the seller to fix, or escalate to the Admin
-                      // if the seller already corrected it once.
-                      p.refFixed ? (
-                        <Button size="sm" onClick={() => sendToAdmin(o, i)}>Send to Admin</Button>
-                      ) : (
-                        <Button size="sm" onClick={() => returnToSeller(o, i)}>Return to seller</Button>
-                      )
                     ) : (
                       <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
                         Verify manually
@@ -647,7 +634,7 @@ export default function VerificationPage() {
           payment={manual.order.payments[manual.payIndex]}
           statements={statements}
           onClose={() => setManual(null)}
-          onSave={(ref, comment) => saveManual(manual.order, manual.payIndex, ref, comment)}
+          onSave={(ref, comment, choice) => saveManual(manual.order, manual.payIndex, ref, comment, choice)}
         />
       )}
     </div>
@@ -665,7 +652,7 @@ function ManualModal({
   payment: Payment;
   statements: BankStatement[];
   onClose: () => void;
-  onSave: (ref: string, comment: string) => void;
+  onSave: (ref: string, comment: string, choice: "auto" | "admin" | "seller") => void;
 }) {
   const [ref, setRef] = useState(payment.ref);
   const [comment, setComment] = useState("");
@@ -679,11 +666,17 @@ function ManualModal({
   const bankTotal = allClean ? lookups.reduce((s, l) => s + l.matches[0].amt, 0) : null;
   const anyMissing = !cash && lookups.some((l) => l.matches.length === 0);
 
-  const action: "cash" | "verify" | "admin" = cash ? "cash" : allClean ? "verify" : "admin";
-  const btnLabel =
+  const action: "cash" | "verify" | "missing" | "dup" =
+    cash ? "cash" : allClean ? "verify" : anyMissing ? "missing" : "dup";
+  const verifyLabel =
     action === "cash" ? "Confirm (cash)"
-    : action === "verify" ? (bankTotal !== payment.amt ? `Verify at ${formatRWF(bankTotal!)}` : "Confirm verification")
-    : "Send to Admin for approval";
+    : bankTotal !== payment.amt ? `Verify at ${formatRWF(bankTotal!)}` : "Confirm verification";
+
+  const submit = (choice: "auto" | "admin" | "seller") => {
+    if (!ref.trim()) return setErr("Enter the transaction id(s) or CASH.");
+    if (!comment.trim()) return setErr("A comment is required.");
+    onSave(ref.trim(), comment.trim(), choice);
+  };
 
   return (
     <Modal
@@ -693,15 +686,16 @@ function ManualModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={() => {
-              if (!ref.trim()) return setErr("Enter the transaction id(s) or CASH.");
-              if (!comment.trim()) return setErr("A comment is required.");
-              onSave(ref.trim(), comment.trim());
-            }}
-          >
-            {btnLabel}
-          </Button>
+          {action === "cash" || action === "verify" ? (
+            <Button onClick={() => submit("auto")}>{verifyLabel}</Button>
+          ) : action === "missing" ? (
+            <>
+              <Button variant="secondary" onClick={() => submit("seller")}>Return to seller to fix</Button>
+              <Button onClick={() => submit("admin")}>Send to Admin</Button>
+            </>
+          ) : (
+            <Button onClick={() => submit("admin")}>Send to Admin</Button>
+          )}
         </>
       }
     >
@@ -733,10 +727,17 @@ function ManualModal({
           </div>
         )}
 
-        {action === "admin" && (
+        {action === "missing" && (
           <div className="rounded-lg border border-gold bg-gold-bg/50 px-3 py-2 text-sm text-gold-dark">
-            {anyMissing ? "One or more transaction ids aren’t in any statement." : "A reference is ambiguous."} This can’t be
-            confirmed here — it will be <strong>sent to the Admin</strong> for the final decision.
+            One or more transaction ids aren’t in any statement. Choose <strong>Return to seller to fix</strong> — they correct
+            the id and it comes back here to verify — or <strong>Send to Admin</strong> for approval.
+            {payment.refFixed && <div className="mt-1 text-xs">The seller has already corrected this once.</div>}
+          </div>
+        )}
+        {action === "dup" && (
+          <div className="rounded-lg border border-gold bg-gold-bg/50 px-3 py-2 text-sm text-gold-dark">
+            A reference is ambiguous (it appears with different amounts). This can’t be confirmed here — it will be
+            <strong> sent to the Admin</strong> for the final decision.
           </div>
         )}
         {action === "verify" && bankTotal !== payment.amt && (
