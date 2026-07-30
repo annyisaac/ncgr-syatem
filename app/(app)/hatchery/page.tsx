@@ -454,25 +454,63 @@ function MaintenanceView({ filter }: { filter: DashFilter }) {
 function CoordinationView({ user, filter }: { user: User; filter: DashFilter }) {
   const { inventory, allocations, dispatches } = useHatchery();
   const { orders } = useData();
+
+  // Every confirmed order still awaiting delivery — the demand side.
+  const awaiting = useMemo(() => ordersToDeliver(orders, user), [orders, user]);
   const toDeliver = useMemo(
-    () => ordersToDeliver(orders, user)
+    () => awaiting
       .filter((o) => matches(filter.q, o.name, o.product, o.district) && inFilterRange(o.date, filter.range))
       .slice().sort((a, b) => (a.date === b.date ? a.plan - b.plan : a.date < b.date ? -1 : 1)),
-    [orders, user, filter]
+    [awaiting, filter]
   );
+
   const availBy = (p: string) => inventory.filter((i) => i.productType === p && i.availableCount > 0).reduce((s, i) => s + i.availableCount, 0);
+  const demandBy = (p: string) => awaiting.filter((o) => o.product === p).reduce((s, o) => s + o.chicks, 0);
   const totalAvail = inventory.reduce((s, i) => s + i.availableCount, 0);
+  const totalDemand = awaiting.reduce((s, o) => s + o.chicks, 0);
+  const gap = totalAvail - totalDemand;
   const pendingAlloc = allocations.filter((a) => a.status === "proposed" || a.status === "finalized").length;
-  const inTransit = dispatches.filter((d) => !d.deliveredAt).length;
+  const today = todayISO();
+  const dueToday = awaiting.filter((o) => o.date === today).reduce((s, o) => s + o.chicks, 0);
+
+  const inTransit = useMemo(
+    () => dispatches.filter((d) => d.dispatchedAt && !d.deliveredAt).slice().sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : -1)).slice(0, 10),
+    [dispatches]
+  );
+  const clientOf = (orderId?: string) => orders.find((o) => o.id === orderId)?.name ?? "—";
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
         <StatTile label="Chicks available" value={totalAvail.toLocaleString()} tone="green" />
-        {PRODUCTS.map((p) => <StatTile key={p} label={`${p} available`} value={availBy(p).toLocaleString()} />)}
+        <StatTile label="Chicks to deliver" value={totalDemand.toLocaleString()} tone={totalDemand ? "gold" : "default"} />
+        <StatTile label={gap >= 0 ? "Surplus" : "Shortfall"} value={Math.abs(gap).toLocaleString()} tone={gap < 0 ? "red" : "green"} />
+        <StatTile label="Due today" value={dueToday.toLocaleString()} tone={dueToday ? "gold" : "default"} />
         <StatTile label="Pending allocations" value={String(pendingAlloc)} tone={pendingAlloc ? "gold" : "default"} />
-        <StatTile label="In transit" value={String(inTransit)} />
+        <StatTile label="In transit" value={String(inTransit.length)} />
       </div>
+
+      <Card>
+        <SectionTitle label="Availability vs demand by product" />
+        <TableWrap>
+          <thead>
+            <tr><Th>Product</Th><Th className="text-right">Available</Th><Th className="text-right">To deliver</Th><Th className="text-right">Balance</Th></tr>
+          </thead>
+          <tbody>
+            {PRODUCTS.map((p) => {
+              const a = availBy(p), d = demandBy(p), g = a - d;
+              return (
+                <tr key={p}>
+                  <Td className="font-medium">{p}</Td>
+                  <Td className="text-right">{a.toLocaleString()}</Td>
+                  <Td className="text-right">{d.toLocaleString()}</Td>
+                  <Td className="text-right"><Pill tone={g < 0 ? "red" : "green"}>{g >= 0 ? `+${g.toLocaleString()}` : g.toLocaleString()}</Pill></Td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </TableWrap>
+      </Card>
 
       <Card>
         <SectionTitle label={`Chicks to deliver — delivery plan (${toDeliver.length})`} />
@@ -499,6 +537,28 @@ function CoordinationView({ user, filter }: { user: User; filter: DashFilter }) 
         </TableWrap>
         <p className="mt-2 text-xs text-muted"><Link href="/hatchery/coordination" className="text-gold-dark underline">Open Coordination →</Link> to allocate and dispatch.</p>
       </Card>
+
+      {inTransit.length > 0 && (
+        <Card>
+          <SectionTitle label={`In transit — dispatched, not yet delivered (${inTransit.length})`} />
+          <TableWrap>
+            <thead>
+              <tr><Th>Client</Th><Th className="text-right">Chicks</Th><Th>Carrier</Th><Th>Pickup</Th><Th>Dispatched</Th></tr>
+            </thead>
+            <tbody>
+              {inTransit.map((d) => (
+                <tr key={d.id}>
+                  <Td className="font-medium">{clientOf(d.orderId)}</Td>
+                  <Td className="text-right">{d.quantity.toLocaleString()}</Td>
+                  <Td>{d.carrier}</Td>
+                  <Td className="text-xs text-muted">{d.pickupLocation}</Td>
+                  <Td className="text-xs text-muted">{formatDateTime(d.dispatchedAt)}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Card>
+      )}
     </>
   );
 }
