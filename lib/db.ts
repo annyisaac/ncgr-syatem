@@ -333,6 +333,30 @@ export const saveStatementOne = (s: BankStatement) => upsertOne("statements", "i
 export const deleteStatementOne = (id: string) => deleteOne("statements", "id", id);
 export const deleteRouteOne = (id: string) => deleteOne("routes", "id", id);
 export const deleteAvailabilityOne = (id: string) => deleteOne("availability", "id", id);
+
+// ---------------------------------------------------------------------------
+// Payment slips — uploaded to a PRIVATE Storage bucket, never inlined in the
+// order row (which would bloat the orders load). The payment keeps only a path.
+// ---------------------------------------------------------------------------
+
+const SLIP_BUCKET = "payment-slips";
+
+export async function uploadPaymentSlip(file: File): Promise<string> {
+  const ext = (file.name.split(".").pop() || "bin").toLowerCase().replace(/[^a-z0-9]/g, "") || "bin";
+  const path = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}.${ext}`;
+  const { error } = await getSupabase().storage
+    .from(SLIP_BUCKET)
+    .upload(path, file, { upsert: false, contentType: file.type || undefined });
+  if (error) throw new Error(`Could not upload slip: ${error.message}`);
+  return path;
+}
+
+/** A short-lived signed URL for viewing a slip (bucket is private). */
+export async function paymentSlipUrl(path: string): Promise<string | null> {
+  const { data, error } = await getSupabase().storage.from(SLIP_BUCKET).createSignedUrl(path, 3600);
+  if (error) return null;
+  return data?.signedUrl ?? null;
+}
 /** Admin-only, irreversible: permanently removes an order. */
 export const deleteOrderOne = (id: string) => deleteOne("orders", "id", id);
 

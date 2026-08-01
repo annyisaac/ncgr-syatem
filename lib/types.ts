@@ -186,6 +186,11 @@ export interface Payment {
   ref: string; // transaction ID / reference (CASH allowed for manual checks)
   on: string; // ISO datetime recorded
   by: string; // email of who recorded it
+  /** How the money came in. Bank payments also carry a bank name and a slip. */
+  method?: "MoMo" | "Bank";
+  bankName?: string;
+  /** Object path of an uploaded bank slip in the private "payment-slips" bucket. */
+  slipPath?: string;
   verified: boolean;
   verifiedBy?: string;
   verifiedOn?: string;

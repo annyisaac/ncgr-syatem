@@ -24,6 +24,7 @@ import {
 } from "@/lib/config";
 import { nowISO, normalizePhone, formatDate } from "@/lib/format";
 import { logLine } from "@/lib/orders";
+import { uploadPaymentSlip } from "@/lib/db";
 
 export default function NewOrderPage() {
   const { user } = useAuth();
@@ -62,6 +63,9 @@ export default function NewOrderPage() {
   const [pickup, setPickup] = useState("");
   const [payAmt, setPayAmt] = useState("");
   const [payRef, setPayRef] = useState("");
+  const [payMethod, setPayMethod] = useState<"MoMo" | "Bank">("MoMo");
+  const [bankName, setBankName] = useState("");
+  const [slipFile, setSlipFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const isZoneManager = user?.role === "Tetra Zone Manager";
@@ -198,14 +202,30 @@ export default function NewOrderPage() {
     }
 
     const payAmount = Number(payAmt) || 0;
-    if (payAmount > 0 && !payRef.trim())
-      return setError("Enter the transaction ID for the first payment.");
+    if (payAmount > 0) {
+      if (!payRef.trim()) return setError("Enter the transaction reference for the first payment.");
+      if (payMethod === "Bank" && !bankName.trim()) return setError("Enter the bank name.");
+      if (payMethod === "Bank" && !slipFile) return setError("Upload the bank payment slip.");
+    }
 
     const orderProvince: Province = isTetra
       ? (province as Province)
       : (PROVINCES.find((p) => DISTRICTS_BY_PROVINCE[p].includes(district)) ??
         "Eastern");
     const zone = zoneOfDistrict(district) ?? user!.zone ?? "Zone 1";
+
+    // Upload the bank slip first (to the private bucket) so the order only
+    // stores its path.
+    let slipPath: string | undefined;
+    if (payAmount > 0 && payMethod === "Bank" && slipFile) {
+      setSaving(true);
+      try {
+        slipPath = await uploadPaymentSlip(slipFile);
+      } catch (err) {
+        setSaving(false);
+        return setError(err instanceof Error ? err.message : "Could not upload the payment slip.");
+      }
+    }
 
     const payments: Payment[] = [];
     const history = [logLine(user!, "Created order (Not confirmed)")];
@@ -215,10 +235,13 @@ export default function NewOrderPage() {
         ref: payRef.trim(),
         on: nowISO(),
         by: user!.email,
+        method: payMethod,
+        ...(payMethod === "Bank" ? { bankName: bankName.trim() } : {}),
+        ...(slipPath ? { slipPath } : {}),
         verified: false,
       });
       history.push(
-        logLine(user!, `Recorded first payment ${payAmount.toLocaleString()} RWF (ref ${payRef.trim()})`)
+        logLine(user!, `Recorded first payment ${payAmount.toLocaleString()} RWF via ${payMethod} (ref ${payRef.trim()})`)
       );
     }
 
@@ -525,12 +548,29 @@ export default function NewOrderPage() {
                 You can record the first payment now, or add payments later.
               </p>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                <Field label="Payment method">
+                  <Select
+                    value={payMethod}
+                    onChange={(e) => setPayMethod(e.target.value as "MoMo" | "Bank")}
+                    options={[{ value: "MoMo", label: "Mobile Money (MoMo)" }, { value: "Bank", label: "Bank transfer" }]}
+                  />
+                </Field>
                 <Field label="Amount (RWF)">
                   <Input type="number" min={0} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} />
                 </Field>
-                <Field label="Transaction ID">
-                  <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="e.g. MTN ref / bank ref" />
+                <Field label="Transaction reference">
+                  <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder={payMethod === "Bank" ? "Bank transfer reference" : "MoMo transaction ID"} />
                 </Field>
+                {payMethod === "Bank" && (
+                  <>
+                    <Field label="Bank name">
+                      <Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. Bank of Kigali" />
+                    </Field>
+                    <Field label="Payment slip (image/PDF)">
+                      <Input type="file" accept="image/*,application/pdf" onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)} />
+                    </Field>
+                  </>
+                )}
               </div>
             </Card>
           </>

@@ -18,6 +18,7 @@ import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
+import { paymentSlipUrl } from "@/lib/db";
 import { SearchTimeBar } from "@/components/dashboard/DashKit";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
@@ -213,6 +214,12 @@ export default function VerificationPage() {
     setOutcomes(res.outcomes);
     const verified = res.outcomes.filter((o) => o.result === "verified" || o.result === "corrected").length;
     toast(`Automatic check done — ${verified} verified/corrected, ${res.outcomes.length} checked.`);
+  }
+
+  async function openSlip(path: string) {
+    const url = await paymentSlipUrl(path);
+    if (url) window.open(url, "_blank", "noopener");
+    else toast("Could not open the slip.", "error");
   }
 
   function patchPayment(order: Order, payIndex: number, patch: Partial<Payment>, line: string) {
@@ -571,6 +578,8 @@ export default function VerificationPage() {
                   <Td className="text-right">{formatRWF(p.amt)}</Td>
                   <Td>
                     {p.ref}
+                    {(p.method || p.bankName) && <div className="text-xs text-muted">{p.method}{p.bankName ? ` · ${p.bankName}` : ""}</div>}
+                    {p.slipPath && <button type="button" onClick={() => void openSlip(p.slipPath!)} className="block text-xs text-gold-dark underline">View slip</button>}
                     {p.flag && <div className="text-xs text-status-refunded">{p.flag}</div>}
                   </Td>
                   <Td>
