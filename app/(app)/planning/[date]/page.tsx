@@ -400,7 +400,9 @@ function AllocateModal({ order, routes, onClose, onSave }: {
   order: Order; routes: Route[]; onClose: () => void; onSave: (chicks: number, pickup: string, routeId: string) => void;
 }) {
   const [chicks, setChicks] = useState(String(toDeliver(order)));
-  const [pickup, setPickup] = useState("Hatchery");
+  // Prefill the pickup with what was entered when the order was created; the
+  // planner can still edit it here.
+  const [pickup, setPickup] = useState(order.pickupLocation?.trim() || "Hatchery");
   const [routeId, setRouteId] = useState(routes[0]?.id ?? "");
   const [err, setErr] = useState<string | null>(null);
   return (
@@ -419,7 +421,9 @@ function AllocateModal({ order, routes, onClose, onSave }: {
       <div className="space-y-3 text-sm">
         <p className="text-muted">{order.product} · {order.district} · to deliver {toDeliver(order).toLocaleString()} chicks</p>
         <Field label="Chicks to deliver"><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
-        <Field label="Pickup location"><Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Where the chicks are picked up" /></Field>
+        <Field label="Pickup location" hint={order.pickupLocation ? "From the order — edit if it changed" : undefined}>
+          <Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Where the chicks are picked up" />
+        </Field>
         <Field label="Route">
           {routes.length === 0 ? <p className="text-status-refunded">No routes yet — create one on the page first.</p> : (
             <Select value={routeId} onChange={(e) => setRouteId(e.target.value)} options={routes.map((r) => ({ value: r.id, label: `${r.name} — ${r.driver}` }))} />
