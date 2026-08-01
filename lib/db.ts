@@ -332,6 +332,7 @@ export const saveStatementOne = (s: BankStatement) => upsertOne("statements", "i
 /** Explicit single-row deletes — the only way the app removes a row. */
 export const deleteStatementOne = (id: string) => deleteOne("statements", "id", id);
 export const deleteRouteOne = (id: string) => deleteOne("routes", "id", id);
+export const deleteAvailabilityOne = (id: string) => deleteOne("availability", "id", id);
 /** Admin-only, irreversible: permanently removes an order. */
 export const deleteOrderOne = (id: string) => deleteOne("orders", "id", id);
 

@@ -36,6 +36,7 @@ import {
   replaceDatabase,
   saveAvailability,
   saveAvailabilityOne,
+  deleteAvailabilityOne,
   saveCommissions,
   saveCommissionOne,
   saveDsrVisitOne,
@@ -101,6 +102,7 @@ interface DataContextValue {
 
   setAvailability: (a: Availability[]) => Promise<void>;
   upsertAvailability: (a: Availability) => Promise<void>;
+  removeAvailability: (id: string) => Promise<void>;
 
   dsrVisits: DsrVisit[];
   upsertDsrVisit: (v: DsrVisit) => Promise<void>;
@@ -347,6 +349,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
     setAvailability: (a) => apply("availability", a, saveAvailability),
     upsertAvailability: (a) =>
       applyOne("availability", a, (x) => x.id === a.id, () => saveAvailabilityOne(a)),
+    removeAvailability: async (id) => {
+      setDb((prev) => ({ ...prev, availability: (prev.availability ?? []).filter((a) => a.id !== id) }));
+      await deleteAvailabilityOne(id);
+    },
 
     upsertDsrVisit: (v) =>
       applyOne("dsrVisits", v, (x) => x.id === v.id, () => saveDsrVisitOne(v)),

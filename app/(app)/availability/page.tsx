@@ -17,7 +17,7 @@ const CAN_MANAGE = ["Admin"];
 
 export default function AvailabilityPage() {
   const { user } = useAuth();
-  const { availability, orders, upsertAvailability } = useData();
+  const { availability, orders, upsertAvailability, removeAvailability } = useData();
   const { toast } = useToast();
 
   const [date, setDate] = useState(todayISO());
@@ -46,6 +46,16 @@ export default function AvailabilityPage() {
 
   function editRow(a: Availability) {
     setDate(a.date); setRoss(String(a.ross)); setTetra(String(a.tetra));
+  }
+
+  function deleteDate(a: Availability) {
+    const onDate = orders.filter((o) => o.date === a.id && o.status !== "refunded" && o.status !== "rejected").length;
+    const warn = onDate > 0
+      ? `\n\nWARNING: ${onDate} order(s) are on this date. They keep their date, but it will no longer be an open availability slot.`
+      : "";
+    if (!confirm(`Delete the delivery date ${formatDate(a.date)}?${warn}\n\nThis cannot be undone.`)) return;
+    void removeAvailability(a.id);
+    toast(`Deleted delivery date ${formatDate(a.date)}.`);
   }
 
   return (
@@ -92,7 +102,14 @@ export default function AvailabilityPage() {
                   <Td className="text-right">{a.ross > 0 ? <Pill tone={rossLeft > 0 ? "green" : "red"}>{rossLeft.toLocaleString()}</Pill> : <span className="text-muted">—</span>}</Td>
                   <Td className="text-right">{a.tetra.toLocaleString()}</Td>
                   <Td className="text-right">{a.tetra > 0 ? <Pill tone={tetraLeft > 0 ? "green" : "red"}>{tetraLeft.toLocaleString()}</Pill> : <span className="text-muted">—</span>}</Td>
-                  {canManage && <Td><Button size="sm" variant="ghost" onClick={() => editRow(a)}>Edit</Button></Td>}
+                  {canManage && (
+                    <Td>
+                      <div className="flex gap-2">
+                        <Button size="sm" variant="ghost" onClick={() => editRow(a)}>Edit</Button>
+                        <Button size="sm" variant="ghost" onClick={() => deleteDate(a)}>Delete</Button>
+                      </div>
+                    </Td>
+                  )}
                 </tr>
               );
             })}
