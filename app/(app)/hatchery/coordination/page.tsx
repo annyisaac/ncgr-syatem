@@ -182,11 +182,6 @@ export default function CoordinationPage() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h1 className="text-lg font-bold text-ink">Coordination · Orders Management</h1>
-        <p className="text-sm text-muted">Manage orders and coordinate chick deliveries.</p>
-      </div>
-
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Tetra Super Harco to deliver" value={kpis.tetra.toLocaleString()} tone="gold" />
         <StatTile label="Ross 308 to deliver" value={kpis.ross.toLocaleString()} tone="gold" />
