@@ -106,6 +106,7 @@ export function canFulfill(order: Order): string | null {
   if (!order.confirmedOk) return "Confirm the order first.";
   if (!allVerified(order)) return "Payments are not all checker-verified.";
   if (!isFullyPaid(order)) return "Order is not fully paid.";
+  if (!order.allocatedOk) return "Chicks not allocated at the hatchery yet.";
   return null;
 }
 

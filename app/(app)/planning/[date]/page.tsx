@@ -143,6 +143,7 @@ export default function DayPlanPage() {
   }
 
   function markDelivered(o: Order) {
+    if (!o.allocatedOk) return toast("Chicks not allocated at the hatchery yet — can't mark delivered.", "info");
     const routeName = routes.find((r) => r.id === o.routeId)?.name ?? "route";
     upsertOrder(fulfillOrder(o, user!, `Delivered on ${routeName}`));
     toast(`${o.name} marked delivered.`);
