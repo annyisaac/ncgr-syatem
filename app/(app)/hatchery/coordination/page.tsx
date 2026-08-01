@@ -182,6 +182,15 @@ export default function CoordinationPage() {
 
   return (
     <div className="space-y-5">
+      {/* Filters + search — compact row at the top of the page */}
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="w-full sm:w-44"><Select value={dateF} onChange={(e) => setDateF(e.target.value)} options={[{ value: "", label: "All delivery dates" }, ...deliveryDates.map((d) => ({ value: d, label: formatDate(d) }))]} /></div>
+        <div className="w-full sm:w-40"><Select value={productF} onChange={(e) => setProductF(e.target.value)} options={[{ value: "all", label: "All products" }, ...PRODUCTS.map((p) => ({ value: p, label: p }))]} /></div>
+        <div className="w-full sm:w-36"><Select value={payF} onChange={(e) => setPayF(e.target.value)} options={[{ value: "all", label: "All payment" }, { value: "paid", label: "Paid" }, { value: "partial", label: "Partial" }, { value: "unpaid", label: "Unpaid" }, { value: "on debt", label: "On debt" }]} /></div>
+        <div className="w-full sm:w-44"><Select value={salesF} onChange={(e) => setSalesF(e.target.value)} options={[{ value: "all", label: "All salespeople" }, ...salespeople.map((s) => ({ value: s, label: nameOf(s) }))]} /></div>
+        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client name or phone…" className="w-full sm:w-56" />
+      </div>
+
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Tetra Super Harco to deliver" value={kpis.tetra.toLocaleString()} tone="gold" />
         <StatTile label="Ross 308 to deliver" value={kpis.ross.toLocaleString()} tone="gold" />
@@ -203,15 +212,6 @@ export default function CoordinationPage() {
                 {label} <span className={tab === key ? "text-white/70" : "text-muted"}>{counts[key] ?? 0}</span>
               </button>
             ))}
-          </div>
-
-          {/* Filters */}
-          <div className="flex flex-wrap items-center gap-2">
-            <Select value={dateF} onChange={(e) => setDateF(e.target.value)} options={[{ value: "", label: "All delivery dates" }, ...deliveryDates.map((d) => ({ value: d, label: formatDate(d) }))]} />
-            <Select value={productF} onChange={(e) => setProductF(e.target.value)} options={[{ value: "all", label: "All products" }, ...PRODUCTS.map((p) => ({ value: p, label: p }))]} />
-            <Select value={payF} onChange={(e) => setPayF(e.target.value)} options={[{ value: "all", label: "All payment" }, { value: "paid", label: "Paid" }, { value: "partial", label: "Partial" }, { value: "unpaid", label: "Unpaid" }, { value: "on debt", label: "On debt" }]} />
-            <Select value={salesF} onChange={(e) => setSalesF(e.target.value)} options={[{ value: "all", label: "All salespeople" }, ...salespeople.map((s) => ({ value: s, label: nameOf(s) }))]} />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client name or phone…" className="max-w-[220px]" />
           </div>
 
           <Card>
