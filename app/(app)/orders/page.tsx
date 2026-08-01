@@ -85,6 +85,8 @@ function OrdersInner() {
   const dateParam = search.get("date") ?? "";
   // Deep-link from a notification: show just that one order.
   const orderParam = search.get("order") ?? "";
+  // Deep-link from the "Payments to correct" card: open the correction modal.
+  const fixParam = search.get("fix") ?? "";
 
   // ?q= prefills the search (the dashboard's search bar hands off to here).
   const [query, setQuery] = useState(search.get("q") ?? "");
@@ -102,6 +104,17 @@ function OrdersInner() {
   if (prevDateParam !== dateParam) {
     setPrevDateParam(dateParam);
     setDateFilter(dateParam);
+  }
+
+  // Arriving with ?order=…&fix=1 → open the "Correct payment ID" modal straight
+  // away (once the order is loaded), so "Correct" on the dashboard is one click.
+  const [prevFix, setPrevFix] = useState("");
+  if (fixParam && orderParam && prevFix !== orderParam) {
+    const o = orders.find((x) => x.id === orderParam);
+    if (o) {
+      setPrevFix(orderParam);
+      setModal({ type: "fixPayment", order: o });
+    }
   }
 
   const role = user?.role;

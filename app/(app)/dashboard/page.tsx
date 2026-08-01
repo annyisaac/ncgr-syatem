@@ -653,7 +653,7 @@ function SalesOverview({
                   <Td className="text-right">{formatRWF(p.amt)}</Td>
                   <Td className="font-mono text-xs">{p.ref}</Td>
                   <Td className="text-xs text-status-refunded">{p.flag ?? "Not in statement"}</Td>
-                  <Td><Link href={`/orders?order=${o.id}`} className="text-sm font-semibold text-gold-dark">Correct →</Link></Td>
+                  <Td><Link href={`/orders?order=${o.id}&fix=1`} className="text-sm font-semibold text-gold-dark">Correct →</Link></Td>
                 </tr>
               ))}
             </tbody>
