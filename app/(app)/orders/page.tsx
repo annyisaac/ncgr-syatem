@@ -1173,6 +1173,7 @@ function EditModal({
   const [comp, setComp] = useState(String(order.comp));
   const [price, setPrice] = useState(String(order.price));
   const [date, setDate] = useState(order.date);
+  const [pickup, setPickup] = useState(order.pickupLocation ?? "");
   return (
     <Modal
       open
@@ -1190,6 +1191,7 @@ function EditModal({
                 comp: Number(comp) || 0,
                 price: Number(price) || order.price,
                 date: date || order.date,
+                pickupLocation: pickup.trim() || undefined,
               })
             }
           >
@@ -1205,6 +1207,7 @@ function EditModal({
         <Field label="Compensated chicks"><Input type="number" value={comp} onChange={(e) => setComp(e.target.value)} /></Field>
         <Field label="Unit price"><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
         <Field label={order.backorderOf ? "Backorder delivery date" : "Delivery date"}><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+        <Field label="Pickup location"><Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. Nyabugogo taxi park" /></Field>
       </div>
     </Modal>
   );

@@ -58,6 +58,7 @@ export default function NewOrderPage() {
   const [comp, setComp] = useState("0");
   const [price, setPrice] = useState("");
   const [date, setDate] = useState("");
+  const [pickup, setPickup] = useState("");
   const [payAmt, setPayAmt] = useState("");
   const [payRef, setPayRef] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -239,6 +240,7 @@ export default function NewOrderPage() {
       plan: samedate,
       payments,
       ...(applied > 0 ? { creditApplied: applied } : {}),
+      ...(pickup.trim() ? { pickupLocation: pickup.trim() } : {}),
     };
 
     setSaving(true);
@@ -451,6 +453,9 @@ export default function NewOrderPage() {
                       onChange={(e) => setDate(e.target.value)}
                     />
                   )}
+                </Field>
+                <Field label="Pickup location" hint="Where the customer will collect / meet the delivery — used in delivery planning">
+                  <Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. Nyabugogo taxi park" />
                 </Field>
               </div>
 
