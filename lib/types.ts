@@ -238,6 +238,8 @@ export interface Order {
   plan: number; // route sort key within a delivery date
   payments: Payment[];
   confirmedOk?: boolean; // order has been confirmed (>=1 payment)
+  /** The hatchery has finalized an allocation of chicks to this order (reserved). */
+  allocatedOk?: boolean;
   deliverOk?: boolean; // fulfilled/delivered
   /** Approved to be delivered on debt — may be allocated without verified payment. */
   debtOk?: boolean;

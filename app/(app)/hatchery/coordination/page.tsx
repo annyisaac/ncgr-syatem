@@ -119,6 +119,13 @@ export default function CoordinationPage() {
       ...(status === "approved" ? { approvedBy: user!.email } : {}),
       history: [...a.history, `${nowISO()} — ${note} (by ${user!.name})`],
     });
+    // Finalizing reserves the chicks — reflect it on the sales order's status.
+    if (status === "finalized") {
+      const so = orders.find((o) => o.id === a.orderId);
+      if (so && !so.allocatedOk && !so.deliverOk) {
+        upsertOrder(withHistory({ ...so, allocatedOk: true }, user!, `Chicks allocated at the hatchery — ${a.quantity.toLocaleString()} reserved`));
+      }
+    }
     toast(note + ".");
   }
 

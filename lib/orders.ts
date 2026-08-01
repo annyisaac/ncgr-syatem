@@ -83,6 +83,7 @@ export function orderStage(o: Order): Stage {
   if (o.status === "rejected") return { label: "Rejected", tone: "red" };
   if (o.deliverOk) return { label: "Delivered", tone: "green" };
   if (o.routeId) return { label: "On the truck", tone: "info" };
+  if (o.allocatedOk) return { label: "Allocated — chicks reserved", tone: "gold" };
   if (o.confirmedOk) return { label: "Confirmed — awaiting delivery", tone: "gold" };
   if (o.payments.length > 0) return { label: "Payment recorded — awaiting verification", tone: "gold" };
   return { label: "Awaiting payment", tone: "neutral" };
