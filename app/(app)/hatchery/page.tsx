@@ -13,9 +13,10 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatDate, formatDateTime, todayISO } from "@/lib/format";
+import { formatRWF } from "@/lib/config";
 import { computeKpis, stepLabel, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
 import { visibleOrders } from "@/lib/permissions";
-import { PRODUCTS, balance, isFullyPaid, type Order, type User } from "@/lib/types";
+import { PRODUCTS, isFullyPaid, type Order, type User } from "@/lib/types";
 import type { Batch } from "@/lib/hatchery/types";
 
 const HATCHERY_SUBTITLE: Partial<Record<string, string>> = {
@@ -451,114 +452,266 @@ function MaintenanceView({ filter }: { filter: DashFilter }) {
 // Hatchery Sales & Coordination Officer — sales coordination
 // ---------------------------------------------------------------------------
 
+const COORD_COLORS = { delivered: "#3f9142", ready: "#3b82f6", allocate: "#e0a92e", waiting: "#d9534f" };
+
+function addDaysISO(iso: string, n: number): string {
+  const d = new Date(iso + "T00:00:00");
+  d.setDate(d.getDate() + n);
+  return d.toISOString().slice(0, 10);
+}
+function sameMonth(iso: string | undefined, ref: string): boolean {
+  return !!iso && iso.slice(0, 7) === ref.slice(0, 7);
+}
+function weekDays(today: string): { date: string; label: string; sub: string }[] {
+  const d = new Date(today + "T00:00:00");
+  const monday = new Date(d);
+  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  const names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  return Array.from({ length: 7 }, (_, i) => {
+    const day = new Date(monday);
+    day.setDate(monday.getDate() + i);
+    return { date: day.toISOString().slice(0, 10), label: names[i], sub: `${day.getDate()} ${day.toLocaleString("en", { month: "short" })}` };
+  });
+}
+function ago(iso: string): string {
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
+  if (s < 60) return "just now";
+  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
+  return `${Math.floor(s / 86400)} d ago`;
+}
+
+function Donut({ segments, total }: { segments: { value: number; color: string }[]; total: number }) {
+  const size = 150, stroke = 20, r = (size - stroke) / 2, C = 2 * Math.PI * r;
+  const arcs = segments.reduce<{ list: { len: number; start: number; color: string }[]; acc: number }>(
+    (state, s) => {
+      const len = total > 0 ? (s.value / total) * C : 0;
+      return { list: [...state.list, { len, start: state.acc, color: s.color }], acc: state.acc + len };
+    },
+    { list: [], acc: 0 }
+  ).list;
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="shrink-0">
+      <g transform={`rotate(-90 ${size / 2} ${size / 2})`}>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#ece7db" strokeWidth={stroke} />
+        {arcs.map((a, i) => (
+          <circle key={i} cx={size / 2} cy={size / 2} r={r} fill="none" stroke={a.color} strokeWidth={stroke} strokeDasharray={`${a.len} ${C - a.len}`} strokeDashoffset={-a.start} />
+        ))}
+      </g>
+      <text x="50%" y="46%" textAnchor="middle" dominantBaseline="middle" className="fill-ink" fontSize="22" fontWeight="700">{total}</text>
+      <text x="50%" y="60%" textAnchor="middle" dominantBaseline="middle" className="fill-muted" fontSize="10">Orders</text>
+    </svg>
+  );
+}
+
+function AttnRow({ tone, title, detail, count }: { tone: "red" | "gold" | "info"; title: string; detail: string; count: number }) {
+  return (
+    <Link href="/hatchery/coordination" className="flex items-center gap-3 rounded-lg border border-line px-3 py-2.5 hover:border-gold">
+      <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-full text-sm font-bold ${tone === "red" ? "bg-red-bg text-red" : tone === "info" ? "bg-blue-bg text-blue" : "bg-gold-bg text-gold-dark"}`}>!</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-sm font-medium text-ink">{title}</p>
+        <p className="truncate text-xs text-muted">{detail}</p>
+      </div>
+      <span className="text-xs font-semibold text-muted">{count} orders ›</span>
+    </Link>
+  );
+}
+
+function ProdAllocBar({ product, reserved, remaining }: { product: string; reserved: number; remaining: number }) {
+  const total = reserved + remaining;
+  const pct = total > 0 ? Math.round((reserved / total) * 100) : 0;
+  return (
+    <div>
+      <p className="mb-1 text-sm font-medium text-ink">{product}</p>
+      <div className="grid grid-cols-3 gap-1 text-xs text-muted">
+        <span>Available <strong className="text-ink">{total.toLocaleString()}</strong></span>
+        <span>Reserved <strong className="text-ink">{reserved.toLocaleString()}</strong></span>
+        <span>Remaining <strong className="text-ink">{remaining.toLocaleString()}</strong></span>
+      </div>
+      <div className="mt-1.5 h-2.5 w-full overflow-hidden rounded-full bg-line">
+        <div className="h-full rounded-full bg-gold" style={{ width: `${pct}%` }} />
+      </div>
+      <p className="mt-0.5 text-right text-[11px] text-muted">{pct}% reserved</p>
+    </div>
+  );
+}
+
 function CoordinationView({ user, filter }: { user: User; filter: DashFilter }) {
-  const { inventory, allocations, dispatches } = useHatchery();
-  const { orders } = useData();
-
-  // Every confirmed order still awaiting delivery — the demand side.
-  const awaiting = useMemo(() => ordersToDeliver(orders, user), [orders, user]);
-  const toDeliver = useMemo(
-    () => awaiting
-      .filter((o) => matches(filter.q, o.name, o.product, o.district) && inFilterRange(o.date, filter.range))
-      .slice().sort((a, b) => (a.date === b.date ? a.plan - b.plan : a.date < b.date ? -1 : 1)),
-    [awaiting, filter]
-  );
-
-  const availBy = (p: string) => inventory.filter((i) => i.productType === p && i.availableCount > 0).reduce((s, i) => s + i.availableCount, 0);
-  const demandBy = (p: string) => awaiting.filter((o) => o.product === p).reduce((s, o) => s + o.chicks, 0);
-  const totalAvail = inventory.reduce((s, i) => s + i.availableCount, 0);
-  const totalDemand = awaiting.reduce((s, o) => s + o.chicks, 0);
-  const gap = totalAvail - totalDemand;
-  const pendingAlloc = allocations.filter((a) => a.status === "proposed" || a.status === "finalized").length;
+  const { inventory, allocations, farmVisits } = useHatchery();
+  const { orders, notifications } = useData();
   const today = todayISO();
-  const dueToday = awaiting.filter((o) => o.date === today).reduce((s, o) => s + o.chicks, 0);
 
-  const inTransit = useMemo(
-    () => dispatches.filter((d) => d.dispatchedAt && !d.deliveredAt).slice().sort((a, b) => (a.dispatchedAt < b.dispatchedAt ? 1 : -1)).slice(0, 10),
-    [dispatches]
+  const active = useMemo(
+    () => visibleOrders(orders, user).filter((o) => o.status !== "refunded" && o.status !== "rejected"),
+    [orders, user]
   );
-  const clientOf = (orderId?: string) => orders.find((o) => o.id === orderId)?.name ?? "—";
+  const awaiting = useMemo(() => active.filter((o) => o.confirmedOk && !o.deliverOk), [active]);
+
+  const chicksBy = (p: string) => awaiting.filter((o) => o.product === p).reduce((s, o) => s + o.chicks, 0);
+  const reservedBy = (p: string) => allocations.filter((a) => a.status !== "cancelled" && a.productType === p).reduce((s, a) => s + a.quantity, 0);
+  const invBy = (p: string) => inventory.filter((i) => i.productType === p).reduce((s, i) => s + i.availableCount, 0);
+  const chicksInInv = inventory.reduce((s, i) => s + i.availableCount, 0);
+  const revenueMonth = active.flatMap((o) => o.payments).filter((p) => p.verified && !p.voided && sameMonth(p.verifiedOn ?? p.on, today)).reduce((s, p) => s + p.amt, 0);
+
+  const noAlloc = active.filter((o) => o.confirmedOk && !o.allocatedOk && !o.deliverOk);
+  const awaitPay = active.filter((o) => !o.confirmedOk && !o.deliverOk);
+  const dueToday = awaiting.filter((o) => o.date === today);
+
+  const week = weekDays(today);
+  const weekData = week.map((d) => ({ ...d, chicks: awaiting.filter((o) => o.date === d.date).reduce((s, o) => s + o.chicks, 0) }));
+  const weekTotal = weekData.reduce((s, d) => s + d.chicks, 0);
+  const weekMax = Math.max(1, ...weekData.map((d) => d.chicks));
+
+  const status = {
+    delivered: active.filter((o) => o.deliverOk).length,
+    ready: active.filter((o) => o.allocatedOk && !o.deliverOk).length,
+    allocate: active.filter((o) => o.confirmedOk && !o.allocatedOk && !o.deliverOk).length,
+    waiting: active.filter((o) => !o.confirmedOk).length,
+  };
+  const totalOrders = active.length;
+  const pctOf = (n: number) => (totalOrders ? Math.round((n / totalOrders) * 100) : 0);
+
+  const recent = useMemo(
+    () => active.filter((o) => matches(filter.q, o.name, o.product)).slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 5),
+    [active, filter.q]
+  );
+  const visits = farmVisits.slice().sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 4);
+  const notifs = notifications.slice(0, 4);
 
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <StatTile label="Chicks available" value={totalAvail.toLocaleString()} tone="green" />
-        <StatTile label="Chicks to deliver" value={totalDemand.toLocaleString()} tone={totalDemand ? "gold" : "default"} />
-        <StatTile label={gap >= 0 ? "Surplus" : "Shortfall"} value={Math.abs(gap).toLocaleString()} tone={gap < 0 ? "red" : "green"} />
-        <StatTile label="Due today" value={dueToday.toLocaleString()} tone={dueToday ? "gold" : "default"} />
-        <StatTile label="Pending allocations" value={String(pendingAlloc)} tone={pendingAlloc ? "gold" : "default"} />
-        <StatTile label="In transit" value={String(inTransit.length)} />
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Today's deliveries" value={String(dueToday.length)} />
+        <StatTile label="Tomorrow's deliveries" value={String(awaiting.filter((o) => o.date === addDaysISO(today, 1)).length)} />
+        <StatTile label="Awaiting payment" value={String(awaitPay.length)} tone={awaitPay.length ? "gold" : "default"} />
+        <StatTile label="Ready for allocation" value={String(noAlloc.length)} tone={noAlloc.length ? "gold" : "default"} />
+      </div>
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <StatTile label="Ross 308 to deliver" value={chicksBy("Ross 308").toLocaleString()} tone="gold" />
+        <StatTile label="Tetra Super Harco to deliver" value={chicksBy("Tetra Super Harco").toLocaleString()} tone="gold" />
+        <StatTile label="Chicks in inventory" value={chicksInInv.toLocaleString()} tone={chicksInInv ? "green" : "default"} />
+        <StatTile label="Revenue (this month)" value={formatRWF(revenueMonth)} tone="green" />
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <SectionTitle label={`Delivery calendar — this week (${weekTotal.toLocaleString()} chicks)`} />
+          <div className="flex h-44 items-end gap-2 pt-2">
+            {weekData.map((d) => (
+              <div key={d.date} className="flex h-full flex-1 flex-col items-center justify-end gap-1">
+                <span className="text-[10px] text-muted">{d.chicks ? d.chicks.toLocaleString() : ""}</span>
+                <div className="w-full rounded-t bg-gold" style={{ height: `${(d.chicks / weekMax) * 100}%`, minHeight: d.chicks ? 3 : 0 }} title={`${d.chicks} chicks`} />
+                <span className="text-[10px] font-medium text-ink">{d.label}</span>
+                <span className="text-[9px] text-muted">{d.sub}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle label="Orders requiring attention" action={<Link href="/hatchery/coordination" className="text-xs font-semibold text-gold-dark">View all →</Link>} />
+          <div className="space-y-2">
+            {awaitPay.length === 0 && noAlloc.length === 0 && dueToday.length === 0 ? (
+              <p className="text-sm text-muted">Nothing needs attention right now.</p>
+            ) : (
+              <>
+                {awaitPay.length > 0 && <AttnRow tone="red" title="Awaiting payment" detail={`e.g. ${awaitPay[0].name} · ${awaitPay[0].product}`} count={awaitPay.length} />}
+                {noAlloc.length > 0 && <AttnRow tone="gold" title="No batch allocated" detail={`e.g. ${noAlloc[0].name} · ${noAlloc[0].product}`} count={noAlloc.length} />}
+                {dueToday.length > 0 && <AttnRow tone="info" title="Delivery today" detail="Scheduled for delivery today" count={dueToday.length} />}
+              </>
+            )}
+          </div>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        <Card>
+          <SectionTitle label="Production allocation" />
+          <div className="space-y-4">
+            {PRODUCTS.map((p) => <ProdAllocBar key={p} product={p} reserved={reservedBy(p)} remaining={invBy(p)} />)}
+          </div>
+        </Card>
+
+        <Card>
+          <SectionTitle label="Delivery status" />
+          <div className="flex items-center gap-5">
+            <Donut total={totalOrders} segments={[
+              { value: status.delivered, color: COORD_COLORS.delivered },
+              { value: status.ready, color: COORD_COLORS.ready },
+              { value: status.allocate, color: COORD_COLORS.allocate },
+              { value: status.waiting, color: COORD_COLORS.waiting },
+            ]} />
+            <div className="space-y-1.5 text-sm">
+              <Legend color={COORD_COLORS.delivered} label="Delivered" value={status.delivered} pct={pctOf(status.delivered)} />
+              <Legend color={COORD_COLORS.ready} label="Ready for delivery" value={status.ready} pct={pctOf(status.ready)} />
+              <Legend color={COORD_COLORS.allocate} label="To allocate" value={status.allocate} pct={pctOf(status.allocate)} />
+              <Legend color={COORD_COLORS.waiting} label="Awaiting payment" value={status.waiting} pct={pctOf(status.waiting)} />
+            </div>
+          </div>
+        </Card>
       </div>
 
       <Card>
-        <SectionTitle label="Availability vs demand by product" />
+        <SectionTitle label="Recent orders" action={<Link href="/hatchery/coordination" className="text-xs font-semibold text-gold-dark">View all →</Link>} />
         <TableWrap>
           <thead>
-            <tr><Th>Product</Th><Th className="text-right">Available</Th><Th className="text-right">To deliver</Th><Th className="text-right">Balance</Th></tr>
+            <tr><Th>Customer</Th><Th>Product</Th><Th className="text-right">Chicks</Th><Th>Delivery date</Th><Th>Payment</Th><Th>Status</Th></tr>
           </thead>
           <tbody>
-            {PRODUCTS.map((p) => {
-              const a = availBy(p), d = demandBy(p), g = a - d;
-              return (
-                <tr key={p}>
-                  <Td className="font-medium">{p}</Td>
-                  <Td className="text-right">{a.toLocaleString()}</Td>
-                  <Td className="text-right">{d.toLocaleString()}</Td>
-                  <Td className="text-right"><Pill tone={g < 0 ? "red" : "green"}>{g >= 0 ? `+${g.toLocaleString()}` : g.toLocaleString()}</Pill></Td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </TableWrap>
-      </Card>
-
-      <Card>
-        <SectionTitle label={`Chicks to deliver — delivery plan (${toDeliver.length})`} />
-        <TableWrap>
-          <thead>
-            <tr><Th>Delivery date</Th><Th>Client</Th><Th>Product</Th><Th className="text-right">Chicks</Th><Th>Payment</Th><Th className="text-right">Balance</Th></tr>
-          </thead>
-          <tbody>
-            {toDeliver.length === 0 ? <EmptyRow colSpan={6} text="Nothing awaiting delivery." /> : toDeliver.map((o) => {
+            {recent.length === 0 ? <EmptyRow colSpan={6} text="No orders." /> : recent.map((o) => {
               const ps = payState(o);
-              const bal = balance(o);
+              const st = o.deliverOk ? "Delivered" : o.allocatedOk ? "Ready" : o.confirmedOk ? "To allocate" : "Awaiting payment";
+              const tone = o.deliverOk ? "green" : o.allocatedOk ? "info" : o.confirmedOk ? "gold" : "neutral";
               return (
                 <tr key={o.id}>
-                  <Td>{formatDate(o.date)}</Td>
-                  <Td>{o.name}</Td>
+                  <Td className="font-medium">{o.name}</Td>
                   <Td>{o.product}</Td>
                   <Td className="text-right">{o.chicks.toLocaleString()}</Td>
+                  <Td>{formatDate(o.date)}</Td>
                   <Td><Pill tone={ps.tone}>{ps.label}</Pill></Td>
-                  <Td className="text-right">{bal > 0 ? `${bal.toLocaleString()} RWF` : "—"}</Td>
+                  <Td><Pill tone={tone}>{st}</Pill></Td>
                 </tr>
               );
             })}
           </tbody>
         </TableWrap>
-        <p className="mt-2 text-xs text-muted"><Link href="/hatchery/coordination" className="text-gold-dark underline">Open Coordination →</Link> to allocate and dispatch.</p>
       </Card>
 
-      {inTransit.length > 0 && (
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Card>
-          <SectionTitle label={`In transit — dispatched, not yet delivered (${inTransit.length})`} />
-          <TableWrap>
-            <thead>
-              <tr><Th>Client</Th><Th className="text-right">Chicks</Th><Th>Carrier</Th><Th>Pickup</Th><Th>Dispatched</Th></tr>
-            </thead>
-            <tbody>
-              {inTransit.map((d) => (
-                <tr key={d.id}>
-                  <Td className="font-medium">{clientOf(d.orderId)}</Td>
-                  <Td className="text-right">{d.quantity.toLocaleString()}</Td>
-                  <Td>{d.carrier}</Td>
-                  <Td className="text-xs text-muted">{d.pickupLocation}</Td>
-                  <Td className="text-xs text-muted">{formatDateTime(d.dispatchedAt)}</Td>
-                </tr>
-              ))}
-            </tbody>
-          </TableWrap>
+          <SectionTitle label="Recent farm visits" action={<Link href="/hatchery/farm-visits" className="text-xs font-semibold text-gold-dark">View all →</Link>} />
+          <div className="space-y-1.5 text-sm">
+            {visits.length === 0 ? <p className="text-muted">No farm visits logged.</p> : visits.map((v) => (
+              <div key={v.id} className="flex items-center justify-between gap-2 border-b border-line pb-1.5 last:border-0">
+                <span className="truncate"><strong className="text-ink">{v.customerName}</strong> <span className="text-muted">· {v.product}</span></span>
+                <Pill tone={v.sentToSales ? "green" : "gold"}>{v.sentToSales ? "Sent to sales" : "Pending"}</Pill>
+              </div>
+            ))}
+          </div>
         </Card>
-      )}
+
+        <Card>
+          <SectionTitle label="Notifications" />
+          <div className="space-y-1.5 text-sm">
+            {notifs.length === 0 ? <p className="text-muted">No notifications.</p> : notifs.map((n) => (
+              <div key={n.id} className="flex items-start justify-between gap-2 border-b border-line pb-1.5 last:border-0">
+                <span className="min-w-0"><span className="text-ink">{n.title}</span> <span className="text-muted">— {n.body}</span></span>
+                <span className="shrink-0 text-xs text-muted">{ago(n.createdAt)}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
     </>
+  );
+}
+
+function Legend({ color, label, value, pct }: { color: string; label: string; value: number; pct: number }) {
+  return (
+    <div className="flex items-center gap-2">
+      <span className="h-3 w-3 rounded-sm" style={{ background: color }} />
+      <span className="text-ink">{label}</span>
+      <span className="text-muted">{value} ({pct}%)</span>
+    </div>
   );
 }
