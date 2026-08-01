@@ -236,10 +236,15 @@ export async function deliveryPaymentPDF(
 // ---------------------------------------------------------------------------
 
 export async function ordersPDF(orders: Order[], filterLabel: string): Promise<void> {
-  const { doc, autoTable, startY, logo } = await brandedDoc("Orders Report", [
+  const rejectedChicks = orders.filter((o) => o.status === "rejected").reduce((s, o) => s + o.chicks, 0);
+  const validChicks = orders.filter((o) => o.status !== "rejected").reduce((s, o) => s + o.chicks, 0);
+  const meta = [
     `Filter: ${filterLabel}`,
     `Orders: ${orders.length}`,
-  ]);
+    `Valid chicks to deliver: ${validChicks.toLocaleString()}`,
+  ];
+  if (rejectedChicks) meta.push(`Rejected chicks (excluded): ${rejectedChicks.toLocaleString()}`);
+  const { doc, autoTable, startY, logo } = await brandedDoc("Orders Report", meta);
 
   const body = orders.map((o) => [
     formatDateTime(o.createdAt),
@@ -288,20 +293,29 @@ export async function ordersPDF(orders: Order[], filterLabel: string): Promise<v
 // ---------------------------------------------------------------------------
 
 export async function dsrOrdersPDF(orders: Order[], filterLabel: string): Promise<void> {
-  const { doc, autoTable, startY, logo } = await brandedDoc(
-    "DSR Order List",
-    [`Filter: ${filterLabel}`, `Orders: ${orders.length}`],
-    "portrait"
-  );
+  // Rejected orders are dead — leave them off the delivery list and out of the
+  // deliverable count, but state how many chicks they held.
+  const rejected = orders.filter((o) => o.status === "rejected");
+  const valid = orders.filter((o) => o.status !== "rejected");
+  const rejectedChicks = rejected.reduce((s, o) => s + o.chicks, 0);
+  const validChicks = valid.reduce((s, o) => s + o.chicks, 0);
 
-  const body = orders.map((o) => [o.name, o.district, o.sector, o.chicks]);
-  const totalChicks = orders.reduce((s, o) => s + o.chicks, 0);
+  const meta = [
+    `Filter: ${filterLabel}`,
+    `Orders to deliver: ${valid.length}`,
+    `Valid chicks to deliver: ${validChicks.toLocaleString()}`,
+  ];
+  if (rejected.length) meta.push(`Rejected & excluded: ${rejected.length} order(s), ${rejectedChicks.toLocaleString()} chicks`);
+
+  const { doc, autoTable, startY, logo } = await brandedDoc("DSR Order List", meta, "portrait");
+
+  const body = valid.map((o) => [o.name, o.district, o.sector, o.chicks]);
 
   autoTable(doc, {
     startY,
     head: [["Customer", "District", "Sector", "Chicks"]],
     body,
-    foot: [["Total", "", "", totalChicks]],
+    foot: [["Valid chicks to deliver", "", "", validChicks]],
     styles: { fontSize: 9, cellPadding: 4 },
     headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
     footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
