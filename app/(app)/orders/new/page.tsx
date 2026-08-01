@@ -49,6 +49,7 @@ export default function NewOrderPage() {
   const [province, setProvince] = useState<Province | "">("");
   const [district, setDistrict] = useState("");
   const [dsrId, setDsrId] = useState("");
+  const [rossSource, setRossSource] = useState<"direct" | "dsr">("direct");
   const [sector, setSector] = useState("");
   const [name, setName] = useState("");
   const [clientDistrict, setClientDistrict] = useState("");
@@ -90,6 +91,24 @@ export default function NewOrderPage() {
       .filter((d) => d.active && d.district === district)
       .map((d) => ({ value: d.id, label: `${d.name} — ${d.phone}` }));
   }, [dsrs, district]);
+
+  // Ross is sold across both zones, so its DSR picker lists every active DSR
+  // (from both zone managers) and selecting one fills in the location.
+  const allDsrOptions = useMemo(
+    () =>
+      dsrs
+        .filter((d) => d.active)
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name))
+        .map((d) => ({ value: d.id, label: `${d.name} — ${d.phone} · ${d.district} (${d.zone})` })),
+    [dsrs]
+  );
+
+  function selectRossDsr(id: string) {
+    setDsrId(id);
+    const d = dsrs.find((x) => x.id === id);
+    if (d) { setDistrict(d.district); setSector(""); }
+  }
 
   const selectedDsr = dsrs.find((d) => d.id === dsrId);
   const sectorOptions = useMemo(
@@ -159,6 +178,7 @@ export default function NewOrderPage() {
     if (isTetra && !province) return setError("Choose a province.");
     if (!district) return setError("Choose a district.");
     if (isTetra && !dsrId) return setError("Choose a registered DSR.");
+    if (product === "Ross 308" && rossSource === "dsr" && !dsrId) return setError("Select a DSR, or choose “No DSR”.");
     if (!sector.trim()) return setError("Enter or choose a sector.");
     if (!name.trim()) return setError("Enter the client name.");
     if (phone.trim().length < 6) return setError("Enter a valid phone number.");
@@ -347,36 +367,68 @@ export default function NewOrderPage() {
               </>
             ) : product === "Ross 308" ? (
               <>
-                <Field label="District">
+                <Field label="Order source">
                   <Select
-                    value={district}
-                    placeholder="Select district"
-                    options={rossDistrictOptions}
+                    value={rossSource}
+                    options={[
+                      { value: "direct", label: "No DSR — direct customer" },
+                      { value: "dsr", label: "From a DSR" },
+                    ]}
                     onChange={(e) => {
-                      setDistrict(e.target.value);
+                      setRossSource(e.target.value as "direct" | "dsr");
                       setDsrId("");
+                      setDistrict("");
                       setSector("");
                     }}
                   />
                 </Field>
-                <Field label="Sector">
-                  <Select
-                    value={sector}
-                    placeholder={district ? "Select sector" : "Choose district first"}
-                    options={orderSectorOptions}
-                    disabled={!district}
-                    onChange={(e) => setSector(e.target.value)}
-                  />
-                </Field>
-                <Field label="DSR (optional)">
-                  <Select
-                    value={dsrId}
-                    placeholder={district ? "None / select DSR" : "Choose district first"}
-                    options={dsrOptions}
-                    disabled={!district}
-                    onChange={(e) => setDsrId(e.target.value)}
-                  />
-                </Field>
+                {rossSource === "dsr" ? (
+                  <>
+                    <Field label="DSR (both zones)">
+                      <Select
+                        value={dsrId}
+                        placeholder="Select DSR"
+                        options={allDsrOptions}
+                        onChange={(e) => selectRossDsr(e.target.value)}
+                      />
+                    </Field>
+                    <Field label="District (from DSR)">
+                      <Input value={district} disabled placeholder="Filled from the DSR" />
+                    </Field>
+                    <Field label="Sector (from DSR)">
+                      <Select
+                        value={sector}
+                        placeholder={dsrId ? "Select sector" : "Choose DSR first"}
+                        options={sectorOptions}
+                        disabled={!dsrId}
+                        onChange={(e) => setSector(e.target.value)}
+                      />
+                    </Field>
+                  </>
+                ) : (
+                  <>
+                    <Field label="District">
+                      <Select
+                        value={district}
+                        placeholder="Select district"
+                        options={rossDistrictOptions}
+                        onChange={(e) => {
+                          setDistrict(e.target.value);
+                          setSector("");
+                        }}
+                      />
+                    </Field>
+                    <Field label="Sector">
+                      <Select
+                        value={sector}
+                        placeholder={district ? "Select sector" : "Choose district first"}
+                        options={orderSectorOptions}
+                        disabled={!district}
+                        onChange={(e) => setSector(e.target.value)}
+                      />
+                    </Field>
+                  </>
+                )}
               </>
             ) : null}
           </div>
