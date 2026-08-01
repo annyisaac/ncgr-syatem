@@ -284,6 +284,36 @@ export async function ordersPDF(orders: Order[], filterLabel: string): Promise<v
 }
 
 // ---------------------------------------------------------------------------
+// PDF: DSR order list — a compact sheet a DSR carries (client + place + qty)
+// ---------------------------------------------------------------------------
+
+export async function dsrOrdersPDF(orders: Order[], filterLabel: string): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc(
+    "DSR Order List",
+    [`Filter: ${filterLabel}`, `Orders: ${orders.length}`],
+    "portrait"
+  );
+
+  const body = orders.map((o) => [o.name, o.district, o.sector, o.chicks]);
+  const totalChicks = orders.reduce((s, o) => s + o.chicks, 0);
+
+  autoTable(doc, {
+    startY,
+    head: [["Customer", "District", "Sector", "Chicks"]],
+    body,
+    foot: [["Total", "", "", totalChicks]],
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    columnStyles: { 3: { halign: "right" } },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-DSR-Orders-${filterLabel.replace(/[^\w]+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
 // PDF: Delivery manifest (driver run-sheet for one route/date)
 // ---------------------------------------------------------------------------
 

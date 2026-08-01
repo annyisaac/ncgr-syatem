@@ -32,7 +32,7 @@ import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { clientKey } from "@/lib/clients";
-import { ordersPDF, invoicePDF, paymentProofPDF } from "@/lib/reports";
+import { ordersPDF, dsrOrdersPDF, invoicePDF, paymentProofPDF } from "@/lib/reports";
 import {
   approveDebt,
   canAddPayment,
@@ -418,19 +418,30 @@ function OrdersInner() {
     return acts;
   }
 
+  // A human label of the active filters, so an exported file names its scope.
+  const filterLabel = [
+    tile !== "all" ? tile : null,
+    statusFilter !== "all" ? statusFilter : null,
+    productFilter !== "all" ? productFilter : null,
+    dateFilter ? `date ${formatDate(dateFilter)}` : null,
+    query.trim() ? `"${query.trim()}"` : null,
+  ].filter(Boolean).join(", ") || "All orders";
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-end gap-2">
         <div className="flex gap-2">
           <Button
             variant="secondary"
-            onClick={() =>
-              rows.length
-                ? ordersPDF(rows, tile === "all" ? "All orders" : tile)
-                : toast("Nothing to export.", "info")
-            }
+            onClick={() => (rows.length ? ordersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
           >
             Download PDF
+          </Button>
+          <Button
+            variant="secondary"
+            onClick={() => (rows.length ? dsrOrdersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
+          >
+            DSR list (PDF)
           </Button>
           {canAct && (
             <Link href="/orders/new">
