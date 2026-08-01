@@ -31,6 +31,7 @@ import {
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
+import { smartMatch, suggest } from "@/lib/search";
 import { clientKey } from "@/lib/clients";
 import { ordersPDF, dsrOrdersPDF, invoicePDF, paymentProofPDF } from "@/lib/reports";
 import {
@@ -165,13 +166,9 @@ function OrdersInner() {
     if (dateFilter) list = list.filter((o) => o.date === dateFilter);
     else if (range.from || range.to) list = list.filter((o) => inRange(o.date, range));
 
-    const q = query.trim().toLowerCase();
-    if (q) {
-      list = list.filter(
-        (o) =>
-          o.name.toLowerCase().includes(q) ||
-          o.phone.toLowerCase().includes(q) ||
-          o.payments.some((p) => p.ref.toLowerCase().includes(q))
+    if (query.trim()) {
+      list = list.filter((o) =>
+        smartMatch(query, o.name, o.phone, o.district, o.sector, o.payments.map((p) => p.ref).join(" "))
       );
     }
 
@@ -190,6 +187,12 @@ function OrdersInner() {
               : 0
       );
   }, [orders, user, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
+
+  // As-you-type client-name suggestions from the orders this user can see.
+  const searchSuggestions = useMemo(
+    () => (user ? suggest(query, visibleOrders(orders, user), (o) => o.name, 6) : []),
+    [query, orders, user]
+  );
 
   // Delivery dates the Admin has opened, for the delivery-date filter.
   const deliveryDateOptions = useMemo(
@@ -481,7 +484,7 @@ function OrdersInner() {
 
       <div className="flex flex-wrap items-center gap-3">
         <div className="min-w-0 flex-1">
-          <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
+          <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, district, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
         </div>
         {isAdmin && (
           <div className="w-44">

@@ -12,6 +12,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { StatTile, SearchTimeBar } from "@/components/dashboard/DashKit";
 import { useToast } from "@/components/ui/Toast";
 import { visibleOrders } from "@/lib/permissions";
+import { smartMatch, suggest } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
 import { formatDate, todayISO } from "@/lib/format";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
@@ -46,10 +47,11 @@ export default function ClientsPage() {
   }, [orders, user, range]);
 
   const filtered = useMemo(() => {
-    const s = q.trim().toLowerCase();
-    if (!s) return clients;
-    return clients.filter((c) => c.name.toLowerCase().includes(s) || c.phone.toLowerCase().includes(s) || c.districts.some((d) => d.toLowerCase().includes(s)));
+    if (!q.trim()) return clients;
+    return clients.filter((c) => smartMatch(q, c.name, c.phone, c.districts.join(" ")));
   }, [clients, q]);
+
+  const searchSuggestions = useMemo(() => suggest(q, clients, (c) => c.name, 6), [q, clients]);
 
   if (!user) return null;
 
@@ -85,6 +87,7 @@ export default function ClientsPage() {
         setPreset={setPreset}
         custom={custom}
         setCustom={setCustom}
+        suggestions={searchSuggestions}
       />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

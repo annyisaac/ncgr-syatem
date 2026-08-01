@@ -8,7 +8,7 @@
  * them here.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { PERIODS, type PeriodPreset } from "@/lib/period";
 import type { DateRangeValue } from "@/components/ui/DateRange";
 
@@ -27,6 +27,7 @@ export function SearchTimeBar({
   setPreset,
   custom,
   setCustom,
+  suggestions,
 }: {
   q: string;
   setQ: (v: string) => void;
@@ -35,7 +36,11 @@ export function SearchTimeBar({
   setPreset: (p: PeriodPreset) => void;
   custom: DateRangeValue;
   setCustom: (v: DateRangeValue) => void;
+  /** Optional as-you-type suggestions (the parent supplies matches). */
+  suggestions?: string[];
 }) {
+  const [open, setOpen] = useState(false);
+  const showSug = open && q.trim().length > 0 && !!suggestions && suggestions.length > 0;
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="relative min-w-0 flex-1 sm:max-w-md">
@@ -45,10 +50,26 @@ export function SearchTimeBar({
         </svg>
         <input
           value={q}
-          onChange={(e) => setQ(e.target.value)}
+          onChange={(e) => { setQ(e.target.value); setOpen(true); }}
+          onFocus={() => setOpen(true)}
+          onBlur={() => setTimeout(() => setOpen(false), 120)}
           placeholder={placeholder}
           className="h-10 w-full rounded-full border border-line bg-paper pl-10 pr-4 text-sm text-ink outline-none transition focus:border-gold"
         />
+        {showSug && (
+          <div className="absolute z-30 mt-1 max-h-64 w-full overflow-auto rounded-xl border border-line bg-paper py-1 shadow-card">
+            {suggestions!.map((s) => (
+              <button
+                key={s}
+                type="button"
+                className="block w-full truncate px-4 py-2 text-left text-sm hover:bg-cream/60"
+                onMouseDown={(e) => { e.preventDefault(); setQ(s); setOpen(false); }}
+              >
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
       <select value={preset} onChange={(e) => setPreset(e.target.value as PeriodPreset)} className={`${CTRL} w-auto`}>
         {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}

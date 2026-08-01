@@ -17,6 +17,7 @@ import { orderTotal } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
+import { smartMatch, suggest } from "@/lib/search";
 import { SearchTimeBar } from "@/components/dashboard/DashKit";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
@@ -116,16 +117,17 @@ export default function VerificationPage() {
 
   const payStatus = (p: Payment) => p.voided ? "rejected" : p.verified ? "checked" : p.pendingApproval ? "awaiting" : p.returnedForFix ? "returned" : "unverified";
   const shownPayRows = useMemo(() => {
-    const q = query.trim().toLowerCase();
     return payRows.filter(({ o, p }) => {
       if (productFilter !== "all" && o.product !== productFilter) return false;
       if (statusFilter !== "all" && payStatus(p) !== statusFilter) return false;
       if (dateFilter && o.date !== dateFilter) return false;
       else if (!dateFilter && (range.from || range.to) && !inRange(o.date, range)) return false;
-      if (q && !(o.name.toLowerCase().includes(q) || o.phone.toLowerCase().includes(q) || p.ref.toLowerCase().includes(q))) return false;
+      if (query.trim() && !smartMatch(query, o.name, o.phone, p.ref)) return false;
       return true;
     });
   }, [payRows, query, productFilter, statusFilter, dateFilter, range]);
+
+  const searchSuggestions = useMemo(() => suggest(query, payRows, ({ o }) => o.name, 6), [query, payRows]);
 
   const deliveryDateOptions = useMemo(
     () => [{ value: "", label: "All delivery dates" }, ...availability.slice().sort((a, b) => (a.id < b.id ? -1 : 1)).map((a) => ({ value: a.id, label: formatDate(a.date) }))],
@@ -522,7 +524,7 @@ export default function VerificationPage() {
         <CardHeader title={`Payments (${shownPayRows.length} shown · ${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`} />
         <div className="mb-3 flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">
-            <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
+            <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
           </div>
           <div className="w-44">
             <Select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} options={[
