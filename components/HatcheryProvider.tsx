@@ -116,13 +116,20 @@ interface HatcheryContextValue {
 const HatcheryContext = createContext<HatcheryContextValue | null>(null);
 
 // The tables this provider mirrors — also the realtime allow-list.
-const HATCHERY_TABLES = new Set([
+const ALL_TABLES: HatcheryTable[] = [
   "receptions", "store_readings", "fumigations", "machines", "operators", "batches",
   "machine_readings", "chick_counts", "box_logs", "box_targets", "supplies", "vaccinations",
   "biosecurity_logs", "maintenance_logs", "chick_inventory", "allocations", "dispatches",
   "farm_visits", "vaccine_requests", "spare_parts", "spare_part_requests", "farms", "flocks",
   "machine_issues", "shift_handovers",
-]);
+];
+const HATCHERY_TABLES = new Set<string>(ALL_TABLES);
+
+// Instant-paint cache of the last session's hatchery data (per browser). The
+// high-volume append-only tables are skipped — they can be large and aren't
+// needed for the first paint; they stream in on the background refresh.
+const CACHE_KEY = "ncgr:hatchery:v1";
+const NO_CACHE = new Set(["machine_readings", "biosecurity_logs", "maintenance_logs", "chick_counts", "box_logs"]);
 
 function upsertLocal<T extends { id: string }>(list: T[], item: T): T[] {
   const i = list.findIndex((x) => x.id === item.id);
@@ -172,102 +179,73 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const [machineIssues, setMachineIssues] = useState<MachineIssue[]>([]);
   const [shiftHandovers, setShiftHandovers] = useState<ShiftHandover[]>([]);
 
-  const load = useCallback(async () => {
-    try {
-      const [
-        rec, store, fum, mac, op, bat, rd, cnt, box, bt, sup, vac, bio, mnt, inv, alloc, disp, fv, vr, sp, spr, frm, flk, mi, sh,
-      ] = await Promise.all([
-        fetchTable<Reception>("receptions"),
-        fetchTable<StoreReading>("store_readings"),
-        fetchTable<Fumigation>("fumigations"),
-        fetchTable<Machine>("machines"),
-        fetchTable<Operator>("operators"),
-        fetchTable<Batch>("batches"),
-        fetchTable<MachineReading>("machine_readings"),
-        fetchTable<ChickCount>("chick_counts"),
-        fetchTable<BoxLog>("box_logs"),
-        fetchTable<BoxTarget>("box_targets"),
-        fetchTable<Supply>("supplies"),
-        fetchTable<Vaccination>("vaccinations"),
-        fetchTable<LogEntry>("biosecurity_logs"),
-        fetchTable<LogEntry>("maintenance_logs"),
-        fetchTable<ChickInventory>("chick_inventory"),
-        fetchTable<Allocation>("allocations"),
-        fetchTable<Dispatch>("dispatches"),
-        fetchTable<FarmVisit>("farm_visits"),
-        fetchTable<VaccineRequest>("vaccine_requests"),
-        fetchTable<SparePart>("spare_parts"),
-        fetchTable<SparePartRequest>("spare_part_requests"),
-        fetchTable<Farm>("farms"),
-        fetchTable<Flock>("flocks"),
-        fetchTable<MachineIssue>("machine_issues"),
-        fetchTable<ShiftHandover>("shift_handovers"),
-      ]);
-      setReceptions(rec);
-      setStoreReadings(store);
-      setFumigations(fum);
-      setMachines(mac);
-      setOperators(op);
-      setBatches(bat);
-      setReadings(rd);
-      setCounts(cnt);
-      setBoxLogs(box);
-      setBoxTargets(bt);
-      setSupplies(sup);
-      setVaccinations(vac);
-      setBiosecurity(bio);
-      setMaintenance(mnt);
-      setInventory(inv);
-      setAllocations(alloc);
-      setDispatches(disp);
-      setFarmVisits(fv);
-      setVaccineRequests(vr);
-      setSpareParts(sp);
-      setSpareRequests(spr);
-      setFarms(frm);
-      setFlocks(flk);
-      setMachineIssues(mi);
-      setShiftHandovers(sh);
-    } catch (err) {
-      console.error("Failed to load hatchery data:", err);
+  // Route a table's rows to the right slice of state. Shared by the initial
+  // load, the realtime refetch and the instant-cache hydrate.
+  const applyTable = useCallback((table: string, rows: unknown[]) => {
+    switch (table) {
+      case "receptions": setReceptions(rows as Reception[]); return;
+      case "store_readings": setStoreReadings(rows as StoreReading[]); return;
+      case "fumigations": setFumigations(rows as Fumigation[]); return;
+      case "machines": setMachines(rows as Machine[]); return;
+      case "operators": setOperators(rows as Operator[]); return;
+      case "batches": setBatches(rows as Batch[]); return;
+      case "machine_readings": setReadings(rows as MachineReading[]); return;
+      case "chick_counts": setCounts(rows as ChickCount[]); return;
+      case "box_logs": setBoxLogs(rows as BoxLog[]); return;
+      case "box_targets": setBoxTargets(rows as BoxTarget[]); return;
+      case "supplies": setSupplies(rows as Supply[]); return;
+      case "vaccinations": setVaccinations(rows as Vaccination[]); return;
+      case "biosecurity_logs": setBiosecurity(rows as LogEntry[]); return;
+      case "maintenance_logs": setMaintenance(rows as LogEntry[]); return;
+      case "chick_inventory": setInventory(rows as ChickInventory[]); return;
+      case "allocations": setAllocations(rows as Allocation[]); return;
+      case "dispatches": setDispatches(rows as Dispatch[]); return;
+      case "farm_visits": setFarmVisits(rows as FarmVisit[]); return;
+      case "vaccine_requests": setVaccineRequests(rows as VaccineRequest[]); return;
+      case "spare_parts": setSpareParts(rows as SparePart[]); return;
+      case "spare_part_requests": setSpareRequests(rows as SparePartRequest[]); return;
+      case "farms": setFarms(rows as Farm[]); return;
+      case "flocks": setFlocks(rows as Flock[]); return;
+      case "machine_issues": setMachineIssues(rows as MachineIssue[]); return;
+      case "shift_handovers": setShiftHandovers(rows as ShiftHandover[]); return;
     }
   }, []);
 
-  // Refetch a single table and set only its slice of state — used by realtime
-  // so one row changing reloads just that table, not all 25.
-  const refetchTable = useCallback(async (table: string) => {
-    try {
-      switch (table) {
-        case "receptions": setReceptions(await fetchTable<Reception>("receptions")); return;
-        case "store_readings": setStoreReadings(await fetchTable<StoreReading>("store_readings")); return;
-        case "fumigations": setFumigations(await fetchTable<Fumigation>("fumigations")); return;
-        case "machines": setMachines(await fetchTable<Machine>("machines")); return;
-        case "operators": setOperators(await fetchTable<Operator>("operators")); return;
-        case "batches": setBatches(await fetchTable<Batch>("batches")); return;
-        case "machine_readings": setReadings(await fetchTable<MachineReading>("machine_readings")); return;
-        case "chick_counts": setCounts(await fetchTable<ChickCount>("chick_counts")); return;
-        case "box_logs": setBoxLogs(await fetchTable<BoxLog>("box_logs")); return;
-        case "box_targets": setBoxTargets(await fetchTable<BoxTarget>("box_targets")); return;
-        case "supplies": setSupplies(await fetchTable<Supply>("supplies")); return;
-        case "vaccinations": setVaccinations(await fetchTable<Vaccination>("vaccinations")); return;
-        case "biosecurity_logs": setBiosecurity(await fetchTable<LogEntry>("biosecurity_logs")); return;
-        case "maintenance_logs": setMaintenance(await fetchTable<LogEntry>("maintenance_logs")); return;
-        case "chick_inventory": setInventory(await fetchTable<ChickInventory>("chick_inventory")); return;
-        case "allocations": setAllocations(await fetchTable<Allocation>("allocations")); return;
-        case "dispatches": setDispatches(await fetchTable<Dispatch>("dispatches")); return;
-        case "farm_visits": setFarmVisits(await fetchTable<FarmVisit>("farm_visits")); return;
-        case "vaccine_requests": setVaccineRequests(await fetchTable<VaccineRequest>("vaccine_requests")); return;
-        case "spare_parts": setSpareParts(await fetchTable<SparePart>("spare_parts")); return;
-        case "spare_part_requests": setSpareRequests(await fetchTable<SparePartRequest>("spare_part_requests")); return;
-        case "farms": setFarms(await fetchTable<Farm>("farms")); return;
-        case "flocks": setFlocks(await fetchTable<Flock>("flocks")); return;
-        case "machine_issues": setMachineIssues(await fetchTable<MachineIssue>("machine_issues")); return;
-        case "shift_handovers": setShiftHandovers(await fetchTable<ShiftHandover>("shift_handovers")); return;
+  // Progressive load: every table sets its own slice as soon as it arrives, so
+  // the UI fills in table-by-table instead of blocking on the slowest one.
+  // Small tables are cached for an instant paint on the next login.
+  const load = useCallback(async () => {
+    const cache: Record<string, unknown[]> = {};
+    await Promise.all(ALL_TABLES.map(async (t) => {
+      try {
+        const rows = await fetchTable(t);
+        applyTable(t, rows);
+        if (!NO_CACHE.has(t)) cache[t] = rows;
+      } catch (err) {
+        console.error(`Failed to load ${t}:`, err);
       }
-    } catch (err) {
-      console.error(`Failed to refresh ${table}:`, err);
-    }
-  }, []);
+    }));
+    try { localStorage.setItem(CACHE_KEY, JSON.stringify(cache)); } catch { /* quota / private mode */ }
+  }, [applyTable]);
+
+  const refetchTable = useCallback(async (table: string) => {
+    try { applyTable(table, await fetchTable(table as HatcheryTable)); }
+    catch (err) { console.error(`Failed to refresh ${table}:`, err); }
+  }, [applyTable]);
+
+  // Paint the last session's data from the local cache — returns true if it did.
+  const hydrate = useCallback(() => {
+    try {
+      const raw = localStorage.getItem(CACHE_KEY);
+      if (!raw) return false;
+      const cached = JSON.parse(raw) as Record<string, unknown[]>;
+      let any = false;
+      for (const t of Object.keys(cached)) {
+        if (Array.isArray(cached[t])) { applyTable(t, cached[t]); any = true; }
+      }
+      return any;
+    } catch { return false; }
+  }, [applyTable]);
 
   useEffect(() => {
     let active = true;
@@ -276,15 +254,17 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
+    // Instant: show last-known data immediately, only block when there's none.
+    const hadCache = hydrate();
+    setLoading(!hadCache);
     (async () => {
-      setLoading(true);
       await load();
       if (active) setLoading(false);
     })();
     return () => {
       active = false;
     };
-  }, [enabled, load]);
+  }, [enabled, load, hydrate]);
 
   // Live data: when a hatchery table changes anywhere, refetch only that table.
   // A burst of writes is debounced and coalesced, so each affected table
