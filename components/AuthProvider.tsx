@@ -52,6 +52,30 @@ function writeCachedProfile(u: User | null): void {
   else window.sessionStorage.removeItem(PROFILE_KEY);
 }
 
+/** Persistent per-device profile cache keyed by email, so a repeat login on a
+ *  device the account has used before shows the app instantly (revalidated in
+ *  the background) instead of waiting on the profile fetch. Survives logout. */
+const PROFILE_EMAIL_KEY = "ncgr.profile.byemail.v1";
+function readEmailProfile(email: string): User | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const map = JSON.parse(window.localStorage.getItem(PROFILE_EMAIL_KEY) ?? "{}") as Record<string, User>;
+    return map[email.trim().toLowerCase()] ?? null;
+  } catch {
+    return null;
+  }
+}
+function writeEmailProfile(u: User): void {
+  if (typeof window === "undefined") return;
+  try {
+    const map = JSON.parse(window.localStorage.getItem(PROFILE_EMAIL_KEY) ?? "{}") as Record<string, User>;
+    map[u.email.trim().toLowerCase()] = u;
+    window.localStorage.setItem(PROFILE_EMAIL_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
 /**
  * Record this browser as a signed-in / signed-out device on the user's profile
  * so the Admin can see where each account is active. Targeted single-row update
@@ -162,7 +186,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (error || !data.user?.email) {
         return { ok: false, error: "Wrong email or password." };
       }
-      const profile = await loadProfile(data.user.email);
+      const authEmail = data.user.email;
+      const markActive = () => {
+        if (typeof window !== "undefined") {
+          window.sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
+          window.sessionStorage.removeItem(SIGNED_OUT_REASON_KEY);
+        }
+      };
+
+      // Fast path: the password is already verified above, so if this device has
+      // seen the account before, show the app instantly and revalidate the
+      // profile in the background (signing out if it's since been deactivated).
+      const cached = readEmailProfile(authEmail);
+      if (cached && cached.active) {
+        markActive();
+        writeCachedProfile(cached);
+        setUser(cached);
+        void recordDevice(cached.email, true);
+        void loadProfile(authEmail)
+          .then((fresh) => {
+            if (!fresh || !fresh.active) {
+              void sb.auth.signOut();
+              writeCachedProfile(null);
+              setUser(null);
+            } else {
+              writeEmailProfile(fresh);
+              writeCachedProfile(fresh);
+              setUser(fresh);
+            }
+          })
+          .catch(() => { /* keep the cached profile; a later refresh will retry */ });
+        return { ok: true };
+      }
+
+      // Slow path (first login on this device): fetch the profile before entering.
+      const profile = await loadProfile(authEmail);
       if (!profile) {
         await sb.auth.signOut();
         return { ok: false, error: "No profile exists for this account." };
@@ -171,10 +229,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await sb.auth.signOut();
         return { ok: false, error: "This account is deactivated." };
       }
-      if (typeof window !== "undefined") {
-        window.sessionStorage.setItem(LAST_ACTIVITY_KEY, String(Date.now()));
-        window.sessionStorage.removeItem(SIGNED_OUT_REASON_KEY);
-      }
+      markActive();
+      writeEmailProfile(profile);
       writeCachedProfile(profile);
       setUser(profile);
       // Record the device in the background so login stays fast.
