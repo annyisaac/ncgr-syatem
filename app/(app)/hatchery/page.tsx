@@ -46,7 +46,6 @@ function inFilterRange(dateIso: string | undefined, range: DateRangeValue): bool
 
 export default function HatcheryDashboard() {
   const { user } = useAuth();
-  const { loading } = useHatchery();
 
   const [q, setQ] = useState("");
   const [preset, setPreset] = useState<PeriodPreset>("all");
@@ -63,9 +62,7 @@ export default function HatcheryDashboard() {
 
       <SearchTimeBar q={q} setQ={setQ} placeholder="Search this dashboard…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
 
-      {loading ? (
-        <Card><p className="text-sm text-muted">Loading hatchery data…</p></Card>
-      ) : role === "Hatchery Veterinary" ? (
+      {role === "Hatchery Veterinary" ? (
         <VetView filter={filter} />
       ) : role === "Maintenance Technician" ? (
         <MaintenanceView filter={filter} />
