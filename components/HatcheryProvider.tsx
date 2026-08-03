@@ -139,6 +139,22 @@ function upsertLocal<T extends { id: string }>(list: T[], item: T): T[] {
   return copy;
 }
 
+// Keep the local instant-paint cache in step with an optimistic write, so the
+// next login paints the edited row (not the pre-edit one) before the fresh
+// load arrives. Cached tables only (NO_CACHE tables are never persisted).
+function patchCache<T extends { id: string }>(table: string, row: T): void {
+  if (typeof window === "undefined" || NO_CACHE.has(table)) return;
+  try {
+    const raw = localStorage.getItem(CACHE_KEY);
+    const cache = raw ? (JSON.parse(raw) as Record<string, unknown[]>) : {};
+    const list = Array.isArray(cache[table]) ? (cache[table] as T[]) : [];
+    cache[table] = upsertLocal(list, row);
+    localStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch {
+    /* quota / private mode — the background load will still refresh it */
+  }
+}
+
 export function HatcheryProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
@@ -303,6 +319,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     setter: (updater: (prev: T[]) => T[]) => void
   ): Promise<void> {
     setter((prev) => upsertLocal(prev, row));
+    patchCache(table, row);
     return upsertRow(table, row).catch((e) => {
       console.error(`save ${table} failed`, e);
       throw e;
