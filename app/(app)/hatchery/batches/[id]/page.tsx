@@ -15,14 +15,14 @@ import { Field, Input } from "@/components/ui/Select";
 import { cn } from "@/lib/cn";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
 import { LIFECYCLE_STEPS } from "@/lib/hatchery/types";
-import { removedInStage, fertilityPct, hatchabilityPct, flockRemoved, flockFertileAfterC2, flockTransferred } from "@/lib/hatchery/lifecycle";
+import { removedInStage, fertilityPct, hatchabilityPct, flockRemoved, flockFertileAfterC2, flockTransferred, settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_EDIT_CODE = ["Admin", "Hatchery Manager"];
 
 export default function BatchDetailPage() {
   const params = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { batches, upsertBatch } = useHatchery();
+  const { batches, receptions, upsertBatch } = useHatchery();
   const { toast } = useToast();
   const batch = batches.find((b) => b.id === params.id);
 
@@ -160,6 +160,26 @@ export default function BatchDetailPage() {
                 </span>
               </div>
             ))}
+          </div>
+        </Card>
+      )}
+
+      {(batch.receptionIds?.length ?? 0) > 0 && (
+        <Card>
+          <CardHeader title={`Receptions used to create this batch (${batch.receptionIds!.length})`} />
+          <div className="space-y-2 text-sm">
+            {batch.receptionIds!.map((rid) => {
+              const r = receptions.find((x) => x.id === rid);
+              if (!r) return <div key={rid} className="rounded-md border border-line px-3 py-2 text-xs text-muted">Reception no longer available</div>;
+              return (
+                <div key={rid} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line px-3 py-2">
+                  <span className="font-medium">{r.farm} · flock {r.flockId}</span>
+                  <span className="text-xs text-muted">
+                    {formatDate(r.date)} · received {r.eggsReceived.toLocaleString()} · settable {settableEggs(r).toLocaleString()} · {r.productType}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         </Card>
       )}
