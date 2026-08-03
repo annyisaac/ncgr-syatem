@@ -23,7 +23,7 @@ const CAN_EDIT_CODE = ["Admin", "Hatchery Manager"];
 export default function BatchDetailPage() {
   const params = useParams<{ id: string }>();
   const { user } = useAuth();
-  const { batches, receptions, upsertBatch } = useHatchery();
+  const { batches, receptions, patchBatchLocal } = useHatchery();
   const { toast } = useToast();
   const batch = batches.find((b) => b.id === params.id);
 
@@ -61,16 +61,15 @@ export default function BatchDetailPage() {
       return setErr(`Batch code “${next}” is already used by another batch.`);
     setSaving(true);
     try {
-      // The row write records the change in history and updates the UI at once;
-      // the DB lock keeps batchNo pinned to the old value on that write, so the
-      // authorized RPC is what actually flips the code (Admin / Hatchery Manager
-      // only, enforced server-side).
-      await upsertBatch({
+      // One atomic server write flips the code and appends history together
+      // (Admin / Hatchery Manager only, enforced in the RPC). Reflect it in the
+      // UI right away without a second DB write; realtime reconciles the rest.
+      await setBatchNo(batch!.id, next);
+      patchBatchLocal({
         ...batch!,
         batchNo: next,
         history: [...(batch!.history ?? []), `${nowISO()} — Batch code changed ${batch!.batchNo} → ${next} (by ${user!.name})`],
       });
-      await setBatchNo(batch!.id, next);
       toast(`Batch code updated to ${next}.`);
       setEditOpen(false);
     } catch (e) {

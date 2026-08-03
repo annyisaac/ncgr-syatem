@@ -89,6 +89,9 @@ interface HatcheryContextValue {
   upsertMachine: (m: Machine) => Promise<void>;
   upsertOperator: (o: Operator) => Promise<void>;
   upsertBatch: (b: Batch) => Promise<void>;
+  /** Reflect a batch change in the UI/cache without a DB write — used after an
+   *  authorized RPC (e.g. set_batch_no) has already persisted it. */
+  patchBatchLocal: (b: Batch) => void;
   upsertReading: (r: MachineReading) => Promise<void>;
   upsertCount: (c: ChickCount) => Promise<void>;
   upsertBoxLog: (l: BoxLog) => Promise<void>;
@@ -345,6 +348,7 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     upsertMachine: (m) => persist("machines", m, setMachines),
     upsertOperator: (o) => persist("operators", o, setOperators),
     upsertBatch: (b) => persist("batches", b, setBatches),
+    patchBatchLocal: (b) => { setBatches((prev) => upsertLocal(prev, b)); patchCache("batches", b); },
     upsertReading: (r) => persist("machine_readings", r, setReadings),
     upsertCount: (c) => persist("chick_counts", c, setCounts),
     upsertBoxLog: (l) => persist("box_logs", l, setBoxLogs),
