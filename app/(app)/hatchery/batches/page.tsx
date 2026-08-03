@@ -15,7 +15,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from "@/lib/hatchery/types";
 import { Modal } from "@/components/ui/Modal";
-import { nextBatchNo, machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
+import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
@@ -32,6 +32,7 @@ export default function BatchesPage() {
 
   const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
   const [setDate, setSetDate] = useState(todayISO());
+  const [batchCode, setBatchCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
   // Move a trolley of eggs from one setter to another
@@ -72,13 +73,6 @@ export default function BatchesPage() {
   const assignedTotal = rowsIn.reduce((s, r) => s + (Number(r.eggs) || 0), 0);
   const flockCount = new Set(resolved.filter((r) => r.groupKey && (Number(r.eggs) || 0) > 0).map((r) => r.groupKey)).size;
 
-  // Preview of the batch number for the chosen set date + selected product.
-  const previewBatchNo = (() => {
-    const firstKey = resolved.find((r) => r.groupKey && (Number(r.eggs) || 0) > 0)?.groupKey;
-    const p = groups.find((g) => g.key === firstKey)?.product;
-    return p && setDate ? nextBatchNo(batches, p, setDate) : null;
-  })();
-
   // Per-flock: how many eggs assigned (across setters) vs settable.
   const flockSummary = useMemo(() => {
     const m = new Map<string, number>();
@@ -116,6 +110,10 @@ export default function BatchesPage() {
 
   function createBatch() {
     setErr(null);
+    const code = batchCode.trim();
+    if (!code) return setErr("Enter a batch code.");
+    if (code.length > 15) return setErr("Batch code must be 15 characters or fewer.");
+    if (batches.some((b) => b.batchNo.toLowerCase() === code.toLowerCase())) return setErr(`Batch code “${code}” is already used.`);
     const valid = resolved
       .map((r) => ({ groupKey: r.groupKey, machineCode: r.machineCode, eggs: Number(r.eggs) || 0 }))
       .filter((r) => r.groupKey && r.machineCode && r.eggs > 0);
@@ -154,7 +152,7 @@ export default function BatchesPage() {
     const id = newId("batch");
     let batch: Batch = {
       id,
-      batchNo: nextBatchNo(batches, product, date),
+      batchNo: code,
       setDate: date,
       productType: product,
       farm: flocks.length === 1 ? flocks[0].farm : "Multiple flocks",
@@ -182,6 +180,7 @@ export default function BatchesPage() {
     machinesToSync(machines, setterList.map((s) => s.machineCode), [...batches, batch]).forEach(upsertMachine);
     toast(`Batch ${batch.batchNo} set — ${total.toLocaleString()} eggs, ${flocks.length} flock(s).`);
     setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]);
+    setBatchCode("");
   }
 
   function openMove(b: Batch) {
@@ -294,15 +293,15 @@ export default function BatchesPage() {
               )}
               <div className="flex flex-wrap items-end gap-3 border-t border-line pt-3">
                 <div className="w-44">
-                  <Field label="Set date (drives batch no.)">
+                  <Field label="Set date">
                     <Input type="date" value={setDate} onChange={(e) => setSetDate(e.target.value)} />
                   </Field>
                 </div>
-                {previewBatchNo && (
-                  <p className="text-sm text-muted">
-                    Batch number: <strong className="text-ink">{previewBatchNo}</strong>
-                  </p>
-                )}
+                <div className="w-52">
+                  <Field label="Batch code (max 15 chars)">
+                    <Input value={batchCode} maxLength={15} onChange={(e) => setBatchCode(e.target.value)} placeholder="e.g. R-W29-02" />
+                  </Field>
+                </div>
               </div>
               <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <p className="text-sm">Total to set: <strong>{assignedTotal.toLocaleString()}</strong> egg(s) · <strong>{flockCount}</strong> flock(s)</p>
