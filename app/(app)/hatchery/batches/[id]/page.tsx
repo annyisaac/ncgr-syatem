@@ -6,6 +6,7 @@ import { useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
+import { setBatchNo } from "@/lib/hatchery/db";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
@@ -60,13 +61,20 @@ export default function BatchDetailPage() {
       return setErr(`Batch code “${next}” is already used by another batch.`);
     setSaving(true);
     try {
+      // The row write records the change in history and updates the UI at once;
+      // the DB lock keeps batchNo pinned to the old value on that write, so the
+      // authorized RPC is what actually flips the code (Admin / Hatchery Manager
+      // only, enforced server-side).
       await upsertBatch({
         ...batch!,
         batchNo: next,
         history: [...(batch!.history ?? []), `${nowISO()} — Batch code changed ${batch!.batchNo} → ${next} (by ${user!.name})`],
       });
+      await setBatchNo(batch!.id, next);
       toast(`Batch code updated to ${next}.`);
       setEditOpen(false);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : "Could not update the batch code.");
     } finally {
       setSaving(false);
     }

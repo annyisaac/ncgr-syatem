@@ -78,6 +78,19 @@ export async function deleteRow(table: HatcheryTable, id: string): Promise<void>
   if (error) throw new Error(`Could not delete from ${table}: ${error.message}`);
 }
 
+/**
+ * Change a batch's code. Batch codes are locked at the DB level (a stray
+ * whole-row write must never revert one), so the only way to change one is this
+ * authorized RPC — gated server-side to Admin / Hatchery Manager, with the
+ * length + uniqueness checks enforced there too. History is appended by the
+ * caller's own row write; this only flips the code.
+ */
+export async function setBatchNo(id: string, batchNo: string): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase().rpc("set_batch_no", { p_id: id, p_no: batchNo });
+  if (error) throw new Error(error.message);
+}
+
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random()
     .toString(36)
