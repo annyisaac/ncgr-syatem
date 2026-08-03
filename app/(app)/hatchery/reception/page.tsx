@@ -201,11 +201,11 @@ export default function ReceptionPage() {
             <Field label="Misshapen eggs"><Input type="number" value={f.misshapen} onChange={(e) => setF({ ...f, misshapen: e.target.value })} /></Field>
             <Field label="Dirty eggs"><Input type="number" value={f.dirty} onChange={(e) => setF({ ...f, dirty: e.target.value })} /></Field>
             <Field label="Date received"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-            <div className="sm:col-span-3 rounded-md border border-line bg-cream/40 px-3 py-2 text-sm">
-              Settable eggs (received − cracked − misshapen − dirty):{" "}
-              <strong className="text-ink">
+            <div className="sm:col-span-3 rounded-md border border-line bg-cream/40 px-3 py-3 text-center">
+              <p className="text-xs text-muted">Settable eggs</p>
+              <p className="text-2xl font-bold text-green">
                 {Math.max(0, num(f.eggsReceived) - num(f.crackedOnFarm) - num(f.crackedOnSet) - num(f.misshapen) - num(f.dirty)).toLocaleString()}
-              </strong>
+              </p>
             </div>
             {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
             <div className="sm:col-span-3 flex justify-end gap-2">
