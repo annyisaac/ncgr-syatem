@@ -38,6 +38,7 @@ export function Kpi({
   tone = "default",
   icon = "chart",
   onClick,
+  compact = false,
 }: {
   label: string;
   value: string;
@@ -45,14 +46,18 @@ export function Kpi({
   tone?: Tone;
   icon?: keyof typeof ICONS;
   onClick?: () => void;
+  /** Denser card — smaller padding, chip and value. Used on list pages. */
+  compact?: boolean;
 }) {
+  const chip = compact ? 16 : 20;
   return (
     <button
       type="button"
       onClick={onClick}
       disabled={!onClick}
       className={cn(
-        "group flex flex-col rounded-2xl border border-line bg-paper p-4 text-left shadow-card transition",
+        "group flex flex-col border border-line bg-paper text-left shadow-card transition",
+        compact ? "rounded-xl p-3" : "rounded-2xl p-4",
         onClick
           ? "cursor-pointer hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-pop"
           : "cursor-default"
@@ -61,13 +66,14 @@ export function Kpi({
       <div className="flex items-center justify-between">
         <span
           className={cn(
-            "flex h-9 w-9 items-center justify-center rounded-xl",
+            "flex items-center justify-center",
+            compact ? "h-7 w-7 rounded-lg" : "h-9 w-9 rounded-xl",
             chipTone[tone]
           )}
         >
           <svg
-            width="20"
-            height="20"
+            width={chip}
+            height={chip}
             viewBox="0 0 20 20"
             fill="none"
             stroke="currentColor"
@@ -87,13 +93,25 @@ export function Kpi({
         )}
       </div>
 
-      <p className="mt-3 text-[1.5rem] font-bold leading-none tracking-tight text-ink tabular-nums">
+      <p
+        className={cn(
+          "font-bold leading-none tracking-tight text-ink tabular-nums",
+          compact ? "mt-2 text-[1.2rem]" : "mt-3 text-[1.5rem]"
+        )}
+      >
         {value}
       </p>
-      <p className="mt-1.5 text-[0.64rem] font-semibold uppercase tracking-[0.09em] text-muted">
+      <p
+        className={cn(
+          "font-semibold uppercase tracking-[0.09em] text-muted",
+          compact ? "mt-1 text-[0.6rem]" : "mt-1.5 text-[0.64rem]"
+        )}
+      >
         {label}
       </p>
-      {sub && <p className="mt-0.5 text-[0.7rem] text-muted">{sub}</p>}
+      {sub && (
+        <p className={cn("text-muted", compact ? "mt-0.5 text-[0.66rem]" : "mt-0.5 text-[0.7rem]")}>{sub}</p>
+      )}
     </button>
   );
 }

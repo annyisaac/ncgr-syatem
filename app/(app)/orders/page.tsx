@@ -519,13 +519,13 @@ function OrdersInner() {
         }
       />
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
-        <Kpi icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub="All time" />
-        <Kpi icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} />
-        <Kpi icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} />
-        <Kpi icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} />
-        <Kpi icon="cross" tone="red" value={stats.cancelled.toLocaleString()} label="Cancelled" sub={stats.pct(stats.cancelled)} />
-        <Kpi icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub="All time" />
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+        <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub="All time" />
+        <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} />
+        <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} />
+        <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} />
+        <Kpi compact icon="cross" tone="red" value={stats.cancelled.toLocaleString()} label="Cancelled" sub={stats.pct(stats.cancelled)} />
+        <Kpi compact icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub="All time" />
       </div>
 
       {orderParam && (
