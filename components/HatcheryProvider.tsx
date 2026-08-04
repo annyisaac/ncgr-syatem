@@ -84,11 +84,13 @@ interface HatcheryContextValue {
   reload: () => Promise<void>;
 
   upsertReception: (r: Reception) => Promise<void>;
+  removeReception: (id: string) => Promise<void>;
   upsertStoreReading: (r: StoreReading) => Promise<void>;
   upsertFumigation: (f: Fumigation) => Promise<void>;
   upsertMachine: (m: Machine) => Promise<void>;
   upsertOperator: (o: Operator) => Promise<void>;
   upsertBatch: (b: Batch) => Promise<void>;
+  removeBatch: (id: string) => Promise<void>;
   /** Reflect a batch change in the UI/cache without a DB write — used after an
    *  authorized RPC (e.g. set_batch_no) has already persisted it. */
   patchBatchLocal: (b: Batch) => void;
@@ -343,11 +345,19 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     spareParts, spareRequests, farms, flocks, machineIssues, shiftHandovers,
     reload: load,
     upsertReception: (r) => persist("receptions", r, setReceptions),
+    removeReception: async (id) => {
+      setReceptions((prev) => prev.filter((x) => x.id !== id));
+      await deleteRow("receptions", id);
+    },
     upsertStoreReading: (r) => persist("store_readings", r, setStoreReadings),
     upsertFumigation: (f) => persist("fumigations", f, setFumigations),
     upsertMachine: (m) => persist("machines", m, setMachines),
     upsertOperator: (o) => persist("operators", o, setOperators),
     upsertBatch: (b) => persist("batches", b, setBatches),
+    removeBatch: async (id) => {
+      setBatches((prev) => prev.filter((x) => x.id !== id));
+      await deleteRow("batches", id);
+    },
     patchBatchLocal: (b) => { setBatches((prev) => upsertLocal(prev, b)); patchCache("batches", b); },
     upsertReading: (r) => persist("machine_readings", r, setReadings),
     upsertCount: (c) => persist("chick_counts", c, setCounts),

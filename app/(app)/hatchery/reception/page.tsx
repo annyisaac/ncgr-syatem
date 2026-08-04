@@ -30,7 +30,7 @@ const num = (v: string) => Number(v) || 0;
 
 export default function ReceptionPage() {
   const { user } = useAuth();
-  const { receptions, batches, farms, flocks, upsertReception, newId } = useHatchery();
+  const { receptions, batches, farms, flocks, upsertReception, removeReception, newId } = useHatchery();
   const { toast } = useToast();
 
   const [show, setShow] = useState(false);
@@ -154,6 +154,18 @@ export default function ReceptionPage() {
     toast(`${r.farm} · flock ${r.flockId} brought back to reception.`);
   }
 
+  /** Admin-only: delete a reception. Blocked once any of its eggs are set into a
+   *  batch — the batch must be deleted first so nothing is left dangling. */
+  function deleteReception(r: Reception) {
+    if (r.batchId || (r.eggsSet ?? 0) > 0) {
+      toast("This reception is already set into a batch — delete that batch first.", "error");
+      return;
+    }
+    if (!confirm(`Delete the reception from ${r.farm} · Flock ${r.flockId} (${r.eggsReceived.toLocaleString()} eggs, ${formatDate(r.date)})?\n\nThis cannot be undone.`)) return;
+    void removeReception(r.id);
+    toast("Reception deleted.");
+  }
+
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -225,7 +237,7 @@ export default function ReceptionPage() {
               <Th className="text-right">Received</Th><Th className="text-right">Cracked</Th>
               <Th className="text-right">Misshapen</Th><Th className="text-right">Dirty</Th>
               <Th className="text-right">Settable</Th><Th>Where</Th><Th>Batch</Th>
-              {canEdit && <Th>Edit</Th>}
+              {canEdit && <Th>Actions</Th>}
             </tr>
           </thead>
           <tbody>
@@ -280,7 +292,12 @@ export default function ReceptionPage() {
                   <Td>{r.batchId ? <Pill tone="gold">{batchNo(r.batchId)}</Pill> : <span className="text-muted">—</span>}</Td>
                   {canEdit && (
                     <Td>
-                      <Button size="sm" variant="ghost" onClick={() => startEdit(r)}>Edit</Button>
+                      <div className="flex flex-wrap gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => startEdit(r)}>Edit</Button>
+                        {isAdmin && (
+                          <Button size="sm" variant="ghost" className="text-red hover:border-red" onClick={() => deleteReception(r)}>Delete</Button>
+                        )}
+                      </div>
                     </Td>
                   )}
                 </tr>

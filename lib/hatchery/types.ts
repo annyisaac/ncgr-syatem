@@ -231,6 +231,9 @@ export interface BatchFlock {
   farm: string;
   ageOfFlock: number; // weeks
   receptionIds: string[];
+  /** How many eggs each contributing reception supplied — lets a batch delete
+   *  return the exact eggs to each receipt. Absent on batches set before this. */
+  receptionSets?: { receptionId: string; eggs: number }[];
   eggsSet: number; // eggs from this flock set in the batch
   candlings: Candling[]; // stage 1 & 2 for this flock
   transfers: MachineAssignment[]; // this flock's fertile eggs to hatcher(s)

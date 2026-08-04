@@ -34,7 +34,7 @@ interface AssignRow { groupKey: string; machineCode: string; eggs: string; sette
 
 export default function BatchesPage() {
   const { user } = useAuth();
-  const { receptions, machines, batches, upsertBatch, upsertReception, upsertMachine, newId } = useHatchery();
+  const { receptions, machines, batches, upsertBatch, upsertReception, upsertMachine, removeBatch, newId } = useHatchery();
   const { toast } = useToast();
 
   const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
@@ -48,6 +48,7 @@ export default function BatchesPage() {
   const [mvErr, setMvErr] = useState<string | null>(null);
 
   const canSet = !!user && CAN_SET.includes(user.role);
+  const isAdmin = !!user && user.role === "Admin";
   // Idle setters are inactive; setting eggs into one activates it, so the picker
   // lists all setters (occupancy/free capacity guards over-filling).
   const setters = machines.filter((m) => m.type === "setter");
@@ -151,23 +152,24 @@ export default function BatchesPage() {
     const plan = usedGroups.map((g) => {
       let toSet = valid.filter((r) => r.groupKey === g.key).reduce((s, r) => s + r.eggs, 0);
       const eggsSet = toSet;
-      const usedRecIds: string[] = [];
+      const contributions: { receptionId: string; eggs: number }[] = [];
       for (const r of g.recs) {
         if (toSet <= 0) break;
         const take = Math.min(remainingSettable(r), toSet);
         if (take <= 0) continue;
         recUpdates.push({ r, setNow: take });
-        usedRecIds.push(r.id);
+        contributions.push({ receptionId: r.id, eggs: take });
         toSet -= take;
       }
-      return { g, eggsSet, usedRecIds };
+      return { g, eggsSet, contributions };
     });
 
-    const flocks: BatchFlock[] = plan.map(({ g, eggsSet, usedRecIds }) => ({
+    const flocks: BatchFlock[] = plan.map(({ g, eggsSet, contributions }) => ({
       flockId: g.flockId,
       farm: g.farm,
       ageOfFlock: g.recs[0]?.ageOfFlock ?? 0,
-      receptionIds: usedRecIds,
+      receptionIds: contributions.map((c) => c.receptionId),
+      receptionSets: contributions,
       eggsSet,
       candlings: [],
       transfers: [],
@@ -223,6 +225,37 @@ export default function BatchesPage() {
     setMoveB(b);
     setMv({ from: b.setters[0]?.machineCode ?? "", to: "", eggs: "", trolleys: "" });
     setMvErr(null);
+  }
+
+  // Admin-only: delete a batch — a full undo. Its eggs are returned to the
+  // receptions (they become settable again) and any downstream candling /
+  // transfer / hatch records on the batch go with it.
+  function deleteBatch(b: Batch) {
+    const progressed = b.currentStep !== "setting";
+    const msg = progressed
+      ? `Delete batch ${b.batchNo}?\n\nIt has progressed to “${stepLabel(b.currentStep)}”, so this also discards its candling / transfer / hatch records. Its ${b.eggsSet.toLocaleString()} egg(s) return to the receptions. This cannot be undone.`
+      : `Delete batch ${b.batchNo}?\n\nIts ${b.eggsSet.toLocaleString()} set egg(s) return to the receptions so they can be set again. This cannot be undone.`;
+    if (!confirm(msg)) return;
+
+    // Return the eggs each reception supplied (exact when recorded; legacy
+    // batches fall back to freeing a reception this batch fully consumed).
+    const returns = new Map<string, number>();
+    for (const f of b.flocks ?? []) for (const rs of f.receptionSets ?? []) returns.set(rs.receptionId, (returns.get(rs.receptionId) ?? 0) + rs.eggs);
+    const ids = new Set<string>([...(b.receptionIds ?? []), ...returns.keys()]);
+    for (const id of ids) {
+      const r = receptions.find((x) => x.id === id);
+      if (!r) continue;
+      const clearBatch = r.batchId === b.id;
+      const back = returns.get(id);
+      const eggsSet = back != null ? Math.max(0, (r.eggsSet ?? 0) - back) : clearBatch ? 0 : r.eggsSet;
+      if (clearBatch || eggsSet !== r.eggsSet) upsertReception({ ...r, eggsSet, batchId: clearBatch ? undefined : r.batchId });
+    }
+
+    void removeBatch(b.id);
+    // Free the setters this batch occupied (recompute from the remaining batches).
+    const affected = (b.setters ?? []).map((s) => s.machineCode);
+    if (affected.length) machinesToSync(machines, affected, batches.filter((x) => x.id !== b.id)).forEach(upsertMachine);
+    toast(`Batch ${b.batchNo} deleted.`);
   }
 
   function doMove() {
@@ -358,10 +391,10 @@ export default function BatchesPage() {
         <CardHeader title={`${rows.length} batch(es)`} />
         <TableWrap>
           <thead>
-            <tr><Th>Batch</Th><Th>Product</Th><Th>Farm / flock</Th><Th>Step</Th><Th>Setters</Th><Th className="text-right">Eggs set</Th><Th className="text-right">Hatched</Th><Th className="text-right">Saleable</Th><Th>Status</Th></tr>
+            <tr><Th>Batch</Th><Th>Product</Th><Th>Farm / flock</Th><Th>Step</Th><Th>Setters</Th><Th className="text-right">Eggs set</Th><Th className="text-right">Hatched</Th><Th className="text-right">Saleable</Th><Th>Status</Th>{isAdmin && <Th>Actions</Th>}</tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? <EmptyRow colSpan={9} text="No batches yet." /> : rows.map((b) => (
+            {rows.length === 0 ? <EmptyRow colSpan={isAdmin ? 10 : 9} text="No batches yet." /> : rows.map((b) => (
               <tr key={b.id}>
                 <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
                 <Td>{b.productType}</Td>
@@ -381,6 +414,11 @@ export default function BatchesPage() {
                 <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>
                 <Td className="text-right">{b.saleableCount.toLocaleString()}</Td>
                 <Td><Pill tone={b.status === "inactive" ? "neutral" : b.status === "delivered" ? "fulfilled" : b.status === "dispatched" ? "gold" : "info"}>{b.status}</Pill></Td>
+                {isAdmin && (
+                  <Td>
+                    <Button size="sm" variant="ghost" className="text-red hover:border-red" onClick={() => deleteBatch(b)}>Delete</Button>
+                  </Td>
+                )}
               </tr>
             ))}
           </tbody>
