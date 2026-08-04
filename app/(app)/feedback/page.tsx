@@ -228,10 +228,11 @@ export default function FeedbackPage() {
     };
   }, [delivered, fbByOrder, now]);
 
-  const selectedOrder = useMemo(() => {
-    if (selectedId) { const f = orders.find((o) => o.id === selectedId); if (f) return f; }
-    return rows[0];
-  }, [selectedId, orders, rows]);
+  // The profile panel only appears once a customer is explicitly clicked.
+  const selectedOrder = useMemo(
+    () => (selectedId ? orders.find((o) => o.id === selectedId) : undefined),
+    [selectedId, orders]
+  );
 
   if (!user) return null;
 
@@ -296,8 +297,8 @@ export default function FeedbackPage() {
         </div>
       </div>
 
-      {/* Board + profile */}
-      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+      {/* Board + profile (the profile only appears once a customer is clicked) */}
+      <div className={cn("grid grid-cols-1 gap-4", selectedOrder && "xl:grid-cols-[minmax(0,1fr)_340px]")}>
         <div className="min-w-0 space-y-3">
           {groups.length === 0 ? (
             <div className="rounded-2xl border border-line bg-paper p-6 text-sm text-muted shadow-card">No delivered customers match these filters.</div>
@@ -340,12 +341,15 @@ export default function FeedbackPage() {
           )}
         </div>
 
-        <CustomerPanel
-          order={selectedOrder}
-          orders={user ? visibleOrders(orders, user) : []}
-          fbByOrder={fbByOrder}
-          onHistory={(o) => setHistory(o)}
-        />
+        {selectedOrder && (
+          <CustomerPanel
+            order={selectedOrder}
+            orders={user ? visibleOrders(orders, user) : []}
+            fbByOrder={fbByOrder}
+            onHistory={(o) => setHistory(o)}
+            onClose={() => setSelectedId(null)}
+          />
+        )}
       </div>
 
       {edit && (
@@ -479,20 +483,14 @@ function Stepper({ events }: { events: TLEvent[] }) {
 // --- Right-hand customer profile --------------------------------------------
 
 function CustomerPanel({
-  order, orders, fbByOrder, onHistory,
+  order, orders, fbByOrder, onHistory, onClose,
 }: {
-  order?: Order;
+  order: Order;
   orders: Order[];
   fbByOrder: Map<string, CustomerFeedback>;
   onHistory: (o: Order) => void;
+  onClose: () => void;
 }) {
-  if (!order) {
-    return (
-      <div className="rounded-2xl border border-line bg-paper p-6 text-sm text-muted shadow-card">
-        Select a customer to see their profile and history.
-      </div>
-    );
-  }
   const mine = orders.filter((o) => sameCustomer(o, order)).sort((a, b) => (a.date < b.date ? 1 : -1));
   const fbs = mine.map((o) => fbByOrder.get(o.id)).filter((f): f is CustomerFeedback => !!f);
   const rated = fbs.filter((f) => f.rating);
@@ -512,6 +510,7 @@ function CustomerPanel({
           {order.district && <p className="text-xs text-muted">{order.district} District</p>}
         </div>
         <a href={`tel:${order.phone}`} className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-green-bg text-green"><Ico name="phone" className="h-4 w-4" /></a>
+        <button onClick={onClose} title="Close" className="flex h-9 w-9 items-center justify-center rounded-full border border-line text-muted hover:bg-grey-bg"><Ico name="close" className="h-4 w-4" /></button>
       </div>
 
       <div className="rounded-xl border border-line bg-cream/40 p-3">
@@ -762,7 +761,7 @@ function HistoryModal({ order, fb, onClose }: { order: Order; fb?: CustomerFeedb
 
 type IcoName =
   | "phone" | "stethoscope" | "clock" | "star" | "alert" | "edit" | "search"
-  | "calendar" | "check" | "chevronDown" | "chevronUp" | "chevronRight";
+  | "calendar" | "check" | "chevronDown" | "chevronUp" | "chevronRight" | "close";
 
 function Ico({ name, className }: { name: IcoName; className?: string }) {
   const p = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
@@ -780,5 +779,6 @@ function Ico({ name, className }: { name: IcoName; className?: string }) {
     case "chevronDown": return svg(<path d="M6 9l6 6 6-6" />);
     case "chevronUp": return svg(<path d="M6 15l6-6 6 6" />);
     case "chevronRight": return svg(<path d="M9 6l6 6-6 6" />);
+    case "close": return svg(<path d="M6 6l12 12M18 6L6 18" />);
   }
 }
