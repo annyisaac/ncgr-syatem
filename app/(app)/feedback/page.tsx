@@ -88,7 +88,7 @@ const TONE_BG: Record<Tone, string> = {
 };
 
 /** Shared grid template so the column header and rows line up. */
-const COLS = "grid grid-cols-[1.6fr_1fr_1fr_0.7fr_1fr_0.9fr_1.4fr_120px] items-center gap-2";
+const COLS = "grid grid-cols-[1.4fr_0.9fr_0.9fr_0.6fr_0.9fr_0.8fr_1.2fr_108px] items-center gap-2";
 
 // --- small helpers ----------------------------------------------------------
 
@@ -294,8 +294,8 @@ export default function FeedbackPage() {
       </div>
 
       {/* Board + profile */}
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(0,1fr)_340px]">
+        <div className="min-w-0 space-y-3">
           {groups.length === 0 ? (
             <div className="rounded-2xl border border-line bg-paper p-6 text-sm text-muted shadow-card">No delivered customers match these filters.</div>
           ) : (
@@ -310,7 +310,7 @@ export default function FeedbackPage() {
                   </button>
                   {openG && (
                     <div className="overflow-x-auto">
-                      <div className="min-w-[860px]">
+                      <div className="min-w-[720px]">
                         <div className={cn(COLS, "bg-onyx px-4 py-2 text-[0.6rem] font-bold uppercase tracking-wide text-white/80")}>
                           <span>Customer</span><span>Phone</span><span>Product</span><span>Chicks</span><span>Status</span><span>Vet</span><span>Last action</span><span className="text-right">Action</span>
                         </div>
