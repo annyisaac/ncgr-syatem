@@ -257,48 +257,42 @@ function RecordModal({
   const [needsVet, setNeedsVet] = useState(existing?.needsVet ?? false);
   const [vetReason, setVetReason] = useState(existing?.vetReason ?? "");
   const [err, setErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  async function submit() {
+  function submit() {
     setErr(null);
     const n = note.trim();
     if (!n) return setErr("Enter what the customer said on the call.");
     if (needsVet && !vetReason.trim()) return setErr("Say what the customer needs the vet for.");
-    setSaving(true);
-    try {
-      const fb: CustomerFeedback = {
-        id: order.id,
-        orderId: order.id,
-        customerName: order.name,
-        phone: order.phone,
-        product: order.product,
-        deliveryDate: order.date,
-        chicks: order.delivered ?? order.chicks,
-        district: order.clientDistrict ?? order.district,
-        sector: order.clientSector ?? order.sector,
-        dsr: order.dsr,
-        note: n,
-        rating: rating || undefined,
-        by: user.email,
-        byName: user.name,
-        on: nowISO(),
-        needsVet,
-        vetReason: needsVet ? vetReason.trim() : undefined,
-        vetStatus: needsVet ? existing?.vetStatus ?? "pending" : undefined,
-        vetUpdates: existing?.vetUpdates ?? [],
-        history: [
-          ...(existing?.history ?? []),
-          `${nowISO()} — Feedback ${existing ? "updated" : "recorded"} by ${user.name}${needsVet ? " · flagged for vet" : ""}`,
-        ],
-      };
-      await save(fb);
-      toast(needsVet ? "Feedback saved and flagged for the vet." : "Feedback saved.");
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not save the feedback.");
-    } finally {
-      setSaving(false);
-    }
+    const fb: CustomerFeedback = {
+      id: order.id,
+      orderId: order.id,
+      customerName: order.name,
+      phone: order.phone,
+      product: order.product,
+      deliveryDate: order.date,
+      chicks: order.delivered ?? order.chicks,
+      district: order.clientDistrict ?? order.district,
+      sector: order.clientSector ?? order.sector,
+      dsr: order.dsr,
+      note: n,
+      rating: rating || undefined,
+      by: user.email,
+      byName: user.name,
+      on: nowISO(),
+      needsVet,
+      vetReason: needsVet ? vetReason.trim() : undefined,
+      vetStatus: needsVet ? existing?.vetStatus ?? "pending" : undefined,
+      vetUpdates: existing?.vetUpdates ?? [],
+      history: [
+        ...(existing?.history ?? []),
+        `${nowISO()} — Feedback ${existing ? "updated" : "recorded"} by ${user.name}${needsVet ? " · flagged for vet" : ""}`,
+      ],
+    };
+    // Optimistic: the list updates instantly; persist in the background so the
+    // dialog closes without waiting on the round trip to the database.
+    save(fb).catch(() => toast("Could not save the feedback — check your connection.", "error"));
+    toast(needsVet ? "Feedback saved and flagged for the vet." : "Feedback saved.");
+    onClose();
   }
 
   return (
@@ -309,7 +303,7 @@ function RecordModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save feedback"}</Button>
+          <Button onClick={submit}>Save feedback</Button>
         </>
       }
     >
@@ -467,31 +461,24 @@ function VetModal({
   );
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
-  async function submit() {
+  function submit() {
     setErr(null);
     const n = note.trim();
     if (!n) return setErr("Add a note on what you found, advised, or did.");
-    setSaving(true);
-    try {
-      const upd: VetUpdate = { note: n, by: user.email, byName: user.name, on: nowISO(), status };
-      await save({
-        ...fb,
-        vetStatus: status,
-        vetUpdates: [...(fb.vetUpdates ?? []), upd],
-        history: [
-          ...(fb.history ?? []),
-          `${nowISO()} — Vet ${status === "resolved" ? "resolved the follow-up" : "updated the follow-up"} (${user.name})`,
-        ],
-      });
-      toast(status === "resolved" ? "Follow-up resolved." : "Follow-up updated.");
-      onClose();
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : "Could not save the update.");
-    } finally {
-      setSaving(false);
-    }
+    const upd: VetUpdate = { note: n, by: user.email, byName: user.name, on: nowISO(), status };
+    // Optimistic: reflect in the queue at once, persist in the background.
+    save({
+      ...fb,
+      vetStatus: status,
+      vetUpdates: [...(fb.vetUpdates ?? []), upd],
+      history: [
+        ...(fb.history ?? []),
+        `${nowISO()} — Vet ${status === "resolved" ? "resolved the follow-up" : "updated the follow-up"} (${user.name})`,
+      ],
+    }).catch(() => toast("Could not save the update — check your connection.", "error"));
+    toast(status === "resolved" ? "Follow-up resolved." : "Follow-up updated.");
+    onClose();
   }
 
   return (
@@ -502,7 +489,7 @@ function VetModal({
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save update"}</Button>
+          <Button onClick={submit}>Save update</Button>
         </>
       }
     >
