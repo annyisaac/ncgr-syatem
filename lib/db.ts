@@ -19,6 +19,7 @@ import type {
   Availability,
   BankStatement,
   CommissionRequest,
+  CustomerFeedback,
   Database,
   DeliveryLink,
   DSR,
@@ -122,7 +123,7 @@ async function saveCollection<T>(
 // ---------------------------------------------------------------------------
 
 export async function getDatabase(): Promise<Database> {
-  const [users, dsrs, orders, commissions, statements, routes, availability, dsrVisits] = await Promise.all([
+  const [users, dsrs, orders, commissions, statements, routes, availability, dsrVisits, customerFeedback] = await Promise.all([
     fetchCollection<User>("users"),
     fetchCollection<DSR>("dsrs"),
     fetchCollection<Order>("orders"),
@@ -131,8 +132,9 @@ export async function getDatabase(): Promise<Database> {
     fetchCollection<Route>("routes"),
     fetchCollection<Availability>("availability"),
     fetchCollection<DsrVisit>("dsr_visits"),
+    fetchCollection<CustomerFeedback>("customer_feedback"),
   ]);
-  return { users, dsrs, orders, commissions, statements, routes, availability, dsrVisits };
+  return { users, dsrs, orders, commissions, statements, routes, availability, dsrVisits, customerFeedback };
 }
 
 /**
@@ -150,6 +152,7 @@ export async function replaceDatabase(db: Database): Promise<void> {
     saveCollection("routes", "id", db.routes ?? [], (r) => r.id, true),
     saveCollection("availability", "id", db.availability ?? [], (a) => a.id, true),
     saveCollection("dsr_visits", "id", db.dsrVisits ?? [], (v) => v.id, true),
+    saveCollection("customer_feedback", "id", db.customerFeedback ?? [], (f) => f.id, true),
   ]);
 }
 
@@ -428,6 +431,10 @@ export async function dsrRequestEdit(
 
 /** DSR logs a farm visit (they own their own rows via RLS). */
 export const saveDsrVisitOne = (v: DsrVisit) => upsertOne("dsr_visits", "id", v.id, v);
+
+/** Customer feedback / vet follow-up (staff-only table). */
+export const saveCustomerFeedbackOne = (f: CustomerFeedback) =>
+  upsertOne("customer_feedback", "id", f.id, f);
 
 // ---------------------------------------------------------------------------
 // Notifications (in-app). Rows are written server-side by a trigger; the client

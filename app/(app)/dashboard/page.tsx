@@ -33,7 +33,7 @@ import {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { orders, replaceAll, setOrders, users, dsrs, commissions, statements, routes, availability, dsrVisits } = useData();
+  const { orders, replaceAll, setOrders, users, dsrs, commissions, statements, routes, availability, dsrVisits, customerFeedback } = useData();
 
   const visible = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
@@ -57,7 +57,7 @@ export default function DashboardPage() {
       <AdminDashboard
         user={user}
         orders={visible}
-        db={{ users, dsrs, orders, commissions, statements, routes, availability, dsrVisits }}
+        db={{ users, dsrs, orders, commissions, statements, routes, availability, dsrVisits, customerFeedback }}
         replaceAll={replaceAll}
         setOrders={setOrders}
       />

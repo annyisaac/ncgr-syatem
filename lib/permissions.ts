@@ -100,6 +100,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Delivery planning", href: "/planning" },
     { label: "Commission", href: "/commission" },
     { label: "Verification", href: "/verification" },
+    { label: "Customer feedback", href: "/feedback" },
     { label: "Agrishow", href: "/agrishow" },
     // Accounting
     { label: "Finance", href: "/finance" },
@@ -167,6 +168,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Farm visits", href: "/farm-visits" },
     { label: "Tetra batches", href: "/tetra-batches" },
     { label: "Verification", href: "/verification" },
+    { label: "Customer feedback", href: "/feedback" },
     { label: "Commission", href: "/commission" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Zone Orders", href: "/orders" },
@@ -175,6 +177,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Dashboard", href: "/dashboard" },
     { label: "Clients", href: "/clients" },
     { label: "Verification", href: "/verification" },
+    { label: "Customer feedback", href: "/feedback" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
     { label: "Agrishow", href: "/agrishow" },
@@ -288,7 +291,8 @@ const NAV: Record<Role, NavItem[]> = {
     H_HANDOVER,
   ],
   "Hatchery Veterinary": [
-    H_DASH, H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
+    H_DASH, { label: "Customer follow-up", href: "/feedback" },
+    H_FARM_VISITS, H_VAC_REQUESTS, H_VACCINATION, H_BIO,
   ],
   "Maintenance Technician": [
     H_DASH, H_MACHINES, H_MAINT, H_SPAREPARTS, MATERIAL_REQ,

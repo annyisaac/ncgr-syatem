@@ -20,6 +20,7 @@ import type {
   Availability,
   BankStatement,
   CommissionRequest,
+  CustomerFeedback,
   Database,
   DSR,
   DsrVisit,
@@ -40,6 +41,7 @@ import {
   saveCommissions,
   saveCommissionOne,
   saveDsrVisitOne,
+  saveCustomerFeedbackOne,
   saveDSRs,
   saveDSROne,
   saveOrders,
@@ -107,6 +109,9 @@ interface DataContextValue {
   dsrVisits: DsrVisit[];
   upsertDsrVisit: (v: DsrVisit) => Promise<void>;
 
+  customerFeedback: CustomerFeedback[];
+  upsertCustomerFeedback: (f: CustomerFeedback) => Promise<void>;
+
   /** Full replace (backup restore). */
   replaceAll: (db: Database) => Promise<void>;
 
@@ -124,6 +129,7 @@ const EMPTY: Database = {
   routes: [],
   availability: [],
   dsrVisits: [],
+  customerFeedback: [],
 };
 
 // Realtime table name → the key it maps to in the in-memory mirror. Only these
@@ -137,6 +143,7 @@ const SALES_TABLE_TO_KEY: Record<string, keyof Database> = {
   routes: "routes",
   availability: "availability",
   dsr_visits: "dsrVisits",
+  customer_feedback: "customerFeedback",
 };
 
 export function DataProvider({ children }: { children: ReactNode }) {
@@ -356,6 +363,10 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
     upsertDsrVisit: (v) =>
       applyOne("dsrVisits", v, (x) => x.id === v.id, () => saveDsrVisitOne(v)),
+
+    customerFeedback: db.customerFeedback ?? [],
+    upsertCustomerFeedback: (f) =>
+      applyOne("customerFeedback", f, (x) => x.id === f.id, () => saveCustomerFeedbackOne(f)),
 
     replaceAll: async (next) => {
       setDb(next);

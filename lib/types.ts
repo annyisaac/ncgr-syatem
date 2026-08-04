@@ -353,6 +353,57 @@ export interface DsrVisit {
 }
 
 // ---------------------------------------------------------------------------
+// Customer feedback (post-delivery follow-up calls)
+//
+// A payment checker calls each delivered customer and records what they said.
+// If the customer needs veterinary attention it is flagged for the hatchery
+// vet, who follows up and updates the record until it is resolved.
+// ---------------------------------------------------------------------------
+
+export type FeedbackRating = "satisfied" | "neutral" | "unsatisfied";
+export type VetFollowUpStatus = "pending" | "in_progress" | "resolved";
+
+/** One vet follow-up note on an escalated feedback record. */
+export interface VetUpdate {
+  note: string;
+  by: string; // vet email
+  byName?: string;
+  on: string; // ISO datetime
+  status: VetFollowUpStatus;
+}
+
+/**
+ * One feedback record per delivered order, keyed by the order id. It carries a
+ * denormalized snapshot of the customer + delivery so the vet can follow up
+ * without any access to the sales `orders` table.
+ */
+export interface CustomerFeedback {
+  id: string; // == the delivered order's id (one feedback per delivery)
+  orderId: string;
+  // Denormalized customer / delivery snapshot
+  customerName: string;
+  phone: string;
+  product: Product;
+  deliveryDate: string; // ISO date
+  chicks: number;
+  district?: string;
+  sector?: string;
+  dsr?: string;
+  // Feedback recorded by the payment checker
+  note: string;
+  rating?: FeedbackRating;
+  by: string; // recorder email
+  byName?: string;
+  on: string; // ISO datetime last recorded/updated
+  // Vet escalation & follow-up
+  needsVet: boolean;
+  vetReason?: string;
+  vetStatus?: VetFollowUpStatus; // set when needsVet is true
+  vetUpdates?: VetUpdate[];
+  history: string[]; // audit log lines
+}
+
+// ---------------------------------------------------------------------------
 // Commission
 // ---------------------------------------------------------------------------
 
@@ -406,6 +457,8 @@ export interface Database {
   routes: Route[];
   availability: Availability[];
   dsrVisits: DsrVisit[];
+  /** Optional so older backups (without it) still restore cleanly. */
+  customerFeedback?: CustomerFeedback[];
 }
 
 // ---------------------------------------------------------------------------

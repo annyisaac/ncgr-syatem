@@ -848,6 +848,7 @@ export async function readBackup(file: File): Promise<Database> {
     routes: parsed.routes ?? [],
     availability: parsed.availability ?? [],
     dsrVisits: parsed.dsrVisits ?? [],
+    customerFeedback: parsed.customerFeedback ?? [],
   };
 }
 
