@@ -1,78 +1,592 @@
 "use client";
 
 /**
- * Customer feedback & vet follow-up.
+ * Customer Care & Feedback.
  *
- * A payment checker works a list of DELIVERED customers, grouped by delivery
- * date, and records what each customer said on the follow-up call. If the
- * customer needs veterinary attention it is flagged for the hatchery vet, who
- * picks it up from the follow-up queue and updates it until it is resolved.
+ * A post-delivery care board: delivered customers grouped by delivery date,
+ * with KPI cards, filters, an expandable per-customer detail row (order +
+ * follow-up timeline) and a customer profile panel. Payment checkers record
+ * each customer's feedback on the follow-up call; a "needs vet" flag routes the
+ * case to the hatchery vet, who follows it up to resolution.
  *
- * One feedback record per delivered order (keyed by the order id). The record
- * carries a denormalized snapshot of the customer + delivery, so the vet
- * follows up without any access to the sales orders.
+ * One feedback record per delivered order (keyed by the order id), carrying a
+ * denormalized customer snapshot so the vet needs no access to sales orders.
+ * Fields the sales data genuinely doesn't hold (e.g. delivery time) are omitted
+ * rather than invented; derived fields (reference, payment status, amount) come
+ * straight from the order.
  */
 
 import { useMemo, useState } from "react";
-import type { TextareaHTMLAttributes } from "react";
+import type { ReactNode, TextareaHTMLAttributes } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
-import { TableWrap, Th, Td } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
-import { formatDate, formatDateTime, nowISO } from "@/lib/format";
+import { formatDate, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
-import type {
-  CustomerFeedback,
-  FeedbackRating,
-  Order,
-  Role,
-  User,
-  VetFollowUpStatus,
-  VetUpdate,
+import {
+  balance,
+  orderTotal,
+  paidAmount,
+  sameCustomer,
+  type CustomerFeedback,
+  type FeedbackRating,
+  type Order,
+  type Role,
+  type Route,
+  type User,
+  type VetFollowUpStatus,
+  type VetUpdate,
 } from "@/lib/types";
 
-/** Roles that call customers and record their feedback. */
 const CAN_RECORD: Role[] = ["Admin", "Tetra Payment Checker", "Ross Payment Checker"];
-/** Roles that handle the veterinary follow-up queue. */
 const CAN_VET: Role[] = ["Admin", "Hatchery Veterinary"];
 
+type Tone = "gold" | "green" | "blue" | "amber" | "purple" | "red";
+type CareStatus = "pending" | "called" | "vet" | "resolved";
+
+const STATUS_LABEL: Record<CareStatus, string> = {
+  pending: "Pending Call",
+  called: "Called",
+  vet: "Vet Case",
+  resolved: "Resolved",
+};
+const STATUS_TONE: Record<CareStatus, "red" | "amber" | "info" | "green"> = {
+  pending: "red",
+  called: "amber",
+  vet: "info",
+  resolved: "green",
+};
 const RATING_LABEL: Record<FeedbackRating, string> = {
   satisfied: "Satisfied",
   neutral: "Neutral",
   unsatisfied: "Unsatisfied",
-};
-const RATING_TONE: Record<FeedbackRating, "green" | "amber" | "red"> = {
-  satisfied: "green",
-  neutral: "amber",
-  unsatisfied: "red",
 };
 const RATING_ACTIVE: Record<FeedbackRating, string> = {
   satisfied: "border-green bg-green-bg text-green",
   neutral: "border-amber bg-amber-bg text-amber",
   unsatisfied: "border-red bg-red-bg text-red",
 };
+const RATING_SCORE: Record<FeedbackRating, number> = { satisfied: 5, neutral: 3, unsatisfied: 1 };
 const VET_LABEL: Record<VetFollowUpStatus, string> = {
   pending: "Awaiting vet",
   in_progress: "Vet following up",
   resolved: "Resolved",
 };
-const VET_TONE: Record<VetFollowUpStatus, "amber" | "info" | "green"> = {
-  pending: "amber",
-  in_progress: "info",
-  resolved: "green",
+const TONE_BG: Record<Tone, string> = {
+  gold: "bg-gold-bg text-gold-dark",
+  green: "bg-green-bg text-green",
+  blue: "bg-blue-bg text-blue",
+  amber: "bg-amber-bg text-amber",
+  purple: "bg-purple-bg text-purple",
+  red: "bg-red-bg text-red",
 };
 
-/** A delivered order is one that was handed over (fulfilled), not refunded. */
+/** Shared grid template so the column header and rows line up. */
+const COLS = "grid grid-cols-[1.6fr_1fr_1fr_0.7fr_1fr_0.9fr_1.4fr_120px] items-center gap-2";
+
+// --- small helpers ----------------------------------------------------------
+
 function isDelivered(o: Order): boolean {
   return (o.status === "fulfilled" || o.deliverOk === true) && o.status !== "refunded" && o.status !== "rejected";
 }
+function careStatus(fb?: CustomerFeedback): CareStatus {
+  if (!fb) return "pending";
+  if (fb.needsVet) return (fb.vetStatus ?? "pending") === "resolved" ? "resolved" : "vet";
+  return "called";
+}
+function qtyOf(o: Order): number {
+  return o.delivered ?? o.chicks;
+}
+function rwf(n: number): string {
+  return `RWF ${Math.round(n).toLocaleString()}`;
+}
+function refOf(o: Order): string {
+  return `NCGR-${o.date.replace(/-/g, "").slice(2)}-${o.id.slice(-4).toUpperCase()}`;
+}
+function payOf(o: Order): { label: string; tone: "green" | "amber" | "red" } {
+  if (orderTotal(o) > 0 && balance(o) <= 0) return { label: "Paid", tone: "green" };
+  if (paidAmount(o) > 0) return { label: "Partial", tone: "amber" };
+  return { label: "Unpaid", tone: "red" };
+}
+function timeOf(iso: string): string {
+  return new Date(iso).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+}
+function whenLabel(iso: string): string {
+  const day = iso.slice(0, 10);
+  return day === todayISO() ? `Today ${timeOf(iso)}` : `${formatDate(day)} ${timeOf(iso)}`;
+}
+function lastActionOf(fb?: CustomerFeedback): string {
+  if (!fb) return "Not called yet";
+  if (fb.needsVet) {
+    const last = fb.vetUpdates?.[fb.vetUpdates.length - 1];
+    return last ? `${VET_LABEL[last.status]} · ${whenLabel(last.on)}` : `Flagged for vet · ${whenLabel(fb.on)}`;
+  }
+  return `Called · ${whenLabel(fb.on)}`;
+}
+function initials(name: string): string {
+  return name.trim().slice(0, 1).toUpperCase() || "?";
+}
+
+interface TLEvent { on: string; title: string; sub?: string; tone: Tone }
+function timelineFor(o: Order, fb: CustomerFeedback | undefined): TLEvent[] {
+  const evs: TLEvent[] = [{ on: `${o.date}T08:00:00`, title: "Chicks delivered", tone: "green" }];
+  if (fb) {
+    evs.push({ on: fb.on, title: `Called by ${fb.byName ?? "checker"}`, sub: fb.note, tone: "blue" });
+    if (fb.needsVet) evs.push({ on: fb.on, title: "Issue reported", sub: fb.vetReason, tone: "amber" });
+    for (const u of fb.vetUpdates ?? []) {
+      evs.push({ on: u.on, title: `${VET_LABEL[u.status]}${fb.vetName ? ` · ${fb.vetName}` : ""}`, sub: u.note, tone: u.status === "resolved" ? "green" : "purple" });
+    }
+  }
+  return evs.sort((a, b) => (a.on < b.on ? -1 : 1));
+}
+
+// ---------------------------------------------------------------------------
+
+export default function FeedbackPage() {
+  const { user } = useAuth();
+  const { orders, routes, customerFeedback, upsertCustomerFeedback } = useData();
+
+  const [q, setQ] = useState("");
+  const [date, setDate] = useState("");
+  const [status, setStatus] = useState<"" | CareStatus>(user?.role === "Hatchery Veterinary" ? "vet" : "");
+  const [salesperson, setSalesperson] = useState("");
+  const [product, setProduct] = useState("");
+  const [open, setOpen] = useState<Set<string>>(new Set());
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [edit, setEdit] = useState<Order | null>(null);
+  const [vetCase, setVetCase] = useState<CustomerFeedback | null>(null);
+  const [history, setHistory] = useState<Order | null>(null);
+
+  const canRecord = !!user && CAN_RECORD.includes(user.role);
+  const canVet = !!user && CAN_VET.includes(user.role);
+
+  // Captured once so KPI aggregation stays pure across re-renders.
+  const [now] = useState(() => Date.now());
+
+  const fbByOrder = useMemo(
+    () => new Map(customerFeedback.map((f) => [f.orderId, f])),
+    [customerFeedback]
+  );
+
+  const delivered = useMemo(
+    () => (user ? visibleOrders(orders, user).filter(isDelivered) : []),
+    [orders, user]
+  );
+
+  const salespeople = useMemo(
+    () => [...new Set(delivered.map((o) => o.dsr).filter((d): d is string => !!d))].sort(),
+    [delivered]
+  );
+
+  const rows = useMemo(() => {
+    const term = q.trim().toLowerCase();
+    return delivered
+      .filter((o) => !date || o.date === date)
+      .filter((o) => !product || o.product === product)
+      .filter((o) => !salesperson || o.dsr === salesperson)
+      .filter((o) => !status || careStatus(fbByOrder.get(o.id)) === status)
+      .filter((o) => !term || o.name.toLowerCase().includes(term) || o.phone.includes(term))
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.name.localeCompare(b.name)));
+  }, [delivered, date, product, salesperson, status, q, fbByOrder]);
+
+  const groups = useMemo(() => {
+    const m = new Map<string, Order[]>();
+    for (const o of rows) {
+      const arr = m.get(o.date) ?? [];
+      arr.push(o);
+      m.set(o.date, arr);
+    }
+    return [...m.entries()];
+  }, [rows]);
+
+  // KPI aggregates over the visible delivered set.
+  const kpi = useMemo(() => {
+    const weekAgo = new Date(now - 7 * 864e5).toISOString();
+    let pending = 0, calledToday = 0, vet = 0, due = 0, rated = 0, ratingSum = 0, complaints = 0;
+    for (const o of delivered) {
+      const fb = fbByOrder.get(o.id);
+      if (!fb) { pending++; continue; }
+      if (fb.on.slice(0, 10) === todayISO()) calledToday++;
+      const active = fb.needsVet && (fb.vetStatus ?? "pending") !== "resolved";
+      if (active) vet++;
+      if (active || fb.rating === "unsatisfied") due++;
+      if (fb.rating) { rated++; ratingSum += RATING_SCORE[fb.rating]; }
+      if (fb.rating === "unsatisfied" && fb.on >= weekAgo) complaints++;
+    }
+    return {
+      pending, calledToday, vet, due, complaints,
+      satisfaction: rated ? (ratingSum / rated).toFixed(1) : "—",
+    };
+  }, [delivered, fbByOrder, now]);
+
+  const selectedOrder = useMemo(() => {
+    if (selectedId) { const f = orders.find((o) => o.id === selectedId); if (f) return f; }
+    return rows[0];
+  }, [selectedId, orders, rows]);
+
+  if (!user) return null;
+
+  const toggle = (d: string) =>
+    setOpen((prev) => {
+      const n = new Set(prev);
+      if (n.has(d)) n.delete(d); else n.add(d);
+      return n;
+    });
+  // Groups start expanded (first load shows the newest date's customers).
+  const isOpen = (d: string, i: number) => (open.size === 0 ? i === 0 : open.has(d));
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold text-ink">Customer Care &amp; Feedback</h1>
+          <p className="text-sm text-muted">Manage customer follow-ups and feedback after delivery</p>
+        </div>
+        <span className="inline-flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-1.5 text-sm text-muted">
+          <Ico name="calendar" className="h-4 w-4" /> Today: {formatDate(todayISO())}
+        </span>
+      </div>
+
+      {/* KPI cards */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <Kpi tone="gold" icon="phone" value={kpi.pending} label="Pending Calls" sub="Need to be called" />
+        <Kpi tone="green" icon="phone" value={kpi.calledToday} label="Called Today" sub="Completed calls" />
+        <Kpi tone="blue" icon="stethoscope" value={kpi.vet} label="Vet Cases" sub="Active cases" />
+        <Kpi tone="amber" icon="clock" value={kpi.due} label="Follow-ups Due" sub="Require attention" />
+        <Kpi tone="purple" icon="star" value={kpi.satisfaction} label="Satisfaction" sub="Average rating" />
+        <Kpi tone="red" icon="alert" value={kpi.complaints} label="Complaints" sub="This week" />
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-line bg-paper p-4 shadow-card">
+        <div className="w-40"><Field label="Delivery Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field></div>
+        <div className="w-40">
+          <Field label="Status">
+            <Select value={status} onChange={(e) => setStatus(e.target.value as "" | CareStatus)}
+              options={[{ value: "", label: "All Status" }, { value: "pending", label: "Pending Call" }, { value: "called", label: "Called" }, { value: "vet", label: "Vet Case" }, { value: "resolved", label: "Resolved" }]} />
+          </Field>
+        </div>
+        <div className="w-48">
+          <Field label="Salesperson">
+            <Select value={salesperson} onChange={(e) => setSalesperson(e.target.value)}
+              options={[{ value: "", label: "All Salespersons" }, ...salespeople.map((s) => ({ value: s, label: s }))]} />
+          </Field>
+        </div>
+        <div className="w-44">
+          <Field label="Product">
+            <Select value={product} onChange={(e) => setProduct(e.target.value)}
+              options={[{ value: "", label: "All Products" }, { value: "Ross 308", label: "Ross 308" }, { value: "Tetra Super Harco", label: "Tetra Super Harco" }]} />
+          </Field>
+        </div>
+        <div className="ml-auto min-w-[220px] flex-1">
+          <div className="relative">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><Ico name="search" className="h-4 w-4" /></span>
+            <Input className="pl-9" placeholder="Search customer name or phone…" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+        </div>
+      </div>
+
+      {/* Board + profile */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_360px]">
+        <div className="space-y-3">
+          {groups.length === 0 ? (
+            <div className="rounded-2xl border border-line bg-paper p-6 text-sm text-muted shadow-card">No delivered customers match these filters.</div>
+          ) : (
+            groups.map(([d, os], i) => {
+              const openG = isOpen(d, i);
+              return (
+                <div key={d} className="overflow-hidden rounded-2xl border border-line bg-paper shadow-card">
+                  <button onClick={() => toggle(d)} className="flex w-full items-center gap-2 px-4 py-3 text-left">
+                    <Ico name={openG ? "chevronDown" : "chevronRight"} className="h-4 w-4 text-muted" />
+                    <span className="text-sm font-bold uppercase tracking-wide text-ink">Delivery date: {formatDate(d)}</span>
+                    <Pill tone="gold" className="ml-1">{os.length} customers</Pill>
+                  </button>
+                  {openG && (
+                    <div className="overflow-x-auto">
+                      <div className="min-w-[860px]">
+                        <div className={cn(COLS, "bg-onyx px-4 py-2 text-[0.6rem] font-bold uppercase tracking-wide text-white/80")}>
+                          <span>Customer</span><span>Phone</span><span>Product</span><span>Chicks</span><span>Status</span><span>Vet</span><span>Last action</span><span className="text-right">Action</span>
+                        </div>
+                        {os.map((o) => (
+                          <CareRow
+                            key={o.id}
+                            o={o}
+                            fb={fbByOrder.get(o.id)}
+                            routes={routes}
+                            expanded={open.has(`row:${o.id}`)}
+                            selected={selectedOrder?.id === o.id}
+                            canRecord={canRecord}
+                            canVet={canVet}
+                            onSelect={() => setSelectedId(o.id)}
+                            onExpand={() => toggle(`row:${o.id}`)}
+                            onRecord={() => setEdit(o)}
+                            onVet={(f) => setVetCase(f)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <CustomerPanel
+          order={selectedOrder}
+          orders={user ? visibleOrders(orders, user) : []}
+          fbByOrder={fbByOrder}
+          onHistory={(o) => setHistory(o)}
+        />
+      </div>
+
+      {edit && (
+        <RecordModal order={edit} existing={fbByOrder.get(edit.id)} user={user} onClose={() => setEdit(null)} save={upsertCustomerFeedback} />
+      )}
+      {vetCase && (
+        <VetModal fb={vetCase} user={user} onClose={() => setVetCase(null)} save={upsertCustomerFeedback} />
+      )}
+      {history && (
+        <HistoryModal order={history} fb={fbByOrder.get(history.id)} onClose={() => setHistory(null)} />
+      )}
+    </div>
+  );
+}
+
+// --- KPI card ---------------------------------------------------------------
+
+function Kpi({ tone, icon, value, label, sub }: { tone: Tone; icon: IcoName; value: ReactNode; label: string; sub: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-paper p-4 shadow-card">
+      <div className="flex items-center justify-between">
+        <span className={cn("flex h-11 w-11 items-center justify-center rounded-xl", TONE_BG[tone])}>
+          <Ico name={icon} className="h-5 w-5" />
+        </span>
+        <span className="text-3xl font-extrabold leading-none text-ink">{value}</span>
+      </div>
+      <p className="mt-3 text-sm font-bold text-ink">{label}</p>
+      <p className="text-xs text-muted">{sub}</p>
+    </div>
+  );
+}
+
+// --- One customer row (+ expandable detail) ---------------------------------
+
+function CareRow({
+  o, fb, routes, expanded, selected, canRecord, canVet, onSelect, onExpand, onRecord, onVet,
+}: {
+  o: Order;
+  fb?: CustomerFeedback;
+  routes: Route[];
+  expanded: boolean;
+  selected: boolean;
+  canRecord: boolean;
+  canVet: boolean;
+  onSelect: () => void;
+  onExpand: () => void;
+  onRecord: () => void;
+  onVet: (fb: CustomerFeedback) => void;
+}) {
+  const st = careStatus(fb);
+  const route = o.routeId ? routes.find((r) => r.id === o.routeId) : undefined;
+  const pay = payOf(o);
+  return (
+    <div className={cn("border-t border-line", selected && "bg-gold-bg/30")}>
+      <div className={cn(COLS, "px-4 py-2.5 text-sm")}>
+        <button onClick={onSelect} className="min-w-0 text-left">
+          <span className="block truncate font-semibold text-ink">{o.name}</span>
+        </button>
+        <span className="truncate text-muted">{o.phone}</span>
+        <span className="truncate">{o.product}</span>
+        <span>{qtyOf(o).toLocaleString()}</span>
+        <span><Pill tone={STATUS_TONE[st]}>{STATUS_LABEL[st]}</Pill></span>
+        <span className="truncate text-muted">{fb?.needsVet ? fb.vetName ?? "Unassigned" : "—"}</span>
+        <span className="truncate text-xs text-muted">{lastActionOf(fb)}</span>
+        <span className="flex items-center justify-end gap-1">
+          <a href={`tel:${o.phone}`} title="Call" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><Ico name="phone" className="h-4 w-4" /></a>
+          {canRecord && (
+            <button onClick={onRecord} title={fb ? "Edit feedback" : "Record feedback"} className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-gold-dark hover:bg-gold-bg"><Ico name="edit" className="h-4 w-4" /></button>
+          )}
+          <button onClick={onExpand} title="Details" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted hover:bg-grey-bg"><Ico name={expanded ? "chevronUp" : "chevronDown"} className="h-4 w-4" /></button>
+        </span>
+      </div>
+
+      {expanded && (
+        <div className="border-t border-line bg-cream/40 px-4 py-4">
+          <div className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm sm:grid-cols-4">
+            <Detail label="Location" value={o.district || "—"} />
+            <Detail label="Salesperson" value={o.dsr || "—"} />
+            <Detail label="Reference" value={refOf(o)} />
+            <Detail label="Payment" value={<Pill tone={pay.tone}>{pay.label}</Pill>} />
+            <Detail label="Delivery date" value={formatDate(o.date)} />
+            <Detail label="Delivered by" value={route ? route.driver || route.name : "—"} />
+            <Detail label="Qty delivered" value={qtyOf(o).toLocaleString()} />
+            <Detail label="Amount" value={rwf(orderTotal(o))} />
+          </div>
+
+          <Stepper events={timelineFor(o, fb)} />
+
+          {canVet && fb?.needsVet && (
+            <div className="mt-3 flex justify-end">
+              <Button size="sm" onClick={() => onVet(fb)}>{(fb.vetStatus ?? "pending") === "resolved" ? "Add vet note" : "Update follow-up"}</Button>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Detail({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div>
+      <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="font-medium text-ink">{value}</p>
+    </div>
+  );
+}
+
+function Stepper({ events }: { events: TLEvent[] }) {
+  if (events.length === 0) return null;
+  return (
+    <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+      {events.map((e, i) => (
+        <div key={i} className="flex min-w-[130px] flex-1 items-start gap-2">
+          <div className="flex flex-col items-center">
+            <span className={cn("flex h-7 w-7 items-center justify-center rounded-full", TONE_BG[e.tone])}><Ico name="check" className="h-3.5 w-3.5" /></span>
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-ink">{e.title}</p>
+            {e.sub && <p className="truncate text-[0.7rem] text-muted">{e.sub}</p>}
+            <p className="text-[0.66rem] text-muted">{whenLabel(e.on)}</p>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// --- Right-hand customer profile --------------------------------------------
+
+function CustomerPanel({
+  order, orders, fbByOrder, onHistory,
+}: {
+  order?: Order;
+  orders: Order[];
+  fbByOrder: Map<string, CustomerFeedback>;
+  onHistory: (o: Order) => void;
+}) {
+  if (!order) {
+    return (
+      <div className="rounded-2xl border border-line bg-paper p-6 text-sm text-muted shadow-card">
+        Select a customer to see their profile and history.
+      </div>
+    );
+  }
+  const mine = orders.filter((o) => sameCustomer(o, order)).sort((a, b) => (a.date < b.date ? 1 : -1));
+  const fbs = mine.map((o) => fbByOrder.get(o.id)).filter((f): f is CustomerFeedback => !!f);
+  const rated = fbs.filter((f) => f.rating);
+  const avg = rated.length ? rated.reduce((s, f) => s + RATING_SCORE[f.rating!], 0) / rated.length : 0;
+  const complaints = fbs.filter((f) => f.rating === "unsatisfied").length;
+  const vetCases = fbs.filter((f) => f.needsVet).length;
+  const last = mine[0] ?? order;
+  const pay = payOf(last);
+
+  return (
+    <div className="space-y-4 rounded-2xl border border-line bg-paper p-5 shadow-card">
+      <div className="flex items-center gap-3">
+        <span className="flex h-12 w-12 items-center justify-center rounded-full bg-gold text-lg font-extrabold text-[#231b04]">{initials(order.name)}</span>
+        <div className="min-w-0">
+          <p className="truncate font-bold text-ink">{order.name}</p>
+          <p className="text-xs text-muted">{order.phone}</p>
+          {order.district && <p className="text-xs text-muted">{order.district} District</p>}
+        </div>
+        <a href={`tel:${order.phone}`} className="ml-auto flex h-9 w-9 items-center justify-center rounded-full bg-green-bg text-green"><Ico name="phone" className="h-4 w-4" /></a>
+      </div>
+
+      <div className="rounded-xl border border-line bg-cream/40 p-3">
+        <div className="flex items-center justify-between">
+          <div>
+            <Stars value={avg} />
+            <p className="mt-0.5 text-xs text-muted">Average rating</p>
+          </div>
+          <span className="text-2xl font-extrabold text-ink">{avg ? avg.toFixed(1) : "—"}</span>
+        </div>
+        <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+          <Stat n={mine.length} label="Orders" />
+          <Stat n={complaints} label="Complaints" />
+          <Stat n={vetCases} label="Vet Cases" />
+        </div>
+      </div>
+
+      <div>
+        <p className="mb-1.5 text-[0.62rem] font-semibold uppercase tracking-wide text-muted">Last order summary</p>
+        <dl className="space-y-1.5 text-sm">
+          <Line k="Delivery date" v={formatDate(last.date)} />
+          <Line k="Product" v={last.product} />
+          <Line k="Quantity" v={`${qtyOf(last).toLocaleString()} chicks`} />
+          <Line k="Amount" v={rwf(orderTotal(last))} />
+          <Line k="Payment status" v={<Pill tone={pay.tone}>{pay.label}</Pill>} />
+          <Line k="Salesperson" v={last.dsr || "—"} />
+        </dl>
+      </div>
+
+      <div>
+        <p className="mb-2 text-[0.62rem] font-semibold uppercase tracking-wide text-muted">Timeline</p>
+        <ol className="space-y-2.5">
+          {timelineFor(last, fbByOrder.get(last.id)).map((e, i) => (
+            <li key={i} className="flex gap-2.5">
+              <span className={cn("mt-0.5 h-2.5 w-2.5 shrink-0 rounded-full", TONE_BG[e.tone])} />
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-ink">{e.title}</p>
+                {e.sub && <p className="text-[0.7rem] text-muted">{e.sub}</p>}
+                <p className="text-[0.66rem] text-muted">{whenLabel(e.on)}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+      </div>
+
+      <Button className="w-full" onClick={() => onHistory(last)}>View full history</Button>
+    </div>
+  );
+}
+
+function Stat({ n, label }: { n: number; label: string }) {
+  return (
+    <div className="rounded-lg bg-paper p-2">
+      <p className="text-lg font-extrabold text-ink">{n}</p>
+      <p className="text-[0.62rem] text-muted">{label}</p>
+    </div>
+  );
+}
+function Line({ k, v }: { k: string; v: ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-2">
+      <dt className="text-muted">{k}</dt>
+      <dd className="font-medium text-ink">{v}</dd>
+    </div>
+  );
+}
+function Stars({ value }: { value: number }) {
+  const full = Math.round(value);
+  return (
+    <span className="inline-flex gap-0.5 text-gold">
+      {[1, 2, 3, 4, 5].map((i) => (
+        <Ico key={i} name="star" className={cn("h-4 w-4", i <= full ? "text-gold" : "text-line")} />
+      ))}
+    </span>
+  );
+}
+
+// --- Record & vet modals ----------------------------------------------------
 
 function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   return (
@@ -87,163 +601,8 @@ function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
   );
 }
 
-export default function FeedbackPage() {
-  const { user } = useAuth();
-  const { orders, customerFeedback, upsertCustomerFeedback } = useData();
-
-  if (!user) return null;
-  const canRecord = CAN_RECORD.includes(user.role);
-  const canVet = CAN_VET.includes(user.role);
-
-  return (
-    <div className="space-y-5">
-      {canRecord && (
-        <RecorderSection
-          user={user}
-          orders={orders}
-          feedback={customerFeedback}
-          save={upsertCustomerFeedback}
-        />
-      )}
-      {canVet && (
-        <VetSection user={user} feedback={customerFeedback} save={upsertCustomerFeedback} />
-      )}
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Recorder — delivered customers grouped by delivery date
-// ---------------------------------------------------------------------------
-
-function RecorderSection({
-  user,
-  orders,
-  feedback,
-  save,
-}: {
-  user: User;
-  orders: Order[];
-  feedback: CustomerFeedback[];
-  save: (f: CustomerFeedback) => Promise<void>;
-}) {
-  const [q, setQ] = useState("");
-  const [edit, setEdit] = useState<Order | null>(null);
-
-  const fbByOrder = useMemo(
-    () => new Map(feedback.map((f) => [f.orderId, f])),
-    [feedback]
-  );
-
-  const delivered = useMemo(() => {
-    const term = q.trim().toLowerCase();
-    return visibleOrders(orders, user)
-      .filter(isDelivered)
-      .filter((o) => !term || o.name.toLowerCase().includes(term) || o.phone.includes(term))
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.name.localeCompare(b.name)));
-  }, [orders, user, q]);
-
-  // Group by delivery date (already sorted newest-first above).
-  const groups = useMemo(() => {
-    const m = new Map<string, Order[]>();
-    for (const o of delivered) {
-      const arr = m.get(o.date) ?? [];
-      arr.push(o);
-      m.set(o.date, arr);
-    }
-    return [...m.entries()];
-  }, [delivered]);
-
-  const recorded = delivered.filter((o) => fbByOrder.has(o.id)).length;
-
-  return (
-    <Card>
-      <CardHeader
-        title="Customer feedback — delivered customers"
-        action={<span className="text-xs text-muted">{recorded}/{delivered.length} recorded</span>}
-      />
-      <div className="mb-3">
-        <Input
-          placeholder="Search customer name or phone…"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-      </div>
-
-      {groups.length === 0 ? (
-        <p className="text-sm text-muted">No delivered customers to follow up yet.</p>
-      ) : (
-        <div className="space-y-4">
-          {groups.map(([date, os]) => (
-            <div key={date}>
-              <p className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-wide text-muted">
-                Delivered {formatDate(date)} · {os.length}
-              </p>
-              <TableWrap>
-                <thead>
-                  <tr>
-                    <Th>Customer</Th>
-                    <Th>Phone</Th>
-                    <Th>Product</Th>
-                    <Th className="text-right">Chicks</Th>
-                    <Th>Feedback</Th>
-                    <Th className="text-right">Action</Th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {os.map((o) => {
-                    const fb = fbByOrder.get(o.id);
-                    return (
-                      <tr key={o.id}>
-                        <Td className="font-medium text-ink">{o.name}</Td>
-                        <Td>{o.phone}</Td>
-                        <Td>{o.product}</Td>
-                        <Td className="text-right">{(o.delivered ?? o.chicks).toLocaleString()}</Td>
-                        <Td><StatusPill fb={fb} /></Td>
-                        <Td className="text-right">
-                          <Button size="sm" variant={fb ? "ghost" : "primary"} onClick={() => setEdit(o)}>
-                            {fb ? "Edit" : "Record"}
-                          </Button>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </TableWrap>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {edit && (
-        <RecordModal
-          order={edit}
-          existing={fbByOrder.get(edit.id)}
-          user={user}
-          onClose={() => setEdit(null)}
-          save={save}
-        />
-      )}
-    </Card>
-  );
-}
-
-function StatusPill({ fb }: { fb?: CustomerFeedback }) {
-  if (!fb) return <Pill tone="neutral">Not called</Pill>;
-  if (fb.needsVet) {
-    const s = fb.vetStatus ?? "pending";
-    return <Pill tone={VET_TONE[s]}>{VET_LABEL[s]}</Pill>;
-  }
-  if (fb.rating) return <Pill tone={RATING_TONE[fb.rating]}>{RATING_LABEL[fb.rating]}</Pill>;
-  return <Pill tone="green">Recorded</Pill>;
-}
-
 function RecordModal({
-  order,
-  existing,
-  user,
-  onClose,
-  save,
+  order, existing, user, onClose, save,
 }: {
   order: Order;
   existing?: CustomerFeedback;
@@ -270,7 +629,7 @@ function RecordModal({
       phone: order.phone,
       product: order.product,
       deliveryDate: order.date,
-      chicks: order.delivered ?? order.chicks,
+      chicks: qtyOf(order),
       district: order.clientDistrict ?? order.district,
       sector: order.clientSector ?? order.sector,
       dsr: order.dsr,
@@ -282,75 +641,43 @@ function RecordModal({
       needsVet,
       vetReason: needsVet ? vetReason.trim() : undefined,
       vetStatus: needsVet ? existing?.vetStatus ?? "pending" : undefined,
+      vetName: existing?.vetName,
       vetUpdates: existing?.vetUpdates ?? [],
       history: [
         ...(existing?.history ?? []),
         `${nowISO()} — Feedback ${existing ? "updated" : "recorded"} by ${user.name}${needsVet ? " · flagged for vet" : ""}`,
       ],
     };
-    // Optimistic: the list updates instantly; persist in the background so the
-    // dialog closes without waiting on the round trip to the database.
     save(fb).catch(() => toast("Could not save the feedback — check your connection.", "error"));
     toast(needsVet ? "Feedback saved and flagged for the vet." : "Feedback saved.");
     onClose();
   }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`Feedback — ${order.name}`}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit}>Save feedback</Button>
-        </>
-      }
-    >
+    <Modal open onClose={onClose} title={`Feedback — ${order.name}`}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit}>Save feedback</Button></>}>
       <div className="space-y-3">
-        <p className="text-xs text-muted">
-          {order.product} · delivered {formatDate(order.date)} · {(order.delivered ?? order.chicks).toLocaleString()} chicks · {order.phone}
-        </p>
+        <p className="text-xs text-muted">{order.product} · delivered {formatDate(order.date)} · {qtyOf(order).toLocaleString()} chicks · {order.phone}</p>
         <Field label="How was the customer?">
           <div className="flex flex-wrap gap-2">
             {(["satisfied", "neutral", "unsatisfied"] as FeedbackRating[]).map((r) => (
-              <button
-                key={r}
-                type="button"
-                onClick={() => setRating(rating === r ? "" : r)}
-                className={cn(
-                  "rounded-full border px-3 py-1 text-xs font-bold transition",
-                  rating === r ? RATING_ACTIVE[r] : "border-line text-muted hover:border-ink"
-                )}
-              >
+              <button key={r} type="button" onClick={() => setRating(rating === r ? "" : r)}
+                className={cn("rounded-full border px-3 py-1 text-xs font-bold transition", rating === r ? RATING_ACTIVE[r] : "border-line text-muted hover:border-ink")}>
                 {RATING_LABEL[r]}
               </button>
             ))}
           </div>
         </Field>
         <Field label="Customer feedback" required>
-          <Textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="What the customer told you on the call…"
-          />
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="What the customer told you on the call…" />
         </Field>
         <label className="flex items-center gap-2 text-sm text-ink">
-          <input
-            type="checkbox"
-            checked={needsVet}
-            onChange={(e) => setNeedsVet(e.target.checked)}
-            className="h-4 w-4 accent-gold"
-          />
+          <input type="checkbox" checked={needsVet} onChange={(e) => setNeedsVet(e.target.checked)} className="h-4 w-4 accent-gold" />
           Customer needs veterinary attention
         </label>
         {needsVet && (
           <Field label="What do they need the vet for?" required>
-            <Textarea
-              value={vetReason}
-              onChange={(e) => setVetReason(e.target.value)}
-              placeholder="Symptoms or issue the customer described…"
-            />
+            <Textarea value={vetReason} onChange={(e) => setVetReason(e.target.value)} placeholder="Symptoms or issue the customer described…" />
           </Field>
         )}
         {err && <p className="text-sm text-red">{err}</p>}
@@ -359,96 +686,8 @@ function RecordModal({
   );
 }
 
-// ---------------------------------------------------------------------------
-// Vet follow-up queue
-// ---------------------------------------------------------------------------
-
-function VetSection({
-  user,
-  feedback,
-  save,
-}: {
-  user: User;
-  feedback: CustomerFeedback[];
-  save: (f: CustomerFeedback) => Promise<void>;
-}) {
-  const [act, setAct] = useState<CustomerFeedback | null>(null);
-
-  const queue = useMemo(() => {
-    const rank: Record<VetFollowUpStatus, number> = { pending: 0, in_progress: 1, resolved: 2 };
-    return feedback
-      .filter((f) => f.needsVet)
-      .slice()
-      .sort(
-        (a, b) =>
-          rank[a.vetStatus ?? "pending"] - rank[b.vetStatus ?? "pending"] ||
-          (a.deliveryDate < b.deliveryDate ? 1 : -1)
-      );
-  }, [feedback]);
-
-  const open = queue.filter((f) => (f.vetStatus ?? "pending") !== "resolved").length;
-
-  return (
-    <Card>
-      <CardHeader
-        title="Vet follow-up"
-        action={<span className="text-xs text-muted">{open} open · {queue.length} total</span>}
-      />
-      {queue.length === 0 ? (
-        <p className="text-sm text-muted">No customers flagged for veterinary attention.</p>
-      ) : (
-        <div className="space-y-3">
-          {queue.map((f) => {
-            const status = f.vetStatus ?? "pending";
-            return (
-              <div key={f.id} className="rounded-lg border border-line p-3">
-                <div className="flex flex-wrap items-start justify-between gap-2">
-                  <div>
-                    <p className="font-semibold text-ink">
-                      {f.customerName} <span className="font-normal text-muted">· {f.phone}</span>
-                    </p>
-                    <p className="text-xs text-muted">
-                      {f.product} · delivered {formatDate(f.deliveryDate)} · {f.chicks.toLocaleString()} chicks
-                      {f.district ? ` · ${f.district}` : ""}
-                    </p>
-                  </div>
-                  <Pill tone={VET_TONE[status]}>{VET_LABEL[status]}</Pill>
-                </div>
-                {f.vetReason && (
-                  <p className="mt-2 text-sm"><span className="text-muted">Needs vet for: </span>{f.vetReason}</p>
-                )}
-                <p className="mt-1 text-sm"><span className="text-muted">Customer feedback: </span>{f.note}</p>
-                {f.vetUpdates && f.vetUpdates.length > 0 && (
-                  <div className="mt-2 space-y-1 border-t border-line pt-2">
-                    {f.vetUpdates.map((u, i) => (
-                      <div key={i} className="text-xs text-muted">
-                        <span className="font-semibold text-ink">{VET_LABEL[u.status]}</span> — {u.note}
-                        <span className="opacity-70"> · {u.byName ?? u.by} · {formatDateTime(u.on)}</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-2 flex justify-end">
-                  <Button size="sm" variant={status === "resolved" ? "ghost" : "primary"} onClick={() => setAct(f)}>
-                    {status === "resolved" ? "Add note" : status === "pending" ? "Start follow-up" : "Update follow-up"}
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-
-      {act && <VetModal fb={act} user={user} onClose={() => setAct(null)} save={save} />}
-    </Card>
-  );
-}
-
 function VetModal({
-  fb,
-  user,
-  onClose,
-  save,
+  fb, user, onClose, save,
 }: {
   fb: CustomerFeedback;
   user: User;
@@ -456,9 +695,7 @@ function VetModal({
   save: (f: CustomerFeedback) => Promise<void>;
 }) {
   const { toast } = useToast();
-  const [status, setStatus] = useState<VetFollowUpStatus>(
-    fb.vetStatus === "resolved" ? "resolved" : "in_progress"
-  );
+  const [status, setStatus] = useState<VetFollowUpStatus>(fb.vetStatus === "resolved" ? "resolved" : "in_progress");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
@@ -467,10 +704,10 @@ function VetModal({
     const n = note.trim();
     if (!n) return setErr("Add a note on what you found, advised, or did.");
     const upd: VetUpdate = { note: n, by: user.email, byName: user.name, on: nowISO(), status };
-    // Optimistic: reflect in the queue at once, persist in the background.
     save({
       ...fb,
       vetStatus: status,
+      vetName: fb.vetName ?? user.name,
       vetUpdates: [...(fb.vetUpdates ?? []), upd],
       history: [
         ...(fb.history ?? []),
@@ -482,43 +719,63 @@ function VetModal({
   }
 
   return (
-    <Modal
-      open
-      onClose={onClose}
-      title={`Follow-up — ${fb.customerName}`}
-      footer={
-        <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={submit}>Save update</Button>
-        </>
-      }
-    >
+    <Modal open onClose={onClose} title={`Follow-up — ${fb.customerName}`}
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit}>Save update</Button></>}>
       <div className="space-y-3">
-        <p className="text-xs text-muted">
-          {fb.product} · delivered {formatDate(fb.deliveryDate)} · {fb.phone}
-        </p>
-        {fb.vetReason && (
-          <p className="text-sm"><span className="text-muted">Needs vet for: </span>{fb.vetReason}</p>
-        )}
+        <p className="text-xs text-muted">{fb.product} · delivered {formatDate(fb.deliveryDate)} · {fb.phone}</p>
+        {fb.vetReason && <p className="text-sm"><span className="text-muted">Needs vet for: </span>{fb.vetReason}</p>}
         <Field label="Status">
-          <Select
-            value={status}
-            onChange={(e) => setStatus(e.target.value as VetFollowUpStatus)}
-            options={[
-              { value: "in_progress", label: "Following up" },
-              { value: "resolved", label: "Resolved" },
-            ]}
-          />
+          <Select value={status} onChange={(e) => setStatus(e.target.value as VetFollowUpStatus)}
+            options={[{ value: "in_progress", label: "Following up" }, { value: "resolved", label: "Resolved" }]} />
         </Field>
         <Field label="Update note" required>
-          <Textarea
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="What you found, advised, or did for the customer…"
-          />
+          <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you found, advised, or did for the customer…" />
         </Field>
         {err && <p className="text-sm text-red">{err}</p>}
       </div>
     </Modal>
   );
+}
+
+function HistoryModal({ order, fb, onClose }: { order: Order; fb?: CustomerFeedback; onClose: () => void }) {
+  const lines = [...(order.history ?? []), ...(fb?.history ?? [])]
+    .filter(Boolean)
+    .sort((a, b) => (a < b ? -1 : 1));
+  return (
+    <Modal open onClose={onClose} title={`History — ${order.name}`}
+      footer={<Button onClick={onClose}>Close</Button>}>
+      {lines.length === 0 ? (
+        <p className="text-sm text-muted">No history recorded yet.</p>
+      ) : (
+        <ol className="space-y-1.5 text-sm">
+          {lines.map((l, i) => <li key={i} className="text-muted">{l}</li>)}
+        </ol>
+      )}
+    </Modal>
+  );
+}
+
+// --- Inline icons -----------------------------------------------------------
+
+type IcoName =
+  | "phone" | "stethoscope" | "clock" | "star" | "alert" | "edit" | "search"
+  | "calendar" | "check" | "chevronDown" | "chevronUp" | "chevronRight";
+
+function Ico({ name, className }: { name: IcoName; className?: string }) {
+  const p = { fill: "none", stroke: "currentColor", strokeWidth: 1.8, strokeLinecap: "round" as const, strokeLinejoin: "round" as const };
+  const svg = (children: ReactNode) => <svg viewBox="0 0 24 24" className={className} {...p}>{children}</svg>;
+  switch (name) {
+    case "phone": return svg(<path d="M6.6 10.8a12 12 0 0 0 5.6 5.6l1.9-1.9a1 1 0 0 1 1-.24 11 11 0 0 0 3.4.55 1 1 0 0 1 1 1V19a1 1 0 0 1-1 1A16 16 0 0 1 4 5a1 1 0 0 1 1-1h3.2a1 1 0 0 1 1 1c0 1.2.19 2.34.55 3.4a1 1 0 0 1-.24 1z" />);
+    case "stethoscope": return svg(<><path d="M5 3v4a4 4 0 0 0 8 0V3" /><path d="M9 11v2a5 5 0 0 0 5 5 3 3 0 0 0 3-3v-1" /><circle cx="18" cy="12" r="2" /></>);
+    case "clock": return svg(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
+    case "star": return svg(<path d="M12 3l2.6 5.6 6 .8-4.4 4.2 1.1 6L12 16.9 6.7 19.6l1.1-6L3.4 9.4l6-.8z" fill="currentColor" stroke="none" />);
+    case "alert": return svg(<><path d="M12 3l9.5 16.5H2.5z" /><path d="M12 10v4" /><path d="M12 17h.01" /></>);
+    case "edit": return svg(<><path d="M4 20h4L18.5 9.5l-4-4L4 16z" /><path d="M13.5 6.5l4 4" /></>);
+    case "search": return svg(<><circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" /></>);
+    case "calendar": return svg(<><rect x="3" y="4.5" width="18" height="16" rx="2" /><path d="M3 9h18M8 3v3M16 3v3" /></>);
+    case "check": return svg(<path d="M5 12l4.5 4.5L19 7" />);
+    case "chevronDown": return svg(<path d="M6 9l6 6 6-6" />);
+    case "chevronUp": return svg(<path d="M6 15l6-6 6 6" />);
+    case "chevronRight": return svg(<path d="M9 6l6 6-6 6" />);
+  }
 }

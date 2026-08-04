@@ -399,6 +399,7 @@ export interface CustomerFeedback {
   needsVet: boolean;
   vetReason?: string;
   vetStatus?: VetFollowUpStatus; // set when needsVet is true
+  vetName?: string; // the vet handling the case (set when a vet first acts)
   vetUpdates?: VetUpdate[];
   history: string[]; // audit log lines
 }
