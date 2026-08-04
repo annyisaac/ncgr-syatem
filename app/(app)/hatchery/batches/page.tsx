@@ -15,11 +15,18 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from "@/lib/hatchery/types";
 import { Modal } from "@/components/ui/Modal";
-import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs } from "@/lib/hatchery/lifecycle";
+import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
-interface Group { key: string; farm: string; flockId: string; product: Reception["productType"]; recs: Reception[]; eggs: number; date: string; }
+interface Group {
+  key: string; farm: string; flockId: string; product: Reception["productType"]; recs: Reception[];
+  /** Remaining settable eggs (what can still be set) — drives the form limits. */
+  eggs: number;
+  /** Total settable across the group's receptions, and how much is already set. */
+  settableTotal: number; alreadySet: number;
+  date: string;
+}
 /** One assignment line: a flock's eggs going into a setter machine.
  *  `setterOnly` lines have no flock picker — they inherit the flock of the
  *  nearest preceding flock line. */
@@ -45,21 +52,26 @@ export default function BatchesPage() {
   // lists all setters (occupancy/free capacity guards over-filling).
   const setters = machines.filter((m) => m.type === "setter");
 
-  // Only receptions marked "ready to set" (and not batched) can be batched.
+  // Receptions marked "ready to set" that still have unset eggs can be batched.
+  // A partially-set reception stays here (with its remaining count) until fully set.
   const groups: Group[] = useMemo(() => {
     const map = new Map<string, Reception[]>();
     for (const r of receptions) {
-      if (r.batchId || r.location !== "ready") continue;
+      if (r.location !== "ready" || remainingSettable(r) <= 0) continue;
       const key = `${r.farm}||${r.flockId}||${r.productType}`;
       const arr = map.get(key) ?? [];
       arr.push(r);
       map.set(key, arr);
     }
-    return [...map.entries()].map(([key, recs]) => ({
-      key, farm: recs[0].farm, flockId: recs[0].flockId, product: recs[0].productType,
-      recs, eggs: recs.reduce((s, r) => s + settableEggs(r), 0),
-      date: recs.map((r) => r.date).sort()[0],
-    }));
+    return [...map.entries()].map(([key, recs]) => {
+      const settableTotal = recs.reduce((s, r) => s + settableEggs(r), 0);
+      const eggs = recs.reduce((s, r) => s + remainingSettable(r), 0);
+      return {
+        key, farm: recs[0].farm, flockId: recs[0].flockId, product: recs[0].productType,
+        recs, eggs, settableTotal, alreadySet: settableTotal - eggs,
+        date: recs.map((r) => r.date).sort()[0],
+      };
+    });
   }, [receptions]);
 
   const rows = useMemo(() => batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [batches]);
@@ -124,7 +136,7 @@ export default function BatchesPage() {
 
     for (const g of usedGroups) {
       const used = valid.filter((r) => r.groupKey === g.key).reduce((s, r) => s + r.eggs, 0);
-      if (used > g.eggs) return setErr(`Flock ${g.flockId} (${g.farm}): only ${g.eggs.toLocaleString()} settable.`);
+      if (used > g.eggs) return setErr(`Flock ${g.flockId} (${g.farm}): only ${g.eggs.toLocaleString()} ${g.alreadySet > 0 ? "remaining" : "settable"}.`);
     }
     const perMachine = new Map<string, number>();
     for (const r of valid) perMachine.set(r.machineCode, (perMachine.get(r.machineCode) ?? 0) + r.eggs);
@@ -133,12 +145,30 @@ export default function BatchesPage() {
       if (eggs > machineFreeCapacity(m, batches, "setters")) return setErr(`${mc} does not have room for ${eggs.toLocaleString()} eggs.`);
     }
 
-    const flocks: BatchFlock[] = usedGroups.map((g) => ({
+    // Spread each flock's eggs-set across its receptions (fill each up to its
+    // remaining), so a receipt is only fully consumed once nothing is left.
+    const recUpdates: { r: Reception; setNow: number }[] = [];
+    const plan = usedGroups.map((g) => {
+      let toSet = valid.filter((r) => r.groupKey === g.key).reduce((s, r) => s + r.eggs, 0);
+      const eggsSet = toSet;
+      const usedRecIds: string[] = [];
+      for (const r of g.recs) {
+        if (toSet <= 0) break;
+        const take = Math.min(remainingSettable(r), toSet);
+        if (take <= 0) continue;
+        recUpdates.push({ r, setNow: take });
+        usedRecIds.push(r.id);
+        toSet -= take;
+      }
+      return { g, eggsSet, usedRecIds };
+    });
+
+    const flocks: BatchFlock[] = plan.map(({ g, eggsSet, usedRecIds }) => ({
       flockId: g.flockId,
       farm: g.farm,
       ageOfFlock: g.recs[0]?.ageOfFlock ?? 0,
-      receptionIds: g.recs.map((r) => r.id),
-      eggsSet: valid.filter((r) => r.groupKey === g.key).reduce((s, r) => s + r.eggs, 0),
+      receptionIds: usedRecIds,
+      eggsSet,
       candlings: [],
       transfers: [],
     }));
@@ -175,7 +205,13 @@ export default function BatchesPage() {
     batch = markStep(batch, "reception", user!);
     batch = markStep(batch, "setting", user!);
     upsertBatch(batch);
-    usedGroups.forEach((g) => g.recs.forEach((r) => upsertReception({ ...r, batchId: id })));
+    // Increment each reception's eggs-set; a reception keeps its remainder (and
+    // stays settable) until fully consumed, at which point it's tagged with the batch.
+    recUpdates.forEach(({ r, setNow }) => {
+      const eggsSet = (r.eggsSet ?? 0) + setNow;
+      const fullyConsumed = eggsSet >= settableEggs(r);
+      upsertReception({ ...r, eggsSet, batchId: fullyConsumed ? id : r.batchId });
+    });
     // Setting eggs activates the setters they went into.
     machinesToSync(machines, setterList.map((s) => s.machineCode), [...batches, batch]).forEach(upsertMachine);
     toast(`Batch ${batch.batchNo} set — ${total.toLocaleString()} eggs, ${flocks.length} flock(s).`);
@@ -264,7 +300,12 @@ export default function BatchesPage() {
                     <Field label="Flock (farm · flock)">
                       <Select value={row.groupKey} onChange={(e) => updateRow(i, { groupKey: e.target.value })}
                         placeholder="Select flock"
-                        options={groups.map((gg) => ({ value: gg.key, label: `${gg.farm} · Flock ${gg.flockId} · ${gg.product} · ${gg.eggs.toLocaleString()} settable` }))} />
+                        options={groups.map((gg) => ({
+                          value: gg.key,
+                          label: `${gg.farm} · Flock ${gg.flockId} · ${gg.product} · ${gg.alreadySet > 0
+                            ? `${gg.eggs.toLocaleString()} remaining (of ${gg.settableTotal.toLocaleString()} settable)`
+                            : `${gg.eggs.toLocaleString()} settable`}`,
+                        }))} />
                     </Field>
                   )}
                   <Field label="Setter">

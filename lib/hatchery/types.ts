@@ -92,9 +92,10 @@ export interface Reception {
   productType: Product;
   location?: ReceptionLocation; // chosen after intake: egg store room, or ready to set
   fumigatedEggs?: number; // running total fumigated across trolleys
+  eggsSet?: number; // running total actually set into batches (partial settings leave a remainder)
   by: string;
   on: string;
-  batchId?: string; // set once combined into a batch
+  batchId?: string; // set once this reception is FULLY set (its last batch)
 }
 
 /** Store-room temperature/humidity reading while eggs wait. */

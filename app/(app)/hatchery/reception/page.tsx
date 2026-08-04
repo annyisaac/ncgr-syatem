@@ -14,7 +14,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { FarmsManager } from "@/components/hatchery/FarmsManager";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
 import type { Reception, ReceptionLocation } from "@/lib/hatchery/types";
-import { settableEggs } from "@/lib/hatchery/lifecycle";
+import { settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
 
 const CAN_ADD = [
   "Admin",
@@ -242,10 +242,22 @@ export default function ReceptionPage() {
                   <Td className="text-right">{(r.crackedOnFarm + r.crackedOnSet).toLocaleString()}</Td>
                   <Td className="text-right">{r.misshapen.toLocaleString()}</Td>
                   <Td className="text-right">{r.dirty.toLocaleString()}</Td>
-                  <Td className="text-right font-semibold">{settableEggs(r).toLocaleString()}</Td>
+                  <Td className="text-right font-semibold">
+                    {settableEggs(r).toLocaleString()}
+                    {(r.eggsSet ?? 0) > 0 && remainingSettable(r) > 0 && (
+                      <div className="text-xs font-normal text-gold-dark">
+                        {(r.eggsSet ?? 0).toLocaleString()} set · {remainingSettable(r).toLocaleString()} left
+                      </div>
+                    )}
+                  </Td>
                   <Td>
                     {r.batchId ? (
                       <Pill tone="green">Set</Pill>
+                    ) : (r.eggsSet ?? 0) > 0 && r.location === "ready" ? (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Pill tone="gold">Partly set · {remainingSettable(r).toLocaleString()} left</Pill>
+                        {isAdmin && <Button size="sm" variant="ghost" onClick={() => bringBack(r)}>Bring back</Button>}
+                      </div>
                     ) : r.location === "store" ? (
                       <div className="flex flex-wrap items-center gap-1">
                         <Pill tone="info">Store room</Pill>

@@ -29,6 +29,20 @@ export function settableEggs(r: Reception): number {
   );
 }
 
+/**
+ * Settable eggs from this reception that have NOT yet been set into a batch.
+ * A setting can consume only part of a reception, leaving a remainder that stays
+ * available for the next batch.
+ *
+ * Legacy guard: receptions batched before per-reception tracking existed carry a
+ * `batchId` but no `eggsSet` — treat those as fully consumed so they don't
+ * reappear in the setting list.
+ */
+export function remainingSettable(r: Reception): number {
+  if (r.batchId && r.eggsSet == null) return 0;
+  return Math.max(0, settableEggs(r) - (r.eggsSet ?? 0));
+}
+
 // ---------------------------------------------------------------------------
 // Dates & batch code
 // ---------------------------------------------------------------------------
