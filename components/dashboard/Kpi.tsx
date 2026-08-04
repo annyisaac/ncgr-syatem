@@ -2,7 +2,7 @@
 
 import { cn } from "@/lib/cn";
 
-type Tone = "default" | "gold" | "green" | "red" | "blue" | "purple";
+type Tone = "default" | "gold" | "green" | "red" | "blue" | "purple" | "amber";
 
 /** Icon chip colours per tone (icon + tinted background). */
 const chipTone: Record<Tone, string> = {
@@ -12,6 +12,7 @@ const chipTone: Record<Tone, string> = {
   red: "bg-red-bg text-red",
   blue: "bg-blue-bg text-blue",
   purple: "bg-[#efe7fb] text-[#7c3aed]",
+  amber: "bg-amber-bg text-amber",
 };
 
 /** Compact inline-SVG icon set (no icon library — keeps the bundle lean). */
@@ -23,6 +24,7 @@ const ICONS: Record<string, React.ReactNode> = {
   money: <><rect x="3.5" y="6" width="13" height="8" rx="1.5" /><circle cx="10" cy="10" r="2" /></>,
   alert: <><path d="M10 4l6.5 11.5h-13L10 4Z" /><path d="M10 9v3M10 14h.01" /></>,
   chart: <path d="M4 15V9 M9 15V5 M14 15v-4" />,
+  cross: <><circle cx="10" cy="10" r="6.5" /><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" /></>,
 };
 
 /**

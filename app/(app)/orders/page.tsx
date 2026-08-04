@@ -7,14 +7,17 @@ import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ActionsDropdown, type DropdownAction } from "@/components/ui/Dropdown";
+import { PageHeader } from "@/components/ui/PageHeader";
+import { Pagination } from "@/components/ui/Pagination";
 import { SearchTimeBar } from "@/components/dashboard/DashKit";
+import { Kpi } from "@/components/dashboard/Kpi";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
 
@@ -76,6 +79,17 @@ const CHECK_LABEL: Record<string, string> = {
   checked: "Checked ✓",
 };
 
+// Small inline icons for the header buttons and toolbar (no icon library).
+const ico = {
+  width: 16, height: 16, viewBox: "0 0 20 20", fill: "none",
+  stroke: "currentColor", strokeWidth: 1.7, strokeLinecap: "round" as const, strokeLinejoin: "round" as const,
+};
+const DownloadIcon = () => <svg {...ico}><path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15.5h12" /></svg>;
+const ListIcon = () => <svg {...ico}><path d="M7 6h9M7 10h9M7 14h9M3.5 6h.01M3.5 10h.01M3.5 14h.01" /></svg>;
+const PlusIcon = () => <svg {...ico}><path d="M10 4v12M4 10h12" /></svg>;
+const FilterIcon = () => <svg {...ico}><path d="M3.5 5h13l-5 6v4l-3 1.5V11l-5-6Z" /></svg>;
+const BoxIcon = () => <svg {...ico} width={14} height={14}><path d="M4 6.5 10 4l6 2.5v7L10 16l-6-2.5v-7Z M4 6.5 10 9l6-2.5M10 9v7" /></svg>;
+
 function OrdersInner() {
   const { user } = useAuth();
   const { orders, availability, upsertOrder, removeOrder, newId } = useData();
@@ -97,6 +111,9 @@ function OrdersInner() {
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
   const range = presetToRange(preset, custom, todayISO());
   const [modal, setModal] = useState<ModalState>(null);
+  const [showFilters, setShowFilters] = useState(true);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
 
   // Keep the date filter in sync when arriving from the Deliveries calendar
   // (React's "adjust state during render" pattern — no effect needed).
@@ -115,6 +132,14 @@ function OrdersInner() {
       setPrevFix(orderParam);
       setModal({ type: "fixPayment", order: o });
     }
+  }
+
+  // Any filter change sends the table back to the first page.
+  const filterSig = `${tile}|${statusFilter}|${productFilter}|${dateFilter}|${preset}|${custom.from}|${custom.to}|${query}|${orderParam}`;
+  const [prevSig, setPrevSig] = useState(filterSig);
+  if (prevSig !== filterSig) {
+    setPrevSig(filterSig);
+    setPage(1);
   }
 
   const role = user?.role;
@@ -219,7 +244,28 @@ function OrdersInner() {
     [availability]
   );
 
+  // KPI aggregates over every order this user can see (all time, unfiltered).
+  const stats = useMemo(() => {
+    const all = user ? visibleOrders(orders, user) : [];
+    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0;
+    for (const o of all) {
+      value += orderTotal(o);
+      if (o.status === "refunded" || o.status === "rejected") cancelled++;
+      else if (o.status === "fulfilled") fulfilled++;
+      else if (o.confirmedOk) confirmed++;
+      else pending++;
+    }
+    const total = all.length;
+    const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
+    return { total, fulfilled, confirmed, pending, cancelled, value, pct };
+  }, [orders, user]);
+
   if (!user) return null;
+
+  // The current page of rows (client-side pagination over the filtered set).
+  const pageCount = Math.max(1, Math.ceil(rows.length / pageSize));
+  const safePage = Math.min(page, pageCount);
+  const pageRows = rows.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   // ---- Action handlers -----------------------------------------------------
   function act(next: Order, message: string) {
@@ -445,26 +491,41 @@ function OrdersInner() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <div className="flex gap-2">
-          <Button
-            variant="secondary"
-            onClick={() => (rows.length ? ordersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
-          >
-            Download PDF
-          </Button>
-          <Button
-            variant="secondary"
-            onClick={() => (rows.length ? dsrOrdersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
-          >
-            DSR list (PDF)
-          </Button>
-          {canAct && (
-            <Link href="/orders/new">
-              <Button>New Order</Button>
-            </Link>
-          )}
-        </div>
+      <PageHeader
+        title="Orders"
+        subtitle="Manage and track all customer orders in one place."
+        actions={
+          <>
+            <Button
+              variant="secondary"
+              className="gap-2"
+              onClick={() => (rows.length ? ordersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
+            >
+              <DownloadIcon /> Download PDF
+            </Button>
+            <Button
+              variant="secondary"
+              className="gap-2"
+              onClick={() => (rows.length ? dsrOrdersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
+            >
+              <ListIcon /> DSR list (PDF)
+            </Button>
+            {canAct && (
+              <Link href="/orders/new">
+                <Button className="gap-2"><PlusIcon /> New Order</Button>
+              </Link>
+            )}
+          </>
+        }
+      />
+
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <Kpi icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub="All time" />
+        <Kpi icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} />
+        <Kpi icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} />
+        <Kpi icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} />
+        <Kpi icon="cross" tone="red" value={stats.cancelled.toLocaleString()} label="Cancelled" sub={stats.pct(stats.cancelled)} />
+        <Kpi icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub="All time" />
       </div>
 
       {orderParam && (
@@ -499,49 +560,59 @@ function OrdersInner() {
         <div className="min-w-0 flex-1">
           <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, district, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
         </div>
-        {isAdmin && (
-          <div className="w-44">
-            <Select
-              value={productFilter}
-              onChange={(e) => setProductFilter(e.target.value)}
-              options={[
-                { value: "all", label: "All products" },
-                { value: "Tetra Super Harco", label: "Tetra Super Harco" },
-                { value: "Ross 308", label: "Ross 308" },
-              ]}
-            />
-          </div>
+        {showFilters && (
+          <>
+            {isAdmin && (
+              <div className="w-44">
+                <Select
+                  value={productFilter}
+                  onChange={(e) => setProductFilter(e.target.value)}
+                  options={[
+                    { value: "all", label: "All products" },
+                    { value: "Tetra Super Harco", label: "Tetra Super Harco" },
+                    { value: "Ross 308", label: "Ross 308" },
+                  ]}
+                />
+              </div>
+            )}
+            <div className="w-52">
+              <Select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                options={[
+                  { value: "all", label: "All statuses" },
+                  { value: "pending", label: "Pending" },
+                  { value: "fulfilled", label: "Fulfilled" },
+                  { value: "refunded", label: "Refunded" },
+                  { value: "rejected", label: "Rejected" },
+                  { value: "backorder", label: "Backorders" },
+                  { value: "paid", label: "Payment: Fully paid" },
+                  { value: "partial", label: "Payment: Partially paid" },
+                  { value: "unpaid", label: "Payment: Unpaid" },
+                  { value: "debt", label: "Payment: On debt" },
+                  { value: "payrejected", label: "Payment: Rejected" },
+                ]}
+              />
+            </div>
+            <div className="w-48">
+              <Select
+                value={dateFilter}
+                onChange={(e) => setDateFilter(e.target.value)}
+                options={deliveryDateOptions}
+              />
+            </div>
+          </>
         )}
-        <div className="w-52">
-          <Select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            options={[
-              { value: "all", label: "All statuses" },
-              { value: "pending", label: "Pending" },
-              { value: "fulfilled", label: "Fulfilled" },
-              { value: "refunded", label: "Refunded" },
-              { value: "rejected", label: "Rejected" },
-              { value: "backorder", label: "Backorders" },
-              { value: "paid", label: "Payment: Fully paid" },
-              { value: "partial", label: "Payment: Partially paid" },
-              { value: "unpaid", label: "Payment: Unpaid" },
-              { value: "debt", label: "Payment: On debt" },
-              { value: "payrejected", label: "Payment: Rejected" },
-            ]}
-          />
-        </div>
-        <div className="w-48">
-          <Select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            options={deliveryDateOptions}
-          />
-        </div>
+        <Button variant="ghost" className="gap-2" onClick={() => setShowFilters((v) => !v)}>
+          <FilterIcon /> Filters
+        </Button>
       </div>
 
       <Card>
-        <CardHeader title={`${rows.length} order(s)`} />
+        <div className="mb-4 flex items-center gap-2">
+          <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gold-bg text-gold-dark"><BoxIcon /></span>
+          <h3 className="text-[0.8rem] font-bold uppercase tracking-wide text-ink">{rows.length.toLocaleString()} order(s)</h3>
+        </div>
         <TableWrap>
           <thead>
             <tr>
@@ -559,7 +630,7 @@ function OrdersInner() {
             {rows.length === 0 ? (
               <EmptyRow colSpan={8} text="No orders match." />
             ) : (
-              rows.map((o) => {
+              pageRows.map((o) => {
                 const cs = paymentCheckState(o);
                 return (
                   <tr key={o.id}>
@@ -665,6 +736,18 @@ function OrdersInner() {
             )}
           </tbody>
         </TableWrap>
+        {rows.length > 0 && (
+          <div className="mt-4 border-t border-line pt-4">
+            <Pagination
+              page={safePage}
+              pageSize={pageSize}
+              total={rows.length}
+              noun="orders"
+              onPageChange={setPage}
+              onPageSizeChange={(s) => { setPageSize(s); setPage(1); }}
+            />
+          </div>
+        )}
       </Card>
 
       {/* Modals */}
