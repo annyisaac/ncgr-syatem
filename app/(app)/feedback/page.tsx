@@ -51,9 +51,9 @@ type Tone = "gold" | "green" | "blue" | "amber" | "purple" | "red";
 type CareStatus = "pending" | "called" | "vet" | "resolved";
 
 const STATUS_LABEL: Record<CareStatus, string> = {
-  pending: "Pending Call",
+  pending: "Pending",
   called: "Called",
-  vet: "Vet Case",
+  vet: "Vet",
   resolved: "Resolved",
 };
 const STATUS_TONE: Record<CareStatus, "red" | "amber" | "info" | "green"> = {
@@ -87,8 +87,11 @@ const TONE_BG: Record<Tone, string> = {
   red: "bg-red-bg text-red",
 };
 
-/** Shared grid template so the column header and rows line up. */
-const COLS = "grid grid-cols-[1.4fr_0.9fr_0.9fr_0.6fr_0.9fr_0.8fr_1.2fr_108px] items-center gap-2";
+/** Shared grid template so the column header and rows line up. Every flexible
+ * track is minmax(0,…) so cells truncate instead of forcing the row wider than
+ * its container — the board fits without a horizontal scroll. */
+const COLS =
+  "grid grid-cols-[minmax(0,1.6fr)_minmax(0,0.95fr)_minmax(0,0.5fr)_minmax(0,0.95fr)_minmax(0,1.2fr)_104px] items-center gap-2";
 
 // --- small helpers ----------------------------------------------------------
 
@@ -309,28 +312,26 @@ export default function FeedbackPage() {
                     <Pill tone="gold" className="ml-1">{os.length} customers</Pill>
                   </button>
                   {openG && (
-                    <div className="overflow-x-auto">
-                      <div className="min-w-[720px]">
-                        <div className={cn(COLS, "bg-onyx px-4 py-2 text-[0.6rem] font-bold uppercase tracking-wide text-white/80")}>
-                          <span>Customer</span><span>Phone</span><span>Product</span><span>Chicks</span><span>Status</span><span>Vet</span><span>Last action</span><span className="text-right">Action</span>
-                        </div>
-                        {os.map((o) => (
-                          <CareRow
-                            key={o.id}
-                            o={o}
-                            fb={fbByOrder.get(o.id)}
-                            routes={routes}
-                            expanded={open.has(`row:${o.id}`)}
-                            selected={selectedOrder?.id === o.id}
-                            canRecord={canRecord}
-                            canVet={canVet}
-                            onSelect={() => setSelectedId(o.id)}
-                            onExpand={() => toggle(`row:${o.id}`)}
-                            onRecord={() => setEdit(o)}
-                            onVet={(f) => setVetCase(f)}
-                          />
-                        ))}
+                    <div>
+                      <div className={cn(COLS, "bg-onyx px-4 py-2 text-[0.6rem] font-bold uppercase tracking-wide text-white/80")}>
+                        <span>Customer</span><span>Product</span><span>Chicks</span><span>Status</span><span>Last action</span><span className="text-right">Action</span>
                       </div>
+                      {os.map((o) => (
+                        <CareRow
+                          key={o.id}
+                          o={o}
+                          fb={fbByOrder.get(o.id)}
+                          routes={routes}
+                          expanded={open.has(`row:${o.id}`)}
+                          selected={selectedOrder?.id === o.id}
+                          canRecord={canRecord}
+                          canVet={canVet}
+                          onSelect={() => setSelectedId(o.id)}
+                          onExpand={() => toggle(`row:${o.id}`)}
+                          onRecord={() => setEdit(o)}
+                          onVet={(f) => setVetCase(f)}
+                        />
+                      ))}
                     </div>
                   )}
                 </div>
@@ -402,12 +403,14 @@ function CareRow({
       <div className={cn(COLS, "px-4 py-2.5 text-sm")}>
         <button onClick={onSelect} className="min-w-0 text-left">
           <span className="block truncate font-semibold text-ink">{o.name}</span>
+          <span className="block truncate text-xs text-muted">{o.phone}</span>
         </button>
-        <span className="truncate text-muted">{o.phone}</span>
         <span className="truncate">{o.product}</span>
         <span>{qtyOf(o).toLocaleString()}</span>
-        <span><Pill tone={STATUS_TONE[st]}>{STATUS_LABEL[st]}</Pill></span>
-        <span className="truncate text-muted">{fb?.needsVet ? fb.vetName ?? "Unassigned" : "—"}</span>
+        <span className="min-w-0">
+          <Pill tone={STATUS_TONE[st]}>{STATUS_LABEL[st]}</Pill>
+          {fb?.needsVet && <span className="mt-0.5 block truncate text-[0.68rem] text-muted">{fb.vetName ?? "Unassigned"}</span>}
+        </span>
         <span className="truncate text-xs text-muted">{lastActionOf(fb)}</span>
         <span className="flex items-center justify-end gap-1">
           <a href={`tel:${o.phone}`} title="Call" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><Ico name="phone" className="h-4 w-4" /></a>
