@@ -522,12 +522,24 @@ export async function getDriverManifest(
   return data as { ok: boolean; driver?: string; stops?: DriverStop[]; error?: string };
 }
 
-/** Public: driver marks a stop delivered or (with a reason) not delivered. */
+/** Proof of delivery captured by the driver (stored in delivery_proofs). */
+export interface DeliveryProof {
+  orderId?: string;
+  gps?: { lat: number; lng: number; accuracy?: number };
+  signature?: string; // data URL (PNG)
+  photo?: string; // data URL (compressed JPEG)
+  on?: string;
+  by?: string;
+}
+
+/** Public: driver marks a stop delivered or (with a reason) not delivered.
+ *  On delivery, an optional proof payload (GPS/signature/photo) is stored. */
 export async function driverDeliver(
   token: string,
   orderId: string,
   delivered: boolean,
-  reason: string
+  reason: string,
+  proof: DeliveryProof = {}
 ): Promise<{ ok: boolean; error?: string }> {
   if (!inBrowser()) return { ok: false, error: "Not in browser" };
   const { data, error } = await getSupabase().rpc("driver_deliver", {
@@ -535,9 +547,18 @@ export async function driverDeliver(
     p_order_id: orderId,
     p_delivered: delivered,
     p_reason: reason,
+    p_proof: proof,
   });
   if (error) return { ok: false, error: error.message };
   return data as { ok: boolean; error?: string };
+}
+
+/** Staff: fetch a delivered order's proof (GPS/signature/photo), on demand. */
+export async function getDeliveryProof(orderId: string): Promise<DeliveryProof | null> {
+  if (!inBrowser()) return null;
+  const { data, error } = await getSupabase().from("delivery_proofs").select("data").eq("id", orderId).maybeSingle();
+  if (error || !data) return null;
+  return data.data as DeliveryProof;
 }
 
 export const saveRouteOne = (r: Route) => upsertOne("routes", "id", r.id, r);

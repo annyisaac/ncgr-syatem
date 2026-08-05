@@ -14,8 +14,8 @@ export function notificationHref(n: AppNotification, role: Role): string {
   const isChecker = role === "Tetra Payment Checker" || role === "Ross Payment Checker";
   // A payment is the checker's/admin's job — send them where they verify it.
   if (n.type === "payment" && (isChecker || role === "Admin")) return "/verification";
-  // A reschedule is a delivery-planning change.
-  if (n.type === "reschedule") return "/planning";
+  // Delivery-planning changes (reschedule, chicks allocated, failed delivery).
+  if (n.type === "reschedule" || n.type === "allocated" || n.type === "delivery_failed") return "/planning";
 
   return n.orderId ? `/orders?order=${encodeURIComponent(n.orderId)}` : "/orders";
 }

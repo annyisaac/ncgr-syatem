@@ -17,6 +17,8 @@ const TONE: Record<NotificationType, string> = {
   rejected: "bg-red-bg text-red",
   refunded: "bg-red-bg text-red",
   deleted: "bg-red-bg text-red",
+  allocated: "bg-gold-bg text-gold-dark",
+  delivery_failed: "bg-red-bg text-red",
 };
 
 const LABEL: Record<NotificationType, string> = {
@@ -28,6 +30,8 @@ const LABEL: Record<NotificationType, string> = {
   rejected: "REJ",
   refunded: "RFD",
   deleted: "DEL",
+  allocated: "ALC",
+  delivery_failed: "FAIL",
 };
 
 function timeAgo(iso: string): string {

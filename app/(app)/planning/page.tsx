@@ -28,16 +28,17 @@ export default function DeliveryPlanningCalendar() {
   const today = todayISO();
 
   const countsByDate = useMemo(() => {
-    const m = new Map<string, { orders: number; chicks: number; routed: number; delivered: number }>();
+    const m = new Map<string, { orders: number; chicks: number; routed: number; delivered: number; failed: number }>();
     for (const o of scoped) {
       // Include delivered orders so a completed day stays visible on the calendar
       // (you can still open it to reprint the manifest).
       if (!(o.confirmedOk && isActive(o))) continue;
-      const g = m.get(o.date) ?? { orders: 0, chicks: 0, routed: 0, delivered: 0 };
+      const g = m.get(o.date) ?? { orders: 0, chicks: 0, routed: 0, delivered: 0, failed: 0 };
       g.orders += 1;
       g.chicks += deliverChicks(o);
       if (o.routeId) g.routed += 1;
       if (o.deliverOk) g.delivered += 1;
+      if (o.deliveryFail && !o.deliverOk) g.failed += 1;
       m.set(o.date, g);
     }
     return m;
@@ -72,6 +73,18 @@ export default function DeliveryPlanningCalendar() {
           </div>
         </div>
         <p className="mt-1 text-xs text-muted">Click any date to open its delivery plan.</p>
+        <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[0.68rem] text-muted">
+          {[
+            ["bg-blue border-blue", "Future"],
+            ["bg-gold border-gold", "Planning required"],
+            ["bg-green border-green", "Completed"],
+            ["bg-red border-red", "Problems"],
+          ].map(([c, label]) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span className={cn("h-2.5 w-2.5 rounded-[3px] border", c)} /> {label}
+            </span>
+          ))}
+        </div>
 
         <div className="mt-3 overflow-x-auto">
           <div className="min-w-[560px]">
@@ -86,16 +99,22 @@ export default function DeliveryPlanningCalendar() {
                 const allRouted = has && g!.routed === g!.orders;
                 const allDelivered = has && g!.delivered === g!.orders;
                 const someDelivered = has && g!.delivered > 0;
+                const hasFailed = has && g!.failed > 0;
+                const isFuture = iso > today;
                 const isToday = iso === today;
+                // Colour: red = problems, green = done, blue = future, orange = planning/in-progress.
+                const tone = !has ? "none" : hasFailed ? "red" : allDelivered ? "green" : isFuture ? "blue" : "orange";
                 const status = !has
                   ? ""
-                  : allDelivered
-                    ? "all delivered ✓"
-                    : someDelivered
-                      ? `${g!.delivered}/${g!.orders} delivered`
-                      : allRouted
-                        ? "planned"
-                        : `${g!.orders - g!.routed} to plan`;
+                  : hasFailed
+                    ? `${g!.failed} failed`
+                    : allDelivered
+                      ? "all delivered ✓"
+                      : someDelivered
+                        ? `${g!.delivered}/${g!.orders} delivered`
+                        : allRouted
+                          ? "planned"
+                          : `${g!.orders - g!.routed} to plan`;
                 return (
                   <button
                     key={i}
@@ -104,19 +123,21 @@ export default function DeliveryPlanningCalendar() {
                     className={cn(
                       "h-24 cursor-pointer rounded-[10px] border p-1.5 text-left transition hover:border-gold hover:shadow-[0_3px_12px_rgba(150,115,20,.22)]",
                       !has && "border-line bg-paper",
-                      has && allDelivered && "border-green bg-green-bg",
-                      has && !allDelivered && "border-gold bg-gold-bg",
+                      tone === "green" && "border-green bg-green-bg",
+                      tone === "red" && "border-red bg-red-bg",
+                      tone === "blue" && "border-blue bg-blue-bg",
+                      tone === "orange" && "border-gold bg-gold-bg",
                       isToday && "outline outline-2 outline-ink"
                     )}
                   >
                     <div className="flex items-center justify-between">
                       <span className={cn("text-[0.85rem] font-bold", !has && "text-muted")}>{Number(iso.slice(8, 10))}</span>
-                      {has && <span className={cn("rounded-full px-1.5 text-[10px] font-bold", allDelivered ? "bg-green text-white" : "bg-onyx text-[#f3e9c9]")}>{g!.orders}</span>}
+                      {has && <span className={cn("rounded-full px-1.5 text-[10px] font-bold", tone === "green" ? "bg-green text-white" : tone === "red" ? "bg-red text-white" : "bg-onyx text-[#f3e9c9]")}>{g!.orders}</span>}
                     </div>
                     {has && (
                       <div className="mt-1 space-y-0.5">
                         <div className="text-[10px] font-semibold leading-tight text-gold-dark">{g!.chicks.toLocaleString()} chicks</div>
-                        <div className={cn("text-[9px] font-semibold leading-tight", allDelivered ? "text-green" : "text-muted")}>{status}</div>
+                        <div className={cn("text-[9px] font-semibold leading-tight", tone === "green" ? "text-green" : tone === "red" ? "text-red" : "text-muted")}>{status}</div>
                       </div>
                     )}
                   </button>

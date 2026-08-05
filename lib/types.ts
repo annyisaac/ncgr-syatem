@@ -102,7 +102,9 @@ export type NotificationType =
   | "confirmed"
   | "fulfilled"
   | "refunded"
-  | "deleted";
+  | "deleted"
+  | "allocated"
+  | "delivery_failed";
 export interface AppNotification {
   id: string;
   recipient: string;
@@ -250,6 +252,9 @@ export interface Order {
   debtOk?: boolean;
   /** Set when a driver marks the stop NOT delivered (order stays open for sales). */
   deliveryFail?: { reason: string; on: string; by: string };
+  /** True when the driver captured proof of delivery (GPS/signature/photo) — the
+   *  actual proof lives in the delivery_proofs table, not on the order. */
+  hasProof?: boolean;
   commReq?: boolean; // commission has been requested for this order
   commPaid?: boolean; // commission paid for this order
   request?: OrderRequest; // pending refund/compensation request
@@ -262,6 +267,9 @@ export interface Order {
   delivered?: number;
   /** This order continues an earlier one that could only be part-delivered. */
   backorderOf?: string;
+  /** This order is a same-day split-off from a larger order (id of the original),
+   *  so it can be delivered on a different truck/route. */
+  splitOf?: string;
   /** Customer credit (RWF) drawn onto this order from their wallet — counts
    *  toward the balance so a credit-funded order can be confirmed/delivered. */
   creditApplied?: number;
@@ -289,6 +297,7 @@ export interface Route {
   id: string;
   name: string;
   driver: string;
+  vehicle?: string; // vehicle plate / label assigned to this route
   capacity?: number; // max chicks the driver/vehicle can carry (for overload warnings)
   by: string; // salesperson who created it
   on: string; // ISO datetime

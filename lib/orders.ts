@@ -256,6 +256,74 @@ export function shortDeliver(
 }
 
 /**
+ * Split a confirmed order into two same-day stops so its chicks can go on
+ * different trucks/routes. The original keeps `chicks - splitQty`; a sibling
+ * order (`splitOf`) carries `splitQty`, unallocated, on the same date. Any
+ * payment surplus freed by the smaller original is applied to the sibling as
+ * customer credit — the customer's total owed is unchanged.
+ */
+export function splitOrder(
+  order: Order,
+  splitQty: number,
+  actor: User,
+  orders: Order[],
+  newId: (prefix: string) => string
+): { original: Order; child: Order } {
+  const keep = Math.max(0, order.chicks - splitQty);
+  const original = withHistory(
+    {
+      ...order,
+      chicks: keep,
+      // If it was already allocated to a route, cap the load to what remains.
+      deliveryChicks: order.deliveryChicks != null ? Math.min(order.deliveryChicks, keep) : undefined,
+    },
+    actor,
+    `Split — ${splitQty.toLocaleString()} of ${order.chicks.toLocaleString()} chicks moved to a separate same-day stop`
+  );
+
+  let child: Order = {
+    ...order,
+    id: newId("ord"),
+    chicks: splitQty,
+    comp: 0,
+    delivered: undefined,
+    deliverOk: undefined,
+    hasProof: undefined,
+    status: "pending",
+    confirmedOk: true, // same confirmed order, just split for delivery
+    debtOk: undefined,
+    deliveryFail: undefined,
+    routeId: undefined,
+    deliveryChicks: undefined,
+    pickupLocation: undefined,
+    request: undefined,
+    commReq: undefined,
+    commPaid: undefined,
+    creditApplied: undefined,
+    splitOf: order.id,
+    backorderOf: undefined,
+    payments: [],
+    date: order.date,
+    created: order.date,
+    createdAt: nowISO(),
+    plan: order.plan,
+    history: [logLine(actor, `Split-off stop for ${splitQty.toLocaleString()} chicks from ${order.name}'s order`)],
+  };
+
+  const updated = orders.map((o) => (o.id === original.id ? original : o));
+  const applied = creditToApply(child, updated);
+  if (applied > 0) {
+    child = withHistory(
+      { ...child, creditApplied: applied },
+      actor,
+      `Applied ${applied.toLocaleString()} RWF customer credit from the original order's payment`
+    );
+  }
+
+  return { original, child };
+}
+
+/**
  * Reschedule an order to a new delivery date. When the full order list is
  * passed, the order is placed FIRST in the new date's delivery plan (it gets a
  * plan index below every active order already on that date) — so a rescheduled
