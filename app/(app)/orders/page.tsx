@@ -147,6 +147,8 @@ function OrdersInner() {
   const isSales = role === "Tetra Zone Manager" || role === "Ross Order Receiver";
   const isChecker = role === "Tetra Payment Checker" || role === "Ross Payment Checker";
   const isAccountant = role === "Accountant";
+  // The DSR-list export is hidden for the Ross seller and Ross payment checker.
+  const canDsrList = role !== "Ross Order Receiver" && role !== "Ross Payment Checker";
   // Payment checkers now get the same order privileges as a seller (add + edit).
   const canSell = isSales || isChecker;
   const canAct = isAdmin || canSell;
@@ -503,13 +505,15 @@ function OrdersInner() {
             >
               <DownloadIcon /> Download PDF
             </Button>
-            <Button
-              variant="secondary"
-              className="gap-2"
-              onClick={() => (rows.length ? dsrOrdersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
-            >
-              <ListIcon /> DSR list (PDF)
-            </Button>
+            {canDsrList && (
+              <Button
+                variant="secondary"
+                className="gap-2"
+                onClick={() => (rows.length ? dsrOrdersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
+              >
+                <ListIcon /> DSR list (PDF)
+              </Button>
+            )}
             {canAct && (
               <Link href="/orders/new">
                 <Button className="gap-2"><PlusIcon /> New Order</Button>
