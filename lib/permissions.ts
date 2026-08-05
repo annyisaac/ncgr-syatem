@@ -137,6 +137,7 @@ const NAV: Record<Role, NavItem[]> = {
     // Hatchery
     ...H_ALL,
     // Admin
+    { label: "Staff & attendance", href: "/staff" },
     { label: "Users", href: "/users" },
   ],
   "Tetra Zone Manager": [
