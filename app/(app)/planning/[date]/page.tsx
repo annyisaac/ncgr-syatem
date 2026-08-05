@@ -24,7 +24,7 @@ import { deliveryPaymentPDF, manifestPDF } from "@/lib/reports";
 import { listDrivers, listVehicles, type Driver, type Vehicle } from "@/lib/logistics";
 import { allVerified, balance, paidAmount, toDeliver, type Order, type Route } from "@/lib/types";
 
-const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver"];
+const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver", "Tetra Payment Checker", "Ross Payment Checker"];
 const deliverChicks = (o: Order) => o.deliveryChicks ?? toDeliver(o);
 const isActive = (o: Order) => o.status !== "refunded" && o.status !== "rejected";
 const stopStatus = (o: Order) => (o.deliverOk ? "Delivered" : o.deliveryFail ? "Not delivered" : "Pending");
