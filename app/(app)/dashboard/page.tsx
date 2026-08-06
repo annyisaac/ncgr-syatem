@@ -33,7 +33,7 @@ import {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const { orders, replaceAll, setOrders, users, dsrs, commissions, statements, routes, availability, dsrVisits, customerFeedback } = useData();
+  const { orders, replaceAll, upsertOrder, users, dsrs, commissions, statements, routes, availability, dsrVisits, customerFeedback } = useData();
 
   const visible = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
@@ -59,7 +59,7 @@ export default function DashboardPage() {
         orders={visible}
         db={{ users, dsrs, orders, commissions, statements, routes, availability, dsrVisits, customerFeedback }}
         replaceAll={replaceAll}
-        setOrders={setOrders}
+        upsertOrder={upsertOrder}
       />
     );
   }
@@ -299,13 +299,13 @@ function AdminDashboard({
   orders,
   db,
   replaceAll,
-  setOrders,
+  upsertOrder,
 }: {
   user: User;
   orders: Order[];
   db: import("@/lib/types").Database;
   replaceAll: (db: import("@/lib/types").Database) => Promise<void>;
-  setOrders: (o: Order[]) => Promise<void>;
+  upsertOrder: (o: Order) => Promise<void>;
 }) {
   const router = useRouter();
   const { toast } = useToast();
@@ -369,10 +369,15 @@ function AdminDashboard({
     if (!file) return;
     try {
       const imported = await importOrdersExcel(file);
-      const byId = new Map(db.orders.map((o) => [o.id, o]));
-      for (const o of imported) byId.set(o.id, o);
-      await setOrders(Array.from(byId.values()));
-      toast(`Imported ${imported.length} order(s).`);
+      // Only ADD genuinely new orders, one row at a time. Never overwrite an
+      // existing order: the Excel rows don't carry route/hatchery allocation,
+      // delivery status, confirmation or verified payments, and a whole-list
+      // write would wipe those on every order in the sheet.
+      const existing = new Set(db.orders.map((o) => o.id));
+      const fresh = imported.filter((o) => !existing.has(o.id));
+      for (const o of fresh) await upsertOrder(o);
+      const skipped = imported.length - fresh.length;
+      toast(`Imported ${fresh.length} new order(s)${skipped ? ` — ${skipped} already existed and were left unchanged` : ""}.`);
     } catch {
       toast("Could not import that Excel file.", "error");
     } finally {
