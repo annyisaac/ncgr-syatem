@@ -164,10 +164,14 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const pathname = usePathname();
   // Hatchery roles live in this module, so load eagerly on login. Admin and
-  // Accountant only visit hatchery data on hatchery/costing pages — so for them
-  // we defer the 25-table load until they actually open one, keeping their
-  // login (dashboard, orders, …) from firing dozens of unused requests.
-  const needsHatchery = pathname.startsWith("/hatchery") || pathname.startsWith("/costing");
+  // Accountant only visit hatchery data on hatchery/costing pages (and Admin on
+  // Availability, which projects delivery dates from batches) — so for them we
+  // defer the 25-table load until they open one, keeping their login (dashboard,
+  // orders, …) from firing dozens of unused requests.
+  const needsHatchery =
+    pathname.startsWith("/hatchery") ||
+    pathname.startsWith("/costing") ||
+    pathname.startsWith("/availability");
   const enabled =
     !!user &&
     (isHatcheryRole(user.role) ||
