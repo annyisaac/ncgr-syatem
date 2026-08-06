@@ -345,22 +345,23 @@ export async function manifestPDF(
 
   const chicksOf = (o: Order) => o.deliveryChicks ?? toDeliver(o);
   const statusOf = (o: Order) => (o.deliverOk ? "Delivered" : o.deliveryFail ? "Not delivered" : "Pending");
+  const productOf = (o: Order) => (o.product === "Ross 308" ? "Ross" : o.product === "Tetra Super Harco" ? "Tetra" : o.product);
   let total = 0;
   const body = orders.map((o, i) => {
     const c = chicksOf(o);
     total += c;
-    return [i + 1, o.name, o.phone, o.sector, o.district, o.pickupLocation ?? "—", c, statusOf(o), ""];
+    return [i + 1, o.name, productOf(o), o.phone, o.sector, o.district, o.pickupLocation ?? "—", c, statusOf(o), ""];
   });
 
   autoTable(doc, {
     startY,
-    head: [["#", "Customer", "Phone", "Sector", "District", "Pickup", "Chicks", "Status", "Received (sign)"]],
+    head: [["#", "Customer", "Product", "Phone", "Sector", "District", "Pickup", "Chicks", "Status", "Received (sign)"]],
     body,
-    foot: [["", "TOTAL CHICKS", "", "", "", "", total, "", ""]],
+    foot: [["", "TOTAL CHICKS", "", "", "", "", "", total, "", ""]],
     styles: { fontSize: 8, cellPadding: 3 },
     headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
     footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
-    columnStyles: { 8: { cellWidth: 96 } },
+    columnStyles: { 9: { cellWidth: 96 } },
     theme: "grid",
   });
 
