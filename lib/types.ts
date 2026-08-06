@@ -284,6 +284,9 @@ export interface DeliveryLink {
   id: string; // the token (== URL segment)
   token: string; // same value, kept for readability
   driver: string; // route driver name this link belongs to
+  /** The specific route this link is for. Newer links are per-route (one date's
+   *  stops); older links without it fall back to all of the driver's stops. */
+  routeId?: string;
   by: string; // salesperson who created it
   createdAt: string; // ISO datetime
   active: boolean;

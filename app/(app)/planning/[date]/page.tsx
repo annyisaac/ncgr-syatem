@@ -17,7 +17,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
 import { visibleOrders } from "@/lib/permissions";
 import { formatRWF } from "@/lib/config";
-import { ensureDriverLink, getDeliveryProof, listDeliveryLinks, type DeliveryProof } from "@/lib/db";
+import { ensureRouteLink, getDeliveryProof, listDeliveryLinks, type DeliveryProof } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
 import { canAllocate, fulfillOrder, rescheduleOrder, splitOrder, withHistory } from "@/lib/orders";
 import { deliveryPaymentPDF, manifestPDF } from "@/lib/reports";
@@ -105,7 +105,7 @@ export default function DayPlanPage() {
         if (!active) return;
         const origin = typeof window !== "undefined" ? window.location.origin : "";
         const map: Record<string, string> = {};
-        for (const l of links) if (l.active) map[l.driver] = `${origin}/deliver/${l.token}`;
+        for (const l of links) if (l.active && l.routeId) map[l.routeId] = `${origin}/deliver/${l.token}`;
         setDriverLinks(map);
         setDrivers(dr.filter((d) => d.active));
         setVehicles(ve.filter((v) => v.active));
@@ -262,17 +262,17 @@ export default function DayPlanPage() {
     toast(`${o.name} marked delivered.`);
   }
 
-  async function makeDriverLink(driver: string) {
-    if (!driver.trim()) return toast("This route has no driver name.", "info");
+  async function makeDriverLink(route: Route) {
+    if (!route.driver.trim()) return toast("This route has no driver name.", "info");
     try {
-      const token = await ensureDriverLink(driver.trim(), user!.email);
+      const token = await ensureRouteLink(route.id, route.driver.trim(), user!.email);
       const url = `${window.location.origin}/deliver/${token}`;
-      setDriverLinks((m) => ({ ...m, [driver]: url }));
+      setDriverLinks((m) => ({ ...m, [route.id]: url }));
       try {
         await navigator.clipboard.writeText(url);
-        toast(`Driver link copied — send it to ${driver}.`);
+        toast(`Driver link copied — send it to ${route.driver}.`);
       } catch {
-        toast(`Driver link ready for ${driver}.`);
+        toast(`Driver link ready for ${route.driver}.`);
       }
     } catch {
       toast("Could not create the driver link.", "info");
@@ -281,12 +281,12 @@ export default function DayPlanPage() {
 
   async function showQr(route: Route) {
     if (!route.driver.trim()) return toast("This route has no driver name.", "info");
-    let url = driverLinks[route.driver];
+    let url = driverLinks[route.id];
     if (!url) {
       try {
-        const token = await ensureDriverLink(route.driver.trim(), user!.email);
+        const token = await ensureRouteLink(route.id, route.driver.trim(), user!.email);
         url = `${window.location.origin}/deliver/${token}`;
-        setDriverLinks((m) => ({ ...m, [route.driver]: url! }));
+        setDriverLinks((m) => ({ ...m, [route.id]: url! }));
       } catch {
         return toast("Could not create the driver link.", "info");
       }
@@ -511,17 +511,17 @@ export default function DayPlanPage() {
               <div className="flex flex-wrap gap-2">
                 <Button variant="secondary" size="sm" onClick={() => void manifestPDF(route, dateLabel, list)} disabled={list.length === 0}>Manifest (PDF)</Button>
                 <Button variant="ghost" size="sm" onClick={() => downloadCsv(route, dateLabel, list)} disabled={list.length === 0}>CSV</Button>
-                {canEdit && <Button variant="ghost" size="sm" onClick={() => makeDriverLink(route.driver)}>Driver link</Button>}
+                {canEdit && <Button variant="ghost" size="sm" onClick={() => makeDriverLink(route)}>Driver link</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => void showQr(route)}>QR</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => setEditRoute(route)}>Edit</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => deleteRoute(route)}>Delete</Button>}
               </div>
             </div>
-            {driverLinks[route.driver] && (
+            {driverLinks[route.id] && (
               <div className="mb-3 flex items-center gap-2 rounded-xl border border-[#efdfae] bg-gold-bg px-3 py-2 text-xs">
-                <span className="shrink-0 font-semibold text-ink">Driver link for {route.driver}:</span>
-                <input readOnly value={driverLinks[route.driver]} onFocus={(e) => e.currentTarget.select()} className="min-w-0 grow bg-transparent text-gold-dark outline-none" />
-                <button type="button" onClick={() => makeDriverLink(route.driver)} className="shrink-0 font-semibold text-gold-dark underline">Copy</button>
+                <span className="shrink-0 font-semibold text-ink">Driver link for {route.name} ({route.driver}):</span>
+                <input readOnly value={driverLinks[route.id]} onFocus={(e) => e.currentTarget.select()} className="min-w-0 grow bg-transparent text-gold-dark outline-none" />
+                <button type="button" onClick={() => makeDriverLink(route)} className="shrink-0 font-semibold text-gold-dark underline">Copy</button>
               </div>
             )}
             <TableWrap>

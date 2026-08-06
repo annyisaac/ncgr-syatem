@@ -497,6 +497,25 @@ export async function ensureDriverLink(driver: string, by: string): Promise<stri
   return token;
 }
 
+/** Per-route link: an active link for this specific route (one delivery date's
+ *  stops), created if none exists. Yields the token. */
+export async function ensureRouteLink(routeId: string, driver: string, by: string): Promise<string> {
+  if (!inBrowser()) throw new Error("Not in browser");
+  const sb = getSupabase();
+  const { data: rows, error } = await sb.from("delivery_links").select("id, data");
+  if (!error && rows) {
+    const found = rows.find((r) => {
+      const d = r.data as DeliveryLink;
+      return d.active && d.routeId === routeId;
+    });
+    if (found) return found.id as string;
+  }
+  const token = randomToken();
+  const link: DeliveryLink = { id: token, token, driver, routeId, by, createdAt: new Date().toISOString(), active: true };
+  await upsertOne("delivery_links", "id", token, link);
+  return token;
+}
+
 export interface DriverStop {
   id: string;
   name: string;
