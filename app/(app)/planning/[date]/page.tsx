@@ -349,13 +349,6 @@ export default function DayPlanPage() {
         <Pill tone={canEdit ? "gold" : "neutral"}>{canEdit ? "Full access" : "View only"}</Pill>
       </div>
 
-      {/* Search */}
-      <div className="relative max-w-md">
-        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
-        <Input className="pl-9" placeholder="Search customer, phone, district…" value={q} onChange={(e) => setQ(e.target.value)} />
-        {q && <button type="button" onClick={() => setQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted hover:text-ink">Clear</button>}
-      </div>
-
       {/* KPI decks */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Deck title="Orders" tone="gold" icon={<IcoBox />}>
@@ -452,6 +445,13 @@ export default function DayPlanPage() {
         )}
         {dayRoutes.length === 0 && <p className="text-sm text-muted">No routes for this day yet.{canEdit ? " Add one above." : ""}</p>}
       </Card>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+        <Input className="pl-9" placeholder="Search customer, phone, district…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {q && <button type="button" onClick={() => setQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted hover:text-ink">Clear</button>}
+      </div>
 
       {/* Ready to allocate */}
       <Card>
