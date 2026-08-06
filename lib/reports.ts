@@ -366,7 +366,8 @@ export async function manifestPDF(
     const total = totalOf(o);
     tOrdered += o.chicks; tExtra += ex; tComp += o.comp; tTotal += total;
     return [
-      i + 1, o.name, productOf(o), o.phone, o.sector, o.district, o.pickupLocation ?? "—",
+      i + 1, o.name, productOf(o), o.phone,
+      o.clientSector ?? o.sector, o.clientDistrict ?? o.district, o.pickupLocation ?? "—",
       o.chicks, ex, o.comp, total, dsrCell(o), statusOf(o), "",
     ];
   });
