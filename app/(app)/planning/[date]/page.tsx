@@ -78,7 +78,7 @@ export default function DayPlanPage() {
   const params = useParams<{ date: string }>();
   const activeDate = params.date;
   const { user } = useAuth();
-  const { orders, routes, upsertRoute, removeRoute, upsertOrder, newId } = useData();
+  const { orders, routes, dsrs, upsertRoute, removeRoute, upsertOrder, newId } = useData();
   const { toast } = useToast();
 
   const [rName, setRName] = useState("");
@@ -509,7 +509,7 @@ export default function DayPlanPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => void manifestPDF(route, dateLabel, list)} disabled={list.length === 0}>Manifest (PDF)</Button>
+                <Button variant="secondary" size="sm" onClick={() => void manifestPDF(route, dateLabel, list, dsrs)} disabled={list.length === 0}>Manifest (PDF)</Button>
                 <Button variant="ghost" size="sm" onClick={() => downloadCsv(route, dateLabel, list)} disabled={list.length === 0}>CSV</Button>
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => makeDriverLink(route)}>Driver link</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => void showQr(route)}>QR</Button>}

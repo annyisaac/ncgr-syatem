@@ -14,6 +14,7 @@ import {
   paidAmount,
   toDeliver,
   type Database,
+  type DSR,
   type Order,
   type Route,
 } from "./types";
@@ -332,36 +333,57 @@ export async function dsrOrdersPDF(orders: Order[], filterLabel: string): Promis
 // ---------------------------------------------------------------------------
 
 export async function manifestPDF(
-  route: Pick<Route, "name" | "driver">,
+  route: Pick<Route, "name" | "driver" | "vehicle">,
   dateLabel: string,
-  orders: Order[]
+  orders: Order[],
+  dsrs: DSR[] = []
 ): Promise<void> {
   const { doc, autoTable, startY, logo } = await brandedDoc("Delivery Manifest", [
     `Route: ${route.name}`,
     `Driver: ${route.driver}`,
+    ...(route.vehicle ? [`Vehicle: ${route.vehicle}`] : []),
     `Date: ${dateLabel}`,
     `Stops: ${orders.length}`,
   ]);
 
-  const chicksOf = (o: Order) => o.deliveryChicks ?? toDeliver(o);
+  const dsrById = new Map(dsrs.map((d) => [d.id, d]));
+  const dsrByName = new Map(dsrs.map((d) => [d.name, d]));
+  // Tetra is sold through DSRs — show the DSR's name + phone so the driver can
+  // reach them. Ross has no DSR.
+  const dsrCell = (o: Order): string => {
+    if (o.product !== "Tetra Super Harco") return "—";
+    const d = (o.dsrId ? dsrById.get(o.dsrId) : undefined) ?? (o.dsr ? dsrByName.get(o.dsr) : undefined);
+    if (d) return `${d.name}\n${d.phone}`;
+    return o.dsr ?? "—";
+  };
+  const totalOf = (o: Order) => o.deliveryChicks ?? toDeliver(o);
   const statusOf = (o: Order) => (o.deliverOk ? "Delivered" : o.deliveryFail ? "Not delivered" : "Pending");
   const productOf = (o: Order) => (o.product === "Ross 308" ? "Ross" : o.product === "Tetra Super Harco" ? "Tetra" : o.product);
-  let total = 0;
+
+  let tOrdered = 0, tExtra = 0, tComp = 0, tTotal = 0;
   const body = orders.map((o, i) => {
-    const c = chicksOf(o);
-    total += c;
-    return [i + 1, o.name, productOf(o), o.phone, o.sector, o.district, o.pickupLocation ?? "—", c, statusOf(o), ""];
+    const ex = extra2(o);
+    const total = totalOf(o);
+    tOrdered += o.chicks; tExtra += ex; tComp += o.comp; tTotal += total;
+    return [
+      i + 1, o.name, productOf(o), o.phone, o.sector, o.district, o.pickupLocation ?? "—",
+      o.chicks, ex, o.comp, total, dsrCell(o), statusOf(o), "",
+    ];
   });
 
   autoTable(doc, {
     startY,
-    head: [["#", "Customer", "Product", "Phone", "Sector", "District", "Pickup", "Chicks", "Status", "Received (sign)"]],
+    head: [["#", "Customer", "Product", "Phone", "Sector", "District", "Pickup", "Ordered", "Extra 2%", "Comp", "Deliver", "DSR (Tetra)", "Status", "Received (sign)"]],
     body,
-    foot: [["", "TOTAL CHICKS", "", "", "", "", "", total, "", ""]],
-    styles: { fontSize: 8, cellPadding: 3 },
+    foot: [["", "TOTALS", "", "", "", "", "", tOrdered, tExtra, tComp, tTotal, "", "", ""]],
+    styles: { fontSize: 7, cellPadding: 2.5 },
     headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
     footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
-    columnStyles: { 9: { cellWidth: 96 } },
+    columnStyles: {
+      0: { cellWidth: 16 },
+      7: { halign: "right" }, 8: { halign: "right" }, 9: { halign: "right" }, 10: { halign: "right" },
+      13: { cellWidth: 72 },
+    },
     theme: "grid",
   });
 
