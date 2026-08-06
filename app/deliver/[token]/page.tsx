@@ -162,6 +162,13 @@ export default function DriverDeliveryPage() {
                   </div>
                 </div>
 
+                <p className="mt-2 rounded-lg bg-cream px-2.5 py-1.5 text-xs text-ink">
+                  <span className="font-semibold">{s.ordered.toLocaleString()}</span> ordered
+                  {" · +"}<span className="font-semibold">{s.extra.toLocaleString()}</span> (2% extra)
+                  {s.comp > 0 && <> · +<span className="font-semibold">{s.comp.toLocaleString()}</span> comp</>}
+                  {" = "}<span className="font-semibold">{(s.chicks || 0).toLocaleString()}</span> to deliver
+                </p>
+
                 {s.phone && (
                   <a href={`tel:${s.phone}`} className="mt-2 inline-block text-sm font-medium text-gold-dark underline">
                     📞 {s.phone}

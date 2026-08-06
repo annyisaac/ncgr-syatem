@@ -527,7 +527,10 @@ export interface DriverStop {
   plan: number;
   routeName: string;
   pickup: string | null;
-  chicks: number;
+  chicks: number; // total to deliver (ordered + 2% + comp)
+  ordered: number; // chicks the customer ordered
+  extra: number; // 2% free extra
+  comp: number; // compensation (free) chicks
   allocated: boolean; // hatchery has allocated the chicks — required before delivery
   failReason: string | null;
 }
