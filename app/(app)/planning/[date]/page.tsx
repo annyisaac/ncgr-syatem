@@ -131,7 +131,13 @@ export default function DayPlanPage() {
         .sort((a, b) => a.plan - b.plan),
     [scoped, activeDate]
   );
-  const routeIds = useMemo(() => new Set(routes.map((r) => r.id)), [routes]);
+  // Routes for THIS delivery date. Older routes with no date stay visible on
+  // every day so existing allocations keep showing.
+  const dayRoutes = useMemo(
+    () => routes.filter((r) => !r.date || r.date === activeDate),
+    [routes, activeDate]
+  );
+  const routeIds = useMemo(() => new Set(dayRoutes.map((r) => r.id)), [dayRoutes]);
   const ready = useMemo(
     () => dayOrders.filter((o) => !o.deliverOk && (!o.routeId || !routeIds.has(o.routeId))),
     [dayOrders, routeIds]
@@ -150,18 +156,18 @@ export default function DayPlanPage() {
     const deliveredSet = dayOrders.filter((o) => o.deliverOk);
     const collected = deliveredSet.reduce((s, o) => s + paidAmount(o), 0);
     const outstanding = deliveredSet.reduce((s, o) => s + Math.max(0, balance(o)), 0);
-    const activeRoutes = routes.filter((r) => dayOrders.some((o) => o.routeId === r.id));
+    const activeRoutes = dayRoutes.filter((r) => dayOrders.some((o) => o.routeId === r.id));
     return {
       total, planned, delivered, failed, awaiting: ready.length,
       chicks, allocatedChicks, remainingChicks: Math.max(0, chicks - allocatedChicks),
       allocPct: chicks ? Math.round((allocatedChicks / chicks) * 100) : 0,
       advancePaid, balanceToCollect, collected, outstanding,
-      routes: routes.length,
+      routes: dayRoutes.length,
       activeRoutes: activeRoutes.length,
       drivers: new Set(activeRoutes.map((r) => r.driver).filter(Boolean)).size,
       vehicles: new Set(activeRoutes.map((r) => r.vehicle).filter(Boolean)).size,
     };
-  }, [dayOrders, ready, routes, routeIds]);
+  }, [dayOrders, ready, dayRoutes, routeIds]);
 
   // Day pipeline (cumulative funnel).
   const flow = useMemo(() => {
@@ -191,7 +197,7 @@ export default function DayPlanPage() {
 
   // Collections expected per route, and the day's failed deliveries.
   const byRoute = useMemo(() =>
-    routes
+    dayRoutes
       .map((r) => {
         const list = dayOrders.filter((o) => o.routeId === r.id);
         if (list.length === 0) return null;
@@ -205,7 +211,7 @@ export default function DayPlanPage() {
         };
       })
       .filter((x): x is NonNullable<typeof x> => !!x),
-    [routes, dayOrders]
+    [dayRoutes, dayOrders]
   );
   const failedList = useMemo(() => dayOrders.filter((o) => o.deliveryFail && !o.deliverOk), [dayOrders]);
 
@@ -216,7 +222,7 @@ export default function DayPlanPage() {
     setRErr(null);
     if (!rName.trim()) return setRErr("Enter a route name.");
     if (!rDriver.trim()) return setRErr("Enter the delivery driver.");
-    const r: Route = { id: newId("route"), name: rName.trim(), driver: rDriver.trim(), vehicle: rVehicle.trim() || undefined, capacity: Number(rCap) || undefined, by: user!.email, on: nowISO() };
+    const r: Route = { id: newId("route"), name: rName.trim(), driver: rDriver.trim(), vehicle: rVehicle.trim() || undefined, capacity: Number(rCap) || undefined, date: activeDate, by: user!.email, on: nowISO() };
     upsertRoute(r);
     toast(`Route ${r.name} created.`);
     setRName(""); setRDriver(""); setRVehicle(""); setRCap(""); setShowRouteForm(false);
@@ -417,9 +423,10 @@ export default function DayPlanPage() {
       {/* Routes */}
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <CardHeader title={`Routes (${routes.length})`} />
+          <CardHeader title={`Routes for ${dateLabel} (${dayRoutes.length})`} />
           {canEdit && <Button size="sm" onClick={() => setShowRouteForm((v) => !v)}>{showRouteForm ? "Cancel" : "＋ Add route"}</Button>}
         </div>
+        <p className="-mt-1 mb-3 text-xs text-muted">Routes you add here belong to this delivery date.</p>
         {canEdit && showRouteForm && (
           <form onSubmit={createRoute} className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line p-3">
             <Field label="Route name"><Input value={rName} onChange={(e) => setRName(e.target.value)} placeholder="e.g. Kigali East" /></Field>
@@ -430,7 +437,7 @@ export default function DayPlanPage() {
             {rErr && <p className="w-full text-sm text-status-refunded">{rErr}</p>}
           </form>
         )}
-        {routes.length === 0 && <p className="text-sm text-muted">No routes yet.{canEdit ? " Add one above." : ""}</p>}
+        {dayRoutes.length === 0 && <p className="text-sm text-muted">No routes for this day yet.{canEdit ? " Add one above." : ""}</p>}
       </Card>
 
       {/* Ready to allocate */}
@@ -474,7 +481,7 @@ export default function DayPlanPage() {
       </Card>
 
       {/* Route cards */}
-      {routes.map((route) => {
+      {dayRoutes.map((route) => {
         const list = routeOrders(route.id);
         const total = list.reduce((s, o) => s + deliverChicks(o), 0);
         const pct = route.capacity ? Math.round((total / route.capacity) * 100) : null;
@@ -627,7 +634,7 @@ export default function DayPlanPage() {
       )}
 
       {allocFor && (
-        <AllocateDrawer order={allocFor} routes={routes} onClose={() => setAllocFor(null)} onSave={(chicks, pickup, routeId) => allocate(allocFor, chicks, pickup, routeId)} />
+        <AllocateDrawer order={allocFor} routes={dayRoutes} onClose={() => setAllocFor(null)} onSave={(chicks, pickup, routeId) => allocate(allocFor, chicks, pickup, routeId)} />
       )}
       {rescheduleFor && (
         <RescheduleModal

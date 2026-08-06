@@ -299,6 +299,9 @@ export interface Route {
   driver: string;
   vehicle?: string; // vehicle plate / label assigned to this route
   capacity?: number; // max chicks the driver/vehicle can carry (for overload warnings)
+  /** Delivery date this route belongs to. Absent on older routes, which stay
+   *  visible on every day for backward compatibility. */
+  date?: string;
   by: string; // salesperson who created it
   on: string; // ISO datetime
 }
