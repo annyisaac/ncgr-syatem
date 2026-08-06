@@ -528,6 +528,7 @@ export interface DriverStop {
   routeName: string;
   pickup: string | null;
   chicks: number;
+  allocated: boolean; // hatchery has allocated the chicks — required before delivery
   failReason: string | null;
 }
 

@@ -85,8 +85,12 @@ export default function DriverDeliveryPage() {
     const res = await driverDeliver(token, stop.id, delivered, why, proof);
     setBusyId(null);
     if (!res.ok) {
-      setFlash(res.error === "ALREADY_DELIVERED" ? "That stop was already delivered." : "Could not save — try again.");
-      setTimeout(() => setFlash(null), 3000);
+      setFlash(
+        res.error === "ALREADY_DELIVERED" ? "That stop was already delivered."
+          : res.error === "NOT_ALLOCATED" ? "Not ready — the hatchery hasn't allocated this order yet."
+          : "Could not save — try again."
+      );
+      setTimeout(() => setFlash(null), 3500);
       return;
     }
     setReasonFor(null);
@@ -262,21 +266,29 @@ export default function DriverDeliveryPage() {
                     </div>
                   </div>
                 ) : (
-                  <div className="mt-3 flex gap-2">
-                    <button
-                      onClick={() => openProof(s.id)}
-                      disabled={busyId === s.id}
-                      className="flex-1 rounded-xl bg-green px-3 py-2.5 text-sm font-bold text-white disabled:opacity-60"
-                    >
-                      {busyId === s.id ? "Saving…" : "✓ Delivered"}
-                    </button>
-                    <button
-                      onClick={() => { setReasonFor(s.id); setReason(""); }}
-                      disabled={busyId === s.id}
-                      className="flex-1 rounded-xl border border-line px-3 py-2.5 text-sm font-semibold text-ink disabled:opacity-60"
-                    >
-                      Not delivered
-                    </button>
+                  <div className="mt-3">
+                    {!s.allocated && (
+                      <p className="mb-2 rounded-lg bg-gold-bg px-2.5 py-1.5 text-xs font-medium text-gold-dark">
+                        ⏳ Waiting for the hatchery to allocate these chicks — you can deliver once it&apos;s marked ready.
+                      </p>
+                    )}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => openProof(s.id)}
+                        disabled={busyId === s.id || !s.allocated}
+                        title={s.allocated ? undefined : "Waiting for hatchery allocation"}
+                        className="flex-1 rounded-xl bg-green px-3 py-2.5 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {busyId === s.id ? "Saving…" : "✓ Delivered"}
+                      </button>
+                      <button
+                        onClick={() => { setReasonFor(s.id); setReason(""); }}
+                        disabled={busyId === s.id}
+                        className="flex-1 rounded-xl border border-line px-3 py-2.5 text-sm font-semibold text-ink disabled:opacity-60"
+                      >
+                        Not delivered
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
