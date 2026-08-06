@@ -16,6 +16,7 @@ import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { cn } from "@/lib/cn";
 import { visibleOrders } from "@/lib/permissions";
+import { smartMatch } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
 import { ensureRouteLink, getDeliveryProof, listDeliveryLinks, type DeliveryProof } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
@@ -26,6 +27,9 @@ import { allVerified, balance, paidAmount, toDeliver, type Order, type Route } f
 
 const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver", "Tetra Payment Checker", "Ross Payment Checker"];
 const deliverChicks = (o: Order) => o.deliveryChicks ?? toDeliver(o);
+// The customer's own location (falls back to the order's / DSR territory).
+const custSector = (o: Order) => o.clientSector ?? o.sector;
+const custDistrict = (o: Order) => o.clientDistrict ?? o.district;
 const isActive = (o: Order) => o.status !== "refunded" && o.status !== "rejected";
 const stopStatus = (o: Order) => (o.deliverOk ? "Delivered" : o.deliveryFail ? "Not delivered" : "Pending");
 const paymentCleared = (o: Order) => !!o.debtOk || allVerified(o);
@@ -63,7 +67,7 @@ function downloadCsv(route: Route, dateLabel: string, orders: Order[]) {
     ["#", "Customer", "Phone", "Sector", "District", "Pickup", "Chicks", "Product", "Status"],
   ];
   let total = 0;
-  orders.forEach((o, i) => { const c = deliverChicks(o); total += c; rows.push([String(i + 1), o.name, o.phone, o.sector, o.district, o.pickupLocation ?? "", String(c), o.product, stopStatus(o)]); });
+  orders.forEach((o, i) => { const c = deliverChicks(o); total += c; rows.push([String(i + 1), o.name, o.phone, custSector(o), custDistrict(o), o.pickupLocation ?? "", String(c), o.product, stopStatus(o)]); });
   rows.push([], ["TOTAL CHICKS", "", "", "", "", "", String(total)]);
   const blob = new Blob([rows.map((r) => r.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -91,6 +95,7 @@ export default function DayPlanPage() {
   const [rescheduleFor, setRescheduleFor] = useState<Order | null>(null);
   const [splitFor, setSplitFor] = useState<Order | null>(null);
   const [qrFor, setQrFor] = useState<{ url: string; driver: string } | null>(null);
+  const [q, setQ] = useState("");
   const [editRoute, setEditRoute] = useState<Route | null>(null);
   const [proofView, setProofView] = useState<{ order: Order; proof: DeliveryProof | null; loading: boolean } | null>(null);
   const [driverLinks, setDriverLinks] = useState<Record<string, string>>({});
@@ -124,13 +129,13 @@ export default function DayPlanPage() {
   const canEdit = !!role && CAN_EDIT.includes(role);
   const scoped = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
-  const dayOrders = useMemo(
-    () =>
-      scoped
-        .filter((o) => o.date === activeDate && o.confirmedOk && isActive(o))
-        .sort((a, b) => a.plan - b.plan),
-    [scoped, activeDate]
-  );
+  const dayOrders = useMemo(() => {
+    const term = q.trim();
+    return scoped
+      .filter((o) => o.date === activeDate && o.confirmedOk && isActive(o))
+      .filter((o) => !term || smartMatch(term, o.name, o.phone, custDistrict(o), custSector(o)))
+      .sort((a, b) => a.plan - b.plan);
+  }, [scoped, activeDate, q]);
   // Routes for THIS delivery date. Older routes with no date stay visible on
   // every day so existing allocations keep showing.
   const dayRoutes = useMemo(
@@ -188,9 +193,10 @@ export default function DayPlanPage() {
   const byDistrict = useMemo(() => {
     const m = new Map<string, { stops: number; chicks: number; delivered: number }>();
     for (const o of dayOrders) {
-      const g = m.get(o.district || "—") ?? { stops: 0, chicks: 0, delivered: 0 };
+      const key = custDistrict(o) || "—";
+      const g = m.get(key) ?? { stops: 0, chicks: 0, delivered: 0 };
       g.stops += 1; g.chicks += deliverChicks(o); if (o.deliverOk) g.delivered += 1;
-      m.set(o.district || "—", g);
+      m.set(key, g);
     }
     return [...m.entries()].sort((a, b) => b[1].chicks - a[1].chicks);
   }, [dayOrders]);
@@ -343,6 +349,13 @@ export default function DayPlanPage() {
         <Pill tone={canEdit ? "gold" : "neutral"}>{canEdit ? "Full access" : "View only"}</Pill>
       </div>
 
+      {/* Search */}
+      <div className="relative max-w-md">
+        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+        <Input className="pl-9" placeholder="Search customer, phone, district…" value={q} onChange={(e) => setQ(e.target.value)} />
+        {q && <button type="button" onClick={() => setQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted hover:text-ink">Clear</button>}
+      </div>
+
       {/* KPI decks */}
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-4">
         <Deck title="Orders" tone="gold" icon={<IcoBox />}>
@@ -456,7 +469,7 @@ export default function DayPlanPage() {
                   {o.splitOf && <span className="ml-2 align-middle"><Pill tone="purple">Split</Pill></span>}
                 </Td>
                 <Td>{o.product}</Td>
-                <Td>{o.district}<div className="text-xs text-muted">{o.sector}</div></Td>
+                <Td>{custDistrict(o)}<div className="text-xs text-muted">{custSector(o)}</div></Td>
                 <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
                 <Td className="text-right">{formatRWF(Math.max(0, balance(o)))}</Td>
                 <Td>{paymentCleared(o) ? <Pill tone="green">Cleared</Pill> : <Pill tone="red">Not verified</Pill>}</Td>
@@ -546,7 +559,7 @@ export default function DayPlanPage() {
                       </div>
                     </Td>
                     <Td>{o.pickupLocation ?? "—"}</Td>
-                    <Td>{o.sector}</Td>
+                    <Td>{custSector(o)}</Td>
                     <Td className="text-right">{deliverChicks(o).toLocaleString()}</Td>
                     <Td>{o.allocatedOk ? <Pill tone="green">Allocated</Pill> : <Pill tone="amber">Awaiting</Pill>}</Td>
                     {canEdit && (
