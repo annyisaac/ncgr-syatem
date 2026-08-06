@@ -525,9 +525,9 @@ export default function DayPlanPage() {
               </div>
             )}
             <TableWrap>
-              <thead><tr><Th>Customer</Th><Th>Contact</Th><Th>Pickup</Th><Th>Sector</Th><Th className="text-right">Chicks</Th><Th>Hatchery</Th>{canEdit && <Th></Th>}</tr></thead>
+              <thead><tr><Th>Customer</Th><Th>Product</Th><Th>Contact</Th><Th>Pickup</Th><Th>Sector</Th><Th className="text-right">Chicks</Th><Th>Hatchery</Th>{canEdit && <Th></Th>}</tr></thead>
               <tbody>
-                {list.length === 0 ? <EmptyRow colSpan={canEdit ? 7 : 6} text="No stops on this route for this day." /> : list.map((o) => (
+                {list.length === 0 ? <EmptyRow colSpan={canEdit ? 8 : 7} text="No stops on this route for this day." /> : list.map((o) => (
                   <tr key={o.id} className={o.deliverOk ? "bg-green-bg" : undefined}>
                     <Td className="font-medium">
                       {o.name}
@@ -536,6 +536,7 @@ export default function DayPlanPage() {
                       {o.deliveryFail && !o.deliverOk && <span className="ml-2 align-middle"><Pill tone="red">Not delivered</Pill></span>}
                       {o.deliveryFail && !o.deliverOk && <div className="text-xs font-normal text-muted">{o.deliveryFail.reason}</div>}
                     </Td>
+                    <Td><Pill tone={o.product === "Ross 308" ? "info" : "gold"}>{o.product === "Ross 308" ? "Ross" : "Tetra"}</Pill></Td>
                     <Td>
                       <div className="flex items-center gap-1.5">
                         <a href={`tel:${o.phone}`} title="Call" className="flex h-7 w-7 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><IcoPhone /></a>
