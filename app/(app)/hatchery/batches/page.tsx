@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
+import { useData } from "@/components/DataProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
@@ -16,6 +17,7 @@ import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from "@/lib/hatchery/types";
 import { Modal } from "@/components/ui/Modal";
 import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
+import { batchAvailabilityRow, hatchDateOf } from "@/lib/projection";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 
@@ -35,6 +37,7 @@ interface AssignRow { groupKey: string; machineCode: string; eggs: string; sette
 export default function BatchesPage() {
   const { user } = useAuth();
   const { receptions, machines, batches, upsertBatch, upsertReception, upsertMachine, removeBatch, newId } = useHatchery();
+  const { availability, upsertAvailability } = useData();
   const { toast } = useToast();
 
   const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
@@ -207,6 +210,11 @@ export default function BatchesPage() {
     batch = markStep(batch, "reception", user!);
     batch = markStep(batch, "setting", user!);
     upsertBatch(batch);
+    // Auto-open the delivery date (set date + 21 days) with the batch's projected
+    // chicks (80% of eggs set) so sales can order against it right away.
+    const hatchDate = hatchDateOf(date);
+    const availRow = batchAvailabilityRow(hatchDate, [...batches, batch], availability.find((a) => a.id === hatchDate), user!.email, on);
+    if (availRow) void upsertAvailability(availRow);
     // Increment each reception's eggs-set; a reception keeps its remainder (and
     // stays settable) until fully consumed, at which point it's tagged with the batch.
     recUpdates.forEach(({ r, setNow }) => {

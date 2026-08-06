@@ -254,7 +254,7 @@ const NAV: Record<Role, NavItem[]> = {
   ],
 
   // ---- Hatchery roles ----
-  "Hatchery Manager": [...H_ALL, MATERIAL_REQ],
+  "Hatchery Manager": [...H_ALL, { label: "Availability", href: "/availability" }, MATERIAL_REQ],
   // Specialised in machine upkeep — no egg reception, batches/setting,
   // candling, coordination, chick inventory or general inventory.
   "Operations Manager": [
@@ -280,6 +280,7 @@ const NAV: Record<Role, NavItem[]> = {
   // Shift handover is limited to the Hatchery Manager and Production Technician.
   "Production Technician": [
     H_DASH, H_RECEPTION, H_FUMIGATION, H_MACHINES, H_BATCHES, H_CANDLING, H_HATCH, H_HANDOVER,
+    { label: "Availability", href: "/availability" },
   ],
   // Shared tablet account. No side menu — everything is launched from the
   // attendant home hub. No inventory page, but box making shows live stock.

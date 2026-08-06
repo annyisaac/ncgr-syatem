@@ -256,6 +256,7 @@ export interface Batch {
   flockId: string;
   receptionIds: string[]; // combined daily receptions
   eggsSet: number; // total eggs set (sum across flocks)
+  projectedChicks?: number; // expected saleable chicks (default 80% of eggsSet); adjustable by PT / Hatchery Manager / Admin
   flocks?: BatchFlock[]; // per-flock breakdown (multi-flock batches)
   setters: MachineAssignment[]; // CURRENT setter distribution (updated by moves)
   setterMoves?: SetterMove[]; // log of trolley moves between setters

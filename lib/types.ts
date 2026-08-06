@@ -318,6 +318,7 @@ export interface Availability {
   date: string;
   ross: number; // chicks available for Ross 308 that day
   tetra: number; // chicks available for Tetra Super Harco that day
+  fromBatch?: boolean; // auto-published from hatchery batch projections (set date + 21 days)
   by: string;
   on: string;
 }
