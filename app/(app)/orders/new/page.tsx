@@ -152,7 +152,7 @@ export default function NewOrderPage() {
   // chicks are visible to Admin & Zone Managers only.
   const canSeeAvail = user?.role === "Admin" || user?.role === "Tetra Zone Manager";
   const openDates = useMemo(
-    () => availability.slice().filter((a) => a.ross > 0 || a.tetra > 0).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    () => availability.slice().filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0)).sort((a, b) => (a.date < b.date ? -1 : 1)),
     [availability]
   );
   const selAvail = availability.find((a) => a.id === date);

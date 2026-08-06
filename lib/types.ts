@@ -319,6 +319,7 @@ export interface Availability {
   ross: number; // chicks available for Ross 308 that day
   tetra: number; // chicks available for Tetra Super Harco that day
   fromBatch?: boolean; // auto-published from hatchery batch projections (set date + 21 days)
+  closed?: boolean; // date is paused — no longer selectable when placing orders
   by: string;
   on: string;
 }

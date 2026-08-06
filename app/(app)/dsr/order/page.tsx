@@ -40,7 +40,7 @@ export default function DsrOrderPage() {
   const [saving, setSaving] = useState(false);
 
   const openDates = useMemo(
-    () => availability.slice().filter((a) => a.ross > 0 || a.tetra > 0).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    () => availability.slice().filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0)).sort((a, b) => (a.date < b.date ? -1 : 1)),
     [availability]
   );
   const selAvail = availability.find((a) => a.id === date);

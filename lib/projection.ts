@@ -15,6 +15,14 @@ import { todayISO } from "@/lib/format";
 
 export const INCUBATION_DAYS = 21;
 export const DEFAULT_HATCH_RATE = 0.8; // 80% of eggs set are expected to hatch
+// Per-product default hatch rates (Ross and Tetra don't hatch identically).
+// Edit here to change the projection default; a batch's own adjusted number wins.
+export const ROSS_HATCH_RATE = 0.8;
+export const TETRA_HATCH_RATE = 0.8;
+
+export function hatchRateFor(product: Product): number {
+  return product === "Ross 308" ? ROSS_HATCH_RATE : TETRA_HATCH_RATE;
+}
 
 /** The delivery date a batch's chicks become available: set date + 21 days. */
 export function hatchDateOf(setDate: string): string {
@@ -23,10 +31,46 @@ export function hatchDateOf(setDate: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-/** Projected saleable chicks for a batch — 80% of eggs set, unless adjusted. */
-export function projectedChicksOf(b: Pick<Batch, "eggsSet" | "projectedChicks">): number {
+/** Whole days from `from` (default today) until `dateISO` — negative once past. */
+export function daysUntil(dateISO: string, from: string = todayISO()): number {
+  const a = new Date(dateISO + "T00:00:00").getTime();
+  const b = new Date(from + "T00:00:00").getTime();
+  return Math.round((a - b) / 86_400_000);
+}
+
+/** Projected saleable chicks for a batch — product hatch rate of eggs set, unless adjusted. */
+export function projectedChicksOf(b: Pick<Batch, "eggsSet" | "projectedChicks" | "productType">): number {
   if (b.projectedChicks != null) return Math.max(0, Math.round(b.projectedChicks));
-  return Math.round((b.eggsSet || 0) * DEFAULT_HATCH_RATE);
+  return Math.round((b.eggsSet || 0) * hatchRateFor(b.productType));
+}
+
+/** Actual saleable chicks once a batch has hatched (0 before hatch). */
+export function actualChicksOf(
+  b: Pick<Batch, "saleableCount" | "countedTotal" | "hatchedCount" | "culls">
+): number {
+  if (b.saleableCount && b.saleableCount > 0) return b.saleableCount;
+  if (b.countedTotal && b.countedTotal > 0) return b.countedTotal;
+  return Math.max(0, (b.hatchedCount || 0) - (b.culls || 0));
+}
+
+export interface HatchAccuracy {
+  batch: Batch;
+  hatchDate: string;
+  projected: number;
+  actual: number;
+}
+
+/** Hatched batches (actual chicks known), newest hatch first — for projection accuracy. */
+export function hatchedBatches(batches: Batch[]): HatchAccuracy[] {
+  return batches
+    .filter((b) => b.setDate && actualChicksOf(b) > 0)
+    .map((b) => ({
+      batch: b,
+      hatchDate: hatchDateOf(b.setDate!),
+      projected: projectedChicksOf(b),
+      actual: actualChicksOf(b),
+    }))
+    .sort((a, b) => (a.hatchDate < b.hatchDate ? 1 : a.hatchDate > b.hatchDate ? -1 : 0));
 }
 
 export interface BatchProjection {
@@ -83,5 +127,5 @@ export function batchAvailabilityRow(
 ): Availability | null {
   const v = availabilityFromBatches(batches).get(date);
   if (!v || (v.ross <= 0 && v.tetra <= 0)) return null;
-  return { id: date, date, ross: v.ross, tetra: v.tetra, fromBatch: true, by: prev?.by ?? by, on };
+  return { id: date, date, ross: v.ross, tetra: v.tetra, fromBatch: true, closed: prev?.closed, by: prev?.by ?? by, on };
 }
