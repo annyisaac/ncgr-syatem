@@ -336,10 +336,12 @@ export async function manifestPDF(
   route: Pick<Route, "name" | "driver" | "vehicle">,
   dateLabel: string,
   orders: Order[],
-  dsrs: DSR[] = []
+  dsrs: DSR[] = [],
+  productLabel?: string
 ): Promise<void> {
   const { doc, autoTable, startY, logo } = await brandedDoc("Delivery Manifest", [
     `Route: ${route.name}`,
+    ...(productLabel ? [`Product: ${productLabel}`] : []),
     `Driver: ${route.driver}`,
     ...(route.vehicle ? [`Vehicle: ${route.vehicle}`] : []),
     `Date: ${dateLabel}`,
@@ -389,7 +391,8 @@ export async function manifestPDF(
   });
 
   addSignatures(doc);
-  finalizeAndSave(doc, logo, `NCGR-Manifest-${route.name.replace(/\s+/g, "_")}-${dateLabel.replace(/\s+/g, "_")}.pdf`);
+  const productSuffix = productLabel ? `-${productLabel.replace(/\s+/g, "_")}` : "";
+  finalizeAndSave(doc, logo, `NCGR-Manifest-${route.name.replace(/\s+/g, "_")}${productSuffix}-${dateLabel.replace(/\s+/g, "_")}.pdf`);
 }
 
 // ---------------------------------------------------------------------------

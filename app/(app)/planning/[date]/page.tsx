@@ -23,7 +23,7 @@ import { nowISO, formatDate } from "@/lib/format";
 import { canAllocate, fulfillOrder, rescheduleOrder, splitOrder, withHistory } from "@/lib/orders";
 import { deliveryPaymentPDF, manifestPDF } from "@/lib/reports";
 import { listDrivers, listVehicles, type Driver, type Vehicle } from "@/lib/logistics";
-import { allVerified, balance, paidAmount, toDeliver, type Order, type Route } from "@/lib/types";
+import { allVerified, balance, paidAmount, toDeliver, type Order, type Product, type Route } from "@/lib/types";
 
 const CAN_EDIT = ["Admin", "Tetra Zone Manager", "Ross Order Receiver", "Tetra Payment Checker", "Ross Payment Checker"];
 const deliverChicks = (o: Order) => o.deliveryChicks ?? toDeliver(o);
@@ -96,6 +96,7 @@ export default function DayPlanPage() {
   const [splitFor, setSplitFor] = useState<Order | null>(null);
   const [qrFor, setQrFor] = useState<{ url: string; driver: string } | null>(null);
   const [q, setQ] = useState("");
+  const [productFilter, setProductFilter] = useState<"all" | Product>("all");
   const [editRoute, setEditRoute] = useState<Route | null>(null);
   const [proofView, setProofView] = useState<{ order: Order; proof: DeliveryProof | null; loading: boolean } | null>(null);
   const [driverLinks, setDriverLinks] = useState<Record<string, string>>({});
@@ -128,14 +129,18 @@ export default function DayPlanPage() {
   const role = user?.role;
   const canEdit = !!role && CAN_EDIT.includes(role);
   const scoped = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
+  // Product picker only helps roles that see more than one product (Admin, etc.).
+  const showProductFilter = useMemo(() => new Set(scoped.map((o) => o.product)).size > 1, [scoped]);
+  const activeProduct = showProductFilter ? productFilter : "all";
 
   const dayOrders = useMemo(() => {
     const term = q.trim();
     return scoped
       .filter((o) => o.date === activeDate && o.confirmedOk && isActive(o))
+      .filter((o) => activeProduct === "all" || o.product === activeProduct)
       .filter((o) => !term || smartMatch(term, o.name, o.phone, custDistrict(o), custSector(o)))
       .sort((a, b) => a.plan - b.plan);
-  }, [scoped, activeDate, q]);
+  }, [scoped, activeDate, q, activeProduct]);
   // Routes shown for this day: this date's routes, undated legacy routes, and any
   // route that actually carries one of this day's orders — so an allocated order
   // always appears under its route and never vanishes from the plan.
@@ -451,13 +456,27 @@ export default function DayPlanPage() {
         {dayRoutes.length === 0 && <p className="text-sm text-muted">No routes for this day yet.{canEdit ? " Add one above." : ""}</p>}
       </Card>
 
-      {/* Search (sticks below the app top bar so it stays reachable) */}
-      <div className="sticky top-16 z-20 -mx-4 border-b border-line bg-cream/90 px-4 py-2.5 backdrop-blur md:-mx-8 md:px-8">
-        <div className="relative max-w-md">
+      {/* Search + product filter (sticks below the app top bar so it stays reachable) */}
+      <div className="sticky top-16 z-20 -mx-4 flex flex-wrap items-center gap-3 border-b border-line bg-cream/90 px-4 py-2.5 backdrop-blur md:-mx-8 md:px-8">
+        <div className="relative max-w-md grow">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
           <Input className="pl-9" placeholder="Search customer, phone, district…" value={q} onChange={(e) => setQ(e.target.value)} />
           {q && <button type="button" onClick={() => setQ("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-semibold text-muted hover:text-ink">Clear</button>}
         </div>
+        {showProductFilter && (
+          <div className="inline-flex rounded-lg border border-line bg-paper p-0.5 text-sm">
+            {([["all", "All"], ["Ross 308", "Ross"], ["Tetra Super Harco", "Tetra"]] as const).map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                onClick={() => setProductFilter(val)}
+                className={cn("rounded-md px-3 py-1 font-semibold transition", productFilter === val ? "bg-gold text-ink shadow-sm" : "text-muted hover:text-ink")}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* Ready to allocate */}
@@ -529,7 +548,7 @@ export default function DayPlanPage() {
                 </div>
               </div>
               <div className="flex flex-wrap gap-2">
-                <Button variant="secondary" size="sm" onClick={() => void manifestPDF(route, dateLabel, list, dsrs)} disabled={list.length === 0}>Manifest (PDF)</Button>
+                <Button variant="secondary" size="sm" onClick={() => void manifestPDF(route, dateLabel, list, dsrs, activeProduct === "all" ? undefined : activeProduct)} disabled={list.length === 0}>Manifest (PDF)</Button>
                 <Button variant="ghost" size="sm" onClick={() => downloadCsv(route, dateLabel, list)} disabled={list.length === 0}>CSV</Button>
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => makeDriverLink(route)}>Driver link</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => void showQr(route)}>QR</Button>}
