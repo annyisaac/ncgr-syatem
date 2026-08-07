@@ -5,7 +5,8 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
@@ -177,25 +178,18 @@ export default function ReceptionPage() {
         </div>
         <div className="flex flex-wrap gap-2">
           {canManageFarms && (
-            <Button variant="secondary" onClick={() => { setShowFarms((v) => !v); setShow(false); }}>
-              {showFarms ? "Hide farms & flocks" : "Manage farms & flocks"}
-            </Button>
+            <Button variant="secondary" onClick={() => { setShow(false); setShowFarms(true); }}>Manage farms & flocks</Button>
           )}
-          {canAdd && <Button onClick={() => (show && !editing ? cancelForm() : openNew())}>＋ New Reception</Button>}
+          {canAdd && <Button onClick={openNew}>＋ New Reception</Button>}
         </div>
       </div>
 
-      {showFarms && canManageFarms && (
-        <Card>
-          <CardHeader title="Farms & flocks" />
-          <FarmsManager />
-        </Card>
-      )}
+      <Modal open={showFarms && canManageFarms} onClose={() => setShowFarms(false)} title="Farms & flocks" className="max-w-4xl">
+        <FarmsManager />
+      </Modal>
 
-      {show && canAdd && (
-        <Card>
-          <CardHeader title={editing ? "Edit reception" : "Receive eggs from farm"} />
-          <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <Modal open={show && canAdd} onClose={cancelForm} title={editing ? "Edit reception" : "Receive eggs from farm"} className="max-w-3xl">
+        <form onSubmit={submit} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <Field label="Farm · Flock (product)">
               {editing ? (
                 <div className="rounded-[9px] border border-line bg-grey-bg px-3.5 py-2.5 text-[0.9rem] text-ink">{editing.farm} · {editing.flockId} · {editing.productType}</div>
@@ -220,9 +214,8 @@ export default function ReceptionPage() {
               <Button variant="ghost" onClick={cancelForm}>Cancel</Button>
               <Button type="submit">{editing ? "Update reception" : "Save reception"}</Button>
             </div>
-          </form>
-        </Card>
-      )}
+        </form>
+      </Modal>
 
       {/* Summary */}
       <Card>
