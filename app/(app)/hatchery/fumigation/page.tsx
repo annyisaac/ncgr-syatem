@@ -16,7 +16,7 @@ import type { Fumigation, Reception, TrolleyRow } from "@/lib/hatchery/types";
 import { settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_ADD = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
-const HG = "bg-green px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-white whitespace-nowrap";
+const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 export default function FumigationPage() {
   const { user } = useAuth();

@@ -18,7 +18,7 @@ import type { Reception } from "@/lib/hatchery/types";
 import { settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
 
 const CAN_LOG = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Hatchery Attendant"];
-const HG = "bg-green px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-white whitespace-nowrap";
+const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 const TREND = [{ value: "7", label: "Last 7 Days" }, { value: "14", label: "Last 14 Days" }, { value: "30", label: "Last 30 Days" }];
 
