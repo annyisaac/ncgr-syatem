@@ -56,9 +56,14 @@ export default function HatcheryDashboard() {
 
   const role = user.role;
   const filter: DashFilter = { q, range };
+  // The manager/admin overview is self-contained — no greeting header there.
+  const SPECIAL_VIEWS = ["Hatchery Veterinary", "Maintenance Technician", "Hatchery Sales & Coordination Officer", "Production Technician", "Hatchery Operations Manager"];
+  const isManagerDash = !SPECIAL_VIEWS.includes(role);
   return (
     <div className="space-y-5">
-      <GreetingHeader name={user.name} subtitle={HATCHERY_SUBTITLE[role] ?? "here's the hatchery today"} right={<Pill tone="gold">{role}</Pill>} />
+      {!isManagerDash && (
+        <GreetingHeader name={user.name} subtitle={HATCHERY_SUBTITLE[role] ?? "here's the hatchery today"} right={<Pill tone="gold">{role}</Pill>} />
+      )}
 
       <SearchTimeBar q={q} setQ={setQ} placeholder="Search this dashboard…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
 
@@ -386,7 +391,7 @@ function BatchOverviewCard({ batches, filter }: { batches: Batch[]; filter: Dash
             <EmptyRow colSpan={7} text="No batches yet." />
           ) : rows.map((b) => (
             <tr key={b.id}>
-              <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+              <Td className="whitespace-nowrap"><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
               <Td>{b.productType}</Td>
               <Td><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: dot(b.currentStep) }} />{stepLabel(b.currentStep)}</span></Td>
               <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>

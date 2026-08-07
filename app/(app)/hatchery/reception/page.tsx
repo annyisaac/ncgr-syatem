@@ -10,10 +10,11 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Td, EmptyRow } from "@/components/ui/Table";
-import { DateRange, ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
+import { ALL_TIME, inRange } from "@/components/ui/DateRange";
 
 import { FarmsManager } from "@/components/hatchery/FarmsManager";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
+import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
 import { PRODUCTS } from "@/lib/types";
 import type { Reception, ReceptionLocation } from "@/lib/hatchery/types";
 import { settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
@@ -45,8 +46,9 @@ export default function ReceptionPage() {
   const [farmF, setFarmF] = useState("all");
   const [productF, setProductF] = useState("all");
   const [batchF, setBatchF] = useState("all");
-  const [range, setRange] = useState<DateRangeValue>(ALL_TIME);
+  const [preset, setPreset] = useState<PeriodPreset>("all");
   const [page, setPage] = useState(1);
+  const range = presetToRange(preset, ALL_TIME, todayISO());
   const [perPage, setPerPage] = useState(10);
 
   const canAdd = !!user && CAN_ADD.includes(user.role);
@@ -238,15 +240,15 @@ export default function ReceptionPage() {
       </Card>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative min-w-[220px] flex-1">
+      <div className="flex flex-wrap items-center gap-2.5">
+        <div className="relative min-w-[200px] flex-1">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
           <Input className="pl-9" placeholder="Search by farm, flock, batch or product…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
         </div>
-        <DateRange label="Date range" value={range} onChange={(v) => { setRange(v); setPage(1); }} />
-        <Select className="w-auto" value={farmF} onChange={(e) => { setFarmF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Farms" }, ...farmOptions.map((n) => ({ value: n, label: n }))]} />
-        <Select className="w-auto" value={productF} onChange={(e) => { setProductF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Products" }, ...PRODUCTS.map((p) => ({ value: p, label: p }))]} />
-        <Select className="w-auto" value={batchF} onChange={(e) => { setBatchF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Batches" }, ...batchOptions.map((b) => ({ value: b, label: b }))]} />
+        <div className="w-36"><Select value={preset} onChange={(e) => { setPreset(e.target.value as PeriodPreset); setPage(1); }} options={PERIODS.filter((p) => p.value !== "custom").map((p) => ({ value: p.value, label: p.label }))} /></div>
+        <div className="w-40"><Select value={farmF} onChange={(e) => { setFarmF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Farms" }, ...farmOptions.map((n) => ({ value: n, label: n }))]} /></div>
+        <div className="w-40"><Select value={productF} onChange={(e) => { setProductF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Products" }, ...PRODUCTS.map((p) => ({ value: p, label: p }))]} /></div>
+        <div className="w-40"><Select value={batchF} onChange={(e) => { setBatchF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Batches" }, ...batchOptions.map((b) => ({ value: b, label: b }))]} /></div>
         <Button variant="secondary" size="sm" onClick={exportCsv}>⭳ Export</Button>
       </div>
 
@@ -304,7 +306,7 @@ export default function ReceptionPage() {
                     <Pill tone="neutral">Pending</Pill>
                   )}
                 </Td>
-                <Td>{r.batchId ? <Pill tone="gold">{batchNo(r.batchId)}</Pill> : <span className="text-muted">—</span>}</Td>
+                <Td className="whitespace-nowrap">{r.batchId ? <Pill tone="gold" className="whitespace-nowrap">{batchNo(r.batchId)}</Pill> : <span className="text-muted">—</span>}</Td>
                 {canEdit && (
                   <Td className="text-right">
                     <div className="flex flex-wrap justify-end gap-1">
@@ -330,7 +332,7 @@ export default function ReceptionPage() {
               <Button size="sm" variant="ghost" disabled={curPage >= pageCount} onClick={() => setPage(curPage + 1)}>›</Button>
             </div>
             <label className="flex items-center gap-2">Rows per page:
-              <Select className="w-auto" value={String(perPage)} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }} options={[10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))} />
+              <span className="w-20"><Select value={String(perPage)} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }} options={[10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))} /></span>
             </label>
           </div>
         </div>
