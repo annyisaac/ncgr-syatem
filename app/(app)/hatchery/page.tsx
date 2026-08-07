@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -14,7 +14,7 @@ import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRang
 import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatDate, formatDateTime, todayISO } from "@/lib/format";
 import { formatRWF } from "@/lib/config";
-import { computeKpis, stepLabel, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
+import { computeKpis, hatchabilityPct, stepLabel, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
 import { visibleOrders } from "@/lib/permissions";
 import { PRODUCTS, isFullyPaid, type Order, type User } from "@/lib/types";
 import type { Batch } from "@/lib/hatchery/types";
@@ -159,10 +159,35 @@ const ordersToDeliver = (orders: Order[], user: User) =>
 // ---------------------------------------------------------------------------
 
 function ManagerView({ user, filter }: { user: User; filter: DashFilter }) {
-  const { batches, inventory, maintenance, allocations, dispatches, supplies, spareParts, spareRequests, machines } = useHatchery();
-  const activeMachines = machines.filter((m) => m.active).length;
+  const { batches, inventory, maintenance, allocations, dispatches, supplies, spareParts, spareRequests, machines, receptions } = useHatchery();
   const { orders } = useData();
+  const today = todayISO();
+
   const kpis = useMemo(() => computeKpis(batches, inventory), [batches, inventory]);
+
+  // Rolling 7-day windows for week-over-week trends.
+  const thisFrom = addDaysISO(today, -6);
+  const prevFrom = addDaysISO(today, -13);
+  const prevTo = addDaysISO(today, -7);
+  const setDateOf = (b: Batch) => b.setDate ?? b.createdAt.slice(0, 10);
+  const stepDay = (b: Batch, key: string) => b.steps[key]?.on?.slice(0, 10);
+  const inWin = (d: string | undefined, from: string, to: string) => !!d && d >= from && d <= to;
+
+  const eggsThis = sum(batches.filter((b) => inWin(setDateOf(b), thisFrom, today)).map((b) => b.eggsSet || 0));
+  const eggsPrev = sum(batches.filter((b) => inWin(setDateOf(b), prevFrom, prevTo)).map((b) => b.eggsSet || 0));
+  const hatchThis = sum(batches.filter((b) => inWin(stepDay(b, "hatching"), thisFrom, today)).map((b) => b.hatchedCount || 0));
+  const hatchPrev = sum(batches.filter((b) => inWin(stepDay(b, "hatching"), prevFrom, prevTo)).map((b) => b.hatchedCount || 0));
+  const hbThis = avg(batches.filter((b) => b.hatchedCount > 0 && inWin(stepDay(b, "hatching"), thisFrom, today)).map(hatchabilityPct));
+  const hbPrev = avg(batches.filter((b) => b.hatchedCount > 0 && inWin(stepDay(b, "hatching"), prevFrom, prevTo)).map(hatchabilityPct));
+  const trends = {
+    setToday: batches.filter((b) => setDateOf(b) === today).length,
+    eggs: pctTrend(eggsThis, eggsPrev),
+    hatched: pctTrend(hatchThis, hatchPrev),
+    hatchability: ppTrend(hbThis, hbPrev),
+    producedWeek: sum(batches.filter((b) => inWin(stepDay(b, "counting"), thisFrom, today)).map((b) => b.saleableCount || 0)),
+  };
+
+  const activeMachines = machines.filter((m) => m.active).length;
   const downtime = maintenance.reduce((s, m) => s + (m.downtimeHours ?? 0), 0);
   const pendingAlloc = allocations.filter((a) => a.status === "proposed" || a.status === "finalized").length;
   const inTransit = dispatches.filter((d) => !d.deliveredAt).length;
@@ -171,29 +196,306 @@ function ManagerView({ user, filter }: { user: User; filter: DashFilter }) {
   const lowStock = supplies.filter((s) => s.quantity <= 0).length + spareParts.filter((p) => p.quantity <= 0).length;
   const pendingParts = spareRequests.filter((r) => r.status === "pending").length;
 
+  const perf = useMemo(() => computePerformance(batches), [batches]);
+  const series = useMemo(() => performanceSeries(batches), [batches]);
+
+  const eggsToday = sum(receptions.filter((r) => r.date === today).map((r) => r.eggsReceived || 0));
+  const hatchedToday = sum(batches.filter((b) => stepDay(b, "hatching") === today).map((b) => b.hatchedCount || 0));
+  const saleableToday = sum(batches.filter((b) => stepDay(b, "vaccination") === today).map((b) => b.saleableCount || 0));
+  const deliveredToday = sum(orders.filter((o) => o.deliverOk && o.date === today).map((o) => o.chicks || 0));
+
   return (
     <>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5">
-        <StatTile label="Active batches" value={String(kpis.activeBatches)} />
-        <StatTile label="Eggs set" value={kpis.eggsSet.toLocaleString()} />
-        <StatTile label="Chicks hatched" value={kpis.chicksHatched.toLocaleString()} tone="green" />
-        <StatTile label="Hatchability" value={`${kpis.hatchability.toFixed(0)}%`} tone="gold" />
-        <StatTile label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} tone="green" />
+      {/* Headline KPIs */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <BigStat icon={<IcoTray />} tone="green" label="Active batches" value={kpis.activeBatches.toLocaleString()} trend={trends.setToday > 0 ? { dir: "up", text: `${trends.setToday} set today` } : undefined} />
+        <BigStat icon={<IcoEgg />} tone="gold" label="Eggs set" value={kpis.eggsSet.toLocaleString()} trend={trends.eggs} />
+        <BigStat icon={<IcoChick />} tone="green" label="Chicks hatched" value={kpis.chicksHatched.toLocaleString()} trend={trends.hatched} />
+        <BigStat icon={<IcoPercent />} tone="gold" label="Hatchability" value={`${kpis.hatchability.toFixed(0)}%`} trend={trends.hatchability} />
+        <BigStat icon={<IcoChick />} tone="green" label="Available chicks" value={kpis.saleableAvailable.toLocaleString()} trend={trends.producedWeek > 0 ? { dir: "up", text: `${trends.producedWeek.toLocaleString()} this week` } : undefined} />
       </div>
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-        <StatTile label="Chicks to deliver" value={demand.toLocaleString()} tone={demand ? "gold" : "default"} />
-        <StatTile label="Orders awaiting" value={String(toDeliver.length)} />
-        <StatTile label="Pending allocations" value={String(pendingAlloc)} tone={pendingAlloc ? "gold" : "default"} />
-        <StatTile label="In transit" value={String(inTransit)} />
-        <StatTile label="Downtime (h)" value={downtime.toFixed(1)} tone={downtime > 0 ? "red" : "default"} />
-        <StatTile label="Low / pending parts" value={`${lowStock} / ${pendingParts}`} tone={lowStock || pendingParts ? "gold" : "default"} />
-        <StatTile label="Active machines" value={String(activeMachines)} />
+
+      {/* Operational tiles */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+        <MiniStat icon={<IcoTruck />} tone={demand ? "gold" : "default"} label="Chicks to deliver" value={demand.toLocaleString()} sub="Scheduled" />
+        <MiniStat icon={<IcoClipboard />} label="Orders awaiting" value={String(toDeliver.length)} sub="To be confirmed" />
+        <MiniStat icon={<IcoUsers />} tone={pendingAlloc ? "gold" : "default"} label="Pending allocations" value={String(pendingAlloc)} sub="Needs attention" />
+        <MiniStat icon={<IcoTruck />} label="In transit" value={String(inTransit)} sub="On the way" />
+        <MiniStat icon={<IcoClock />} tone={downtime > 0 ? "red" : "default"} label="Downtime (h)" value={downtime.toFixed(1)} sub="Today" />
+        <MiniStat icon={<IcoWrench />} tone={lowStock || pendingParts ? "gold" : "default"} label="Low / pending parts" value={`${lowStock} / ${pendingParts}`} sub="Low / Pending" />
+        <MiniStat icon={<IcoGear />} label="Active machines" value={String(activeMachines)} sub="Online" />
       </div>
+
+      {/* Batch overview + performance */}
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+        <BatchOverviewCard batches={batches} filter={filter} />
+        <PerformanceCard perf={perf} series={series} />
+      </div>
+
+      {/* Today */}
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <MiniStat icon={<IcoEgg />} label="Eggs today" value={eggsToday.toLocaleString()} sub="Total received" />
+        <MiniStat icon={<IcoChick />} tone="green" label="Chicks hatched today" value={hatchedToday.toLocaleString()} sub="Including culls" />
+        <MiniStat icon={<IcoShield />} tone="green" label="Saleable chicks today" value={saleableToday.toLocaleString()} sub="Vaccinated" />
+        <MiniStat icon={<IcoTruck />} label="Orders delivered today" value={deliveredToday.toLocaleString()} sub="Chicks" />
+        <MiniStat icon={<IcoShield />} tone="green" label="Vaccination rate" value={`${perf.vaccinationRate.toFixed(1)}%`} sub="Overall" />
+      </div>
+
       <OverTempCard />
-      <BatchesCard batches={batches} filter={filter} />
     </>
   );
 }
+
+// ---- Manager dashboard building blocks ------------------------------------
+
+const num = (n: number) => (Number.isFinite(n) ? n : 0);
+function sum(nums: number[]): number { return nums.reduce((s, n) => s + num(n), 0); }
+function avg(nums: number[]): number { return nums.length ? sum(nums) / nums.length : 0; }
+function stageRemoved(b: Batch, stage: 1 | 2): number {
+  return (b.candlings ?? []).filter((c) => c.stage === stage).reduce((s, c) => s + (c.totalRemoved || 0), 0);
+}
+
+interface Trend { dir: "up" | "down"; text: string }
+function pctTrend(cur: number, prev: number): Trend | undefined {
+  if (prev <= 0) return undefined;
+  const pct = Math.round(((cur - prev) / prev) * 100);
+  if (pct === 0) return undefined;
+  return { dir: pct > 0 ? "up" : "down", text: `${Math.abs(pct)}% this week` };
+}
+function ppTrend(cur: number, prev: number): Trend | undefined {
+  const d = Math.round(cur - prev);
+  if (!d) return undefined;
+  return { dir: d > 0 ? "up" : "down", text: `${Math.abs(d)} pts vs last week` };
+}
+
+interface Performance { fertility: number; hatchability: number; quality: number; mortality: number; vaccinationRate: number }
+function computePerformance(batches: Batch[]): Performance {
+  const candled = batches.filter((b) => (b.eggsSet || 0) > 0 && (b.candlings?.length || b.hatchedCount > 0));
+  const setEggs = sum(candled.map((b) => b.eggsSet || 0));
+  const infertile = sum(candled.map((b) => stageRemoved(b, 1)));
+  const hatchedB = batches.filter((b) => b.hatchedCount > 0);
+  const fertileHatched = sum(hatchedB.map((b) => Math.max(1, (b.eggsSet || 0) - stageRemoved(b, 1))));
+  const hatched = sum(hatchedB.map((b) => b.hatchedCount || 0));
+  const saleable = sum(hatchedB.map((b) => b.saleableCount || 0));
+  const deadInShell = sum(hatchedB.map((b) => stageRemoved(b, 2)));
+  const counted = batches.filter((b) => b.steps["counting"]);
+  const countedSale = sum(counted.map((b) => b.saleableCount || 0));
+  const vaxSale = sum(counted.filter((b) => b.vaccinated).map((b) => b.saleableCount || 0));
+  return {
+    fertility: setEggs > 0 ? ((setEggs - infertile) / setEggs) * 100 : 0,
+    hatchability: fertileHatched > 0 ? (hatched / fertileHatched) * 100 : 0,
+    quality: hatched > 0 ? (saleable / hatched) * 100 : 0,
+    mortality: fertileHatched > 0 ? (deadInShell / fertileHatched) * 100 : 0,
+    vaccinationRate: countedSale > 0 ? (vaxSale / countedSale) * 100 : 0,
+  };
+}
+
+interface SeriesPoint { label: string; fertility: number; hatchability: number; quality: number; mortality: number }
+function performanceSeries(batches: Batch[]): SeriesPoint[] {
+  return batches
+    .filter((b) => b.hatchedCount > 0 && b.steps["hatching"])
+    .sort((a, b) => (a.steps["hatching"]!.on < b.steps["hatching"]!.on ? -1 : 1))
+    .slice(-8)
+    .map((b) => {
+      const set = b.eggsSet || 0;
+      const fertile = Math.max(1, set - stageRemoved(b, 1));
+      return {
+        label: formatDate(b.steps["hatching"]!.on.slice(0, 10)),
+        fertility: set > 0 ? ((set - stageRemoved(b, 1)) / set) * 100 : 0,
+        hatchability: (b.hatchedCount / fertile) * 100,
+        quality: b.hatchedCount > 0 ? ((b.saleableCount || 0) / b.hatchedCount) * 100 : 0,
+        mortality: (stageRemoved(b, 2) / fertile) * 100,
+      };
+    });
+}
+
+type StatTone = "green" | "gold" | "red" | "blue" | "default";
+const CHIP: Record<StatTone, string> = {
+  green: "bg-green-bg text-green",
+  gold: "bg-gold-bg text-gold-dark",
+  red: "bg-red-bg text-red",
+  blue: "bg-blue-bg text-blue",
+  default: "bg-grey-bg text-ink",
+};
+
+function BigStat({ icon, tone = "default", label, value, trend }: { icon: ReactNode; tone?: StatTone; label: string; value: string; trend?: Trend }) {
+  return (
+    <div className="rounded-2xl border border-line bg-paper p-4 shadow-card">
+      <div className="flex items-start gap-3">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${CHIP[tone]}`}>{icon}</span>
+        <div className="min-w-0">
+          <p className="text-[0.6rem] font-bold uppercase tracking-[0.09em] text-muted">{label}</p>
+          <p className="mt-0.5 truncate text-[1.55rem] font-extrabold leading-none tracking-tight text-ink tabular-nums">{value}</p>
+          {trend && (
+            <p className={`mt-1 flex items-center gap-1 text-[0.7rem] font-semibold ${trend.dir === "up" ? "text-green" : "text-red"}`}>
+              <span aria-hidden>{trend.dir === "up" ? "↗" : "↘"}</span>{trend.text}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function MiniStat({ icon, tone = "default", label, value, sub }: { icon: ReactNode; tone?: StatTone; label: string; value: string; sub?: string }) {
+  const valueColor = tone === "green" ? "text-green" : tone === "gold" ? "text-gold-dark" : tone === "red" ? "text-red" : "text-ink";
+  return (
+    <div className="rounded-xl border border-line bg-paper p-3 shadow-card">
+      <div className="flex items-center gap-2.5">
+        <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${CHIP[tone]}`}>{icon}</span>
+        <div className="min-w-0">
+          <p className="text-[0.56rem] font-bold uppercase tracking-[0.08em] text-muted">{label}</p>
+          <p className={`truncate text-[1.15rem] font-bold leading-tight tabular-nums ${valueColor}`}>{value}</p>
+          {sub && <p className="truncate text-[0.62rem] text-muted">{sub}</p>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Step colours for the batch overview (matches the pipeline legend).
+const STEP_COLOR: Record<string, string> = {
+  setting: "#3b82f6", "candling-1": "#e0a92e", "candling-2": "#7c3aed", hatching: "#e8843a", counting: "#3f9142",
+};
+const STEP_LEGEND = [
+  { key: "setting", label: "Setting" },
+  { key: "candling-1", label: "Candling I" },
+  { key: "candling-2", label: "Candling II" },
+  { key: "hatching", label: "Hatching" },
+  { key: "counting", label: "Counting & boxing" },
+];
+
+function BatchOverviewCard({ batches, filter }: { batches: Batch[]; filter: DashFilter }) {
+  const rows = batches
+    .filter((b) => matches(filter.q, b.batchNo, b.productType, stepLabel(b.currentStep)) && inFilterRange(b.createdAt, filter.range))
+    .slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 7);
+  const dot = (step: string) => STEP_COLOR[step] ?? "#9aa0a6";
+  return (
+    <Card>
+      <SectionTitle label="Batch overview" action={<Link href="/hatchery/batches" className="text-xs font-semibold text-gold-dark">View all batches →</Link>} />
+      <TableWrap>
+        <thead>
+          <tr>
+            <Th>Batch</Th><Th>Product</Th><Th>Step</Th>
+            <Th className="text-right">Eggs set</Th><Th className="text-right">Hatched</Th>
+            <Th className="text-right">Saleable</Th><Th>Status</Th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <EmptyRow colSpan={7} text="No batches yet." />
+          ) : rows.map((b) => (
+            <tr key={b.id}>
+              <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+              <Td>{b.productType}</Td>
+              <Td><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: dot(b.currentStep) }} />{stepLabel(b.currentStep)}</span></Td>
+              <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
+              <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>
+              <Td className="text-right">{b.saleableCount.toLocaleString()}</Td>
+              <Td><Pill tone={b.status === "delivered" ? "fulfilled" : b.status === "dispatched" ? "gold" : b.status === "inactive" ? "neutral" : "green"}>{b.status}</Pill></Td>
+            </tr>
+          ))}
+        </tbody>
+      </TableWrap>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {STEP_LEGEND.map((s) => (
+          <span key={s.key} className="inline-flex items-center gap-1.5 text-[0.68rem] text-muted">
+            <span className="h-2 w-2 rounded-full" style={{ background: STEP_COLOR[s.key] }} />{s.label}
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+const PERF_SERIES = [
+  { key: "fertility" as const, label: "Fertility", color: "#3f9142" },
+  { key: "hatchability" as const, label: "Hatchability", color: "#e0a92e" },
+  { key: "quality" as const, label: "Chick Quality", color: "#3b82f6" },
+  { key: "mortality" as const, label: "Mortality (In-shell)", color: "#d9534f" },
+];
+
+function PerformanceCard({ perf, series }: { perf: Performance; series: SeriesPoint[] }) {
+  return (
+    <Card>
+      <SectionTitle label="Hatchery performance" action={<span className="text-xs font-semibold text-muted">Recent batches</span>} />
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <PerfTile label="Fertility" value={perf.fertility} tone="green" />
+        <PerfTile label="Hatchability" value={perf.hatchability} tone="green" />
+        <PerfTile label="Chick Quality" value={perf.quality} tone="green" />
+        <PerfTile label="Mortality (In-shell)" value={perf.mortality} tone="red" />
+      </div>
+      <div className="mt-4">
+        <PerfChart series={series} />
+      </div>
+      <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1.5">
+        {PERF_SERIES.map((s) => (
+          <span key={s.key} className="inline-flex items-center gap-1.5 text-[0.68rem] text-muted">
+            <span className="h-2 w-2 rounded-full" style={{ background: s.color }} />{s.label}
+          </span>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+function PerfTile({ label, value, tone }: { label: string; value: number; tone: "green" | "red" }) {
+  return (
+    <div className="rounded-xl border border-line bg-cream/40 px-3 py-2.5 text-center">
+      <p className={`text-[1.3rem] font-extrabold leading-none tabular-nums ${tone === "red" ? "text-red" : "text-green"}`}>{value.toFixed(1)}%</p>
+      <p className="mt-1 text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+    </div>
+  );
+}
+
+function PerfChart({ series }: { series: SeriesPoint[] }) {
+  const W = 460, H = 180, padL = 28, padB = 24, padT = 8, padR = 8;
+  if (series.length < 2) {
+    return <div className="flex h-40 items-center justify-center rounded-xl border border-dashed border-line text-sm text-muted">Not enough hatched batches yet for a trend.</div>;
+  }
+  const iw = W - padL - padR, ih = H - padT - padB;
+  const x = (i: number) => padL + (series.length === 1 ? iw / 2 : (i / (series.length - 1)) * iw);
+  const y = (v: number) => padT + ih - (Math.max(0, Math.min(100, v)) / 100) * ih;
+  const path = (key: keyof SeriesPoint) =>
+    series.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p[key] as number).toFixed(1)}`).join(" ");
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height={H} role="img" aria-label="Hatchery performance trend">
+        {[0, 25, 50, 75, 100].map((g) => (
+          <g key={g}>
+            <line x1={padL} y1={y(g)} x2={W - padR} y2={y(g)} stroke="#ece7db" strokeWidth={1} />
+            <text x={padL - 5} y={y(g) + 3} textAnchor="end" fontSize="8" className="fill-muted">{g}</text>
+          </g>
+        ))}
+        {series.map((p, i) => (
+          <text key={i} x={x(i)} y={H - 8} textAnchor="middle" fontSize="8" className="fill-muted">{p.label}</text>
+        ))}
+        {PERF_SERIES.map((s) => (
+          <g key={s.key}>
+            <path d={path(s.key)} fill="none" stroke={s.color} strokeWidth={1.8} strokeLinejoin="round" strokeLinecap="round" />
+            {series.map((p, i) => <circle key={i} cx={x(i)} cy={y(p[s.key] as number)} r={2.2} fill={s.color} />)}
+          </g>
+        ))}
+      </svg>
+    </div>
+  );
+}
+
+// ---- inline icons (manager dashboard) -------------------------------------
+const dsvg = (children: ReactNode) => (
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoTray = () => dsvg(<><path d="M3 8l9-4 9 4-9 4-9-4Z" /><path d="M3 8v5l9 4 9-4V8M3 13l9 4 9-4" /></>);
+const IcoEgg = () => dsvg(<ellipse cx="12" cy="13" rx="6" ry="8" />);
+const IcoChick = () => dsvg(<><ellipse cx="12" cy="13.5" rx="6" ry="7" /><path d="M12 6.5V4" /><circle cx="10" cy="12" r=".6" fill="currentColor" /></>);
+const IcoPercent = () => dsvg(<><path d="M19 5 5 19" /><circle cx="7.5" cy="7.5" r="2" /><circle cx="16.5" cy="16.5" r="2" /></>);
+const IcoTruck = () => dsvg(<><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="18" r="1.6" /><circle cx="17" cy="18" r="1.6" /></>);
+const IcoClipboard = () => dsvg(<><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9 4h6v3H9zM9 11h6M9 15h4" /></>);
+const IcoUsers = () => dsvg(<><circle cx="9" cy="9" r="3" /><path d="M3.5 19a5.5 5.5 0 0 1 11 0M16 7a3 3 0 0 1 0 6M20.5 19a5.5 5.5 0 0 0-3-4.9" /></>);
+const IcoClock = () => dsvg(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>);
+const IcoWrench = () => dsvg(<path d="M15 5a4 4 0 0 0-5 5L4 16l4 4 6-6a4 4 0 0 0 5-5l-3 3-2-2 3-3a4 4 0 0 0-2-2Z" />);
+const IcoGear = () => dsvg(<><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></>);
+const IcoShield = () => dsvg(<><path d="M12 3l7 3v6c0 4-3 7-7 9-4-2-7-5-7-9V6l7-3Z" /><path d="M9 12l2 2 4-4" /></>);
 
 // ---------------------------------------------------------------------------
 // Hatchery Operations Manager — production overview
