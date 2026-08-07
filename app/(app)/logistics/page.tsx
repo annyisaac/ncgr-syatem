@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
+import { useLang } from "@/components/LanguageProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
@@ -30,6 +31,7 @@ const openForDelivery = (o: Order) => !isClosed(o) && !isDelivered(o);
 export default function LogisticsDashboard() {
   const { user } = useAuth();
   const { orders } = useData();
+  const { t } = useLang();
   const router = useRouter();
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -92,47 +94,47 @@ export default function LogisticsDashboard() {
   const expensesValue = useMemo(() => expenses.filter((e) => ["Submitted", "Verified", "Approved"].includes(e.status)).reduce((s, e) => s + e.amount, 0), [expenses]);
 
   if (!user) return null;
-  if (!canUse) return <Card><p className="text-sm text-muted">This page is for Logistics and Admin.</p></Card>;
+  if (!canUse) return <Card><p className="text-sm text-muted">{t("This page is for Logistics and Admin.")}</p></Card>;
 
   const firstName = user.name.split(" ")[0] || user.name;
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-bold text-ink">Hey {firstName} — <span className="font-normal text-muted">here&apos;s the delivery board</span></h1>
+      <h1 className="text-lg font-bold text-ink">{t("Hey")} {firstName} — <span className="font-normal text-muted">{t("here's the delivery board")}</span></h1>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Deliveries today" value={String(todays.length)} />
-        <StatTile label="Chicks today" value={todays.reduce((s, o) => s + toDeliver(o), 0).toLocaleString()} />
-        <StatTile label="Overdue" value={String(overdue.length)} tone={overdue.length > 0 ? "red" : "default"} />
-        <StatTile label="Failed / retry" value={String(failed.length)} tone={failed.length > 0 ? "gold" : "default"} />
-        <StatTile label="Vehicles ready" value={String(readyVehicles)} tone="green" />
-        <StatTile label="In maintenance" value={String(maintVehicles)} tone={maintVehicles > 0 ? "gold" : "default"} />
+        <StatTile label={t("Deliveries today")} value={String(todays.length)} />
+        <StatTile label={t("Chicks today")} value={todays.reduce((s, o) => s + toDeliver(o), 0).toLocaleString()} />
+        <StatTile label={t("Overdue")} value={String(overdue.length)} tone={overdue.length > 0 ? "red" : "default"} />
+        <StatTile label={t("Failed / retry")} value={String(failed.length)} tone={failed.length > 0 ? "gold" : "default"} />
+        <StatTile label={t("Vehicles ready")} value={String(readyVehicles)} tone="green" />
+        <StatTile label={t("In maintenance")} value={String(maintVehicles)} tone={maintVehicles > 0 ? "gold" : "default"} />
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
-        <StatTile label="Awaiting vehicle" value={String(awaitingVehicle)} tone={awaitingVehicle > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/dispatch")} />
-        <StatTile label="In transit" value={String(inTransit)} tone={inTransit > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/dispatch")} />
-        <StatTile label="Missing proof" value={String(missingPod)} tone={missingPod > 0 ? "red" : "default"} onClick={() => router.push("/logistics/dispatch")} />
-        <StatTile label="Open POs" value={String(openPOs)} onClick={() => router.push("/logistics/purchasing")} />
-        <StatTile label="Overdue supplier" value={String(overduePOs)} tone={overduePOs > 0 ? "red" : "default"} onClick={() => router.push("/logistics/purchasing")} />
-        <StatTile label="Goods awaiting" value={String(goodsAwaiting)} tone={goodsAwaiting > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/purchasing")} />
-        <StatTile label="Fuel this month" value={`${fuelThisMonth.toLocaleString()} L`} onClick={() => router.push("/logistics/trips")} />
-        <StatTile label="Expenses to approve" value={String(expensesAwaiting)} tone={expensesAwaiting > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/expenses")} />
-        <StatTile label="Expense value pending" value={formatRWF(expensesValue)} onClick={() => router.push("/logistics/expenses")} />
+        <StatTile label={t("Awaiting vehicle")} value={String(awaitingVehicle)} tone={awaitingVehicle > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/dispatch")} />
+        <StatTile label={t("In transit")} value={String(inTransit)} tone={inTransit > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/dispatch")} />
+        <StatTile label={t("Missing proof")} value={String(missingPod)} tone={missingPod > 0 ? "red" : "default"} onClick={() => router.push("/logistics/dispatch")} />
+        <StatTile label={t("Open POs")} value={String(openPOs)} onClick={() => router.push("/logistics/purchasing")} />
+        <StatTile label={t("Overdue supplier")} value={String(overduePOs)} tone={overduePOs > 0 ? "red" : "default"} onClick={() => router.push("/logistics/purchasing")} />
+        <StatTile label={t("Goods awaiting")} value={String(goodsAwaiting)} tone={goodsAwaiting > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/purchasing")} />
+        <StatTile label={t("Fuel this month")} value={`${fuelThisMonth.toLocaleString()} L`} onClick={() => router.push("/logistics/trips")} />
+        <StatTile label={t("Expenses to approve")} value={String(expensesAwaiting)} tone={expensesAwaiting > 0 ? "gold" : "default"} onClick={() => router.push("/logistics/expenses")} />
+        <StatTile label={t("Expense value pending")} value={formatRWF(expensesValue)} onClick={() => router.push("/logistics/expenses")} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card>
-          <CardHeader title="Upcoming delivery days" action={<Link href="/planning" className="text-sm font-semibold text-gold-dark underline">Plan deliveries</Link>} />
+          <CardHeader title={t("Upcoming delivery days")} action={<Link href="/planning" className="text-sm font-semibold text-gold-dark underline">{t("Plan deliveries")}</Link>} />
           <TableWrap>
-            <thead><tr><Th>Date</Th><Th className="text-right">Orders</Th><Th className="text-right">Chicks</Th><Th></Th></tr></thead>
+            <thead><tr><Th>{t("Date")}</Th><Th className="text-right">{t("Orders")}</Th><Th className="text-right">{t("Chicks")}</Th><Th></Th></tr></thead>
             <tbody>
-              {upcoming.length === 0 ? <EmptyRow colSpan={4} text="No upcoming deliveries scheduled." /> : upcoming.map(([date, g]) => (
+              {upcoming.length === 0 ? <EmptyRow colSpan={4} text={t("No upcoming deliveries scheduled.")} /> : upcoming.map(([date, g]) => (
                 <tr key={date}>
-                  <Td className="font-medium">{formatDate(date)}{date === today && <Pill tone="info" className="ml-2">Today</Pill>}</Td>
+                  <Td className="font-medium">{formatDate(date)}{date === today && <Pill tone="info" className="ml-2">{t("Today")}</Pill>}</Td>
                   <Td className="text-right">{g.orders}</Td>
                   <Td className="text-right">{g.chicks.toLocaleString()}</Td>
-                  <Td><Link href={`/planning?date=${date}`} className="text-sm text-gold-dark underline">Open</Link></Td>
+                  <Td><Link href={`/planning?date=${date}`} className="text-sm text-gold-dark underline">{t("Open")}</Link></Td>
                 </tr>
               ))}
             </tbody>
@@ -140,27 +142,27 @@ export default function LogisticsDashboard() {
         </Card>
 
         <Card>
-          <CardHeader title="Documents needing attention" />
+          <CardHeader title={t("Documents needing attention")} />
           {expiringPapers.length === 0 && expiringLicences.length === 0 ? (
-            <p className="text-sm text-muted">All vehicle papers and driver licences are current.</p>
+            <p className="text-sm text-muted">{t("All vehicle papers and driver licences are current.")}</p>
           ) : (
             <div className="space-y-3">
               {expiringPapers.map((v) => (
                 <div key={v.id} className="flex items-center justify-between gap-3 text-sm">
                   <span className="font-medium">{v.plate}</span>
                   <span className="flex flex-wrap items-center gap-1.5">
-                    {expiryState(v.insuranceExpiry, today) !== "ok" && expiryState(v.insuranceExpiry, today) !== "unset" && <Pill tone={expiryState(v.insuranceExpiry, today) === "expired" ? "red" : "amber"}>Insurance {expiryState(v.insuranceExpiry, today)}</Pill>}
-                    {expiryState(v.inspectionExpiry, today) !== "ok" && expiryState(v.inspectionExpiry, today) !== "unset" && <Pill tone={expiryState(v.inspectionExpiry, today) === "expired" ? "red" : "amber"}>Inspection {expiryState(v.inspectionExpiry, today)}</Pill>}
+                    {expiryState(v.insuranceExpiry, today) !== "ok" && expiryState(v.insuranceExpiry, today) !== "unset" && <Pill tone={expiryState(v.insuranceExpiry, today) === "expired" ? "red" : "amber"}>{t("Insurance")} {expiryState(v.insuranceExpiry, today)}</Pill>}
+                    {expiryState(v.inspectionExpiry, today) !== "ok" && expiryState(v.inspectionExpiry, today) !== "unset" && <Pill tone={expiryState(v.inspectionExpiry, today) === "expired" ? "red" : "amber"}>{t("Inspection")} {expiryState(v.inspectionExpiry, today)}</Pill>}
                   </span>
                 </div>
               ))}
               {expiringLicences.map((d) => (
                 <div key={d.id} className="flex items-center justify-between gap-3 text-sm">
                   <span className="font-medium">{d.name}</span>
-                  <Pill tone={expiryState(d.licenceExpiry, today) === "expired" ? "red" : "amber"}>Licence {expiryState(d.licenceExpiry, today)}</Pill>
+                  <Pill tone={expiryState(d.licenceExpiry, today) === "expired" ? "red" : "amber"}>{t("Licence")} {expiryState(d.licenceExpiry, today)}</Pill>
                 </div>
               ))}
-              <p className="pt-1 text-xs text-muted">Manage on <Link href="/logistics/vehicles" className="underline">Vehicles</Link> and <Link href="/logistics/drivers" className="underline">Drivers</Link>.</p>
+              <p className="pt-1 text-xs text-muted">{t("Manage on")} <Link href="/logistics/vehicles" className="underline">{t("Vehicles")}</Link> {t("and")} <Link href="/logistics/drivers" className="underline">{t("Drivers")}</Link>.</p>
             </div>
           )}
         </Card>
@@ -168,9 +170,9 @@ export default function LogisticsDashboard() {
 
       {overdue.length > 0 && (
         <Card className="border-red/40">
-          <CardHeader title={`Overdue deliveries (${overdue.length})`} />
+          <CardHeader title={`${t("Overdue deliveries")} (${overdue.length})`} />
           <TableWrap>
-            <thead><tr><Th>Delivery date</Th><Th>Customer</Th><Th>Product</Th><Th className="text-right">Chicks</Th><Th>District</Th><Th></Th></tr></thead>
+            <thead><tr><Th>{t("Delivery date")}</Th><Th>{t("Customer")}</Th><Th>{t("Product")}</Th><Th className="text-right">{t("Chicks")}</Th><Th>{t("District")}</Th><Th></Th></tr></thead>
             <tbody>
               {overdue.slice(0, 12).map((o) => (
                 <tr key={o.id}>
@@ -179,7 +181,7 @@ export default function LogisticsDashboard() {
                   <Td>{o.product}</Td>
                   <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
                   <Td>{o.district}</Td>
-                  <Td><Link href={`/orders/${o.id}`} className="text-sm text-gold-dark underline">View</Link></Td>
+                  <Td><Link href={`/orders/${o.id}`} className="text-sm text-gold-dark underline">{t("View")}</Link></Td>
                 </tr>
               ))}
             </tbody>
@@ -187,7 +189,7 @@ export default function LogisticsDashboard() {
         </Card>
       )}
 
-      <p className="text-xs text-muted">Procurement, dispatch notes, trips, fuel and logistics expenses are coming to this workspace. For now, plan and track chick deliveries here and on the Deliveries calendar.</p>
+      <p className="text-xs text-muted">{t("Procurement, dispatch notes, trips, fuel and logistics expenses are coming to this workspace. For now, plan and track chick deliveries here and on the Deliveries calendar.")}</p>
     </div>
   );
 }

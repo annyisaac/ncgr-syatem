@@ -5,6 +5,8 @@ import { usePathname, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { useAuth } from "./AuthProvider";
+import { useLang } from "./LanguageProvider";
+import { LangToggle } from "./LangToggle";
 import { useOperator } from "./OperatorProvider";
 import { OperatorGate } from "./OperatorGate";
 import { DsrGate } from "./DsrGate";
@@ -21,6 +23,7 @@ import { cn } from "@/lib/cn";
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading, logout } = useAuth();
   const { operator, clearOperator } = useOperator();
+  const { t } = useLang();
   const router = useRouter();
   const pathname = usePathname();
   const [drawer, setDrawer] = useState(false);
@@ -52,7 +55,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const nav = navForRole(user.role);
   const activeNav = activeHref(nav, pathname);
-  const pageTitle = pathname === "/profile" ? "My Account" : (nav.find((i) => i.href === activeNav)?.label ?? "");
+  const pageTitle = pathname === "/profile" ? t("My Account") : (() => { const l = nav.find((i) => i.href === activeNav)?.label; return l ? t(l) : ""; })();
   const isDeeper = !!activeNav && pathname !== activeNav && pathname.startsWith(activeNav + "/");
   const allowed = canAccess(user.role, pathname);
   // Shared attendant tablet: no side menu, and must identify the operator first.
@@ -80,7 +83,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           onClick={() => setDrawer(false)}
           className="rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-muted transition hover:border-ink hover:text-ink lg:hidden"
         >
-          Close
+          {t("Close")}
         </button>
       </div>
 
@@ -88,10 +91,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         {groupNav(nav).map((group) => (
           <div key={group.name} className="space-y-0.5">
             <p className="px-3 pb-1 text-[0.6rem] font-semibold uppercase tracking-[0.12em] text-muted/70">
-              {group.name}
+              {t(group.name)}
             </p>
             {group.items.map((item) => (
-              <NavLink key={item.href} href={item.href} label={item.label} active={item.href === activeNav} />
+              <NavLink key={item.href} href={item.href} label={t(item.label)} active={item.href === activeNav} />
             ))}
           </div>
         ))}
@@ -124,7 +127,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <path d="M12.5 14v1.5A1.5 1.5 0 0 1 11 17H5.5A1.5 1.5 0 0 1 4 15.5v-11A1.5 1.5 0 0 1 5.5 3H11a1.5 1.5 0 0 1 1.5 1.5V6" />
             <path d="M9 10h8M14 7l3 3-3 3" />
           </svg>
-          Log out
+          {t("Log out")}
         </button>
       </div>
     </div>
@@ -163,7 +166,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 href={homeHref}
                 className="rounded-md border border-line px-3.5 py-2 text-[0.9rem] font-semibold text-ink transition hover:border-ink"
               >
-                Home
+                {t("Home")}
               </Link>
             ) : (
               <button
@@ -173,7 +176,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 aria-expanded={drawer}
               >
                 <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round"><path d="M3 5h14M3 10h14M3 15h14" /></svg>
-                Menu
+                {t("Menu")}
               </button>
             )}
             {!isAttendant && pageTitle && (
@@ -189,10 +192,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   onClick={clearOperator}
                   className="rounded-md border border-gold/50 px-2 py-0.5 text-[0.68rem] font-semibold text-gold-dark transition hover:bg-gold hover:text-[#231b04]"
                 >
-                  Switch user
+                  {t("Switch user")}
                 </button>
               </div>
             )}
+            <LangToggle />
             {!isAttendant && <NotificationBell />}
             <Link href="/profile" className="flex items-center gap-2.5 rounded-full py-1 pl-1 pr-1 transition hover:bg-grey-bg sm:pr-3">
               <Avatar user={user} size={36} />

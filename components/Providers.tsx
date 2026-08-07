@@ -4,6 +4,7 @@ import type { ReactNode } from "react";
 import { AuthProvider } from "./AuthProvider";
 import { DataProvider } from "./DataProvider";
 import { HatcheryProvider } from "./HatcheryProvider";
+import { LanguageProvider } from "./LanguageProvider";
 import { OperatorProvider } from "./OperatorProvider";
 import { ThemeProvider } from "./ThemeProvider";
 import { ToastProvider } from "./ui/Toast";
@@ -12,15 +13,17 @@ import { ToastProvider } from "./ui/Toast";
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
-      <AuthProvider>
-        <DataProvider>
-          <HatcheryProvider>
-            <OperatorProvider>
-              <ToastProvider>{children}</ToastProvider>
-            </OperatorProvider>
-          </HatcheryProvider>
-        </DataProvider>
-      </AuthProvider>
+      <LanguageProvider>
+        <AuthProvider>
+          <DataProvider>
+            <HatcheryProvider>
+              <OperatorProvider>
+                <ToastProvider>{children}</ToastProvider>
+              </OperatorProvider>
+            </HatcheryProvider>
+          </DataProvider>
+        </AuthProvider>
+      </LanguageProvider>
     </ThemeProvider>
   );
 }

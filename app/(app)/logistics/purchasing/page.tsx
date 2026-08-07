@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
+import { useLang } from "@/components/LanguageProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +39,7 @@ const poTone = (s: POStatus) =>
 
 export default function ProcurementPage() {
   const { user } = useAuth();
+  const { t } = useLang();
   const { toast } = useToast();
   const [requests, setRequests] = useState<PurchaseRequest[]>([]);
   const [orders, setOrders] = useState<PurchaseOrder[]>([]);
@@ -70,20 +72,20 @@ export default function ProcurementPage() {
   const poById = useMemo(() => new Map(orders.map((o) => [o.id, o])), [orders]);
 
   if (!user) return null;
-  if (!canUse) return <Card><p className="text-sm text-muted">This page is for Logistics, Operations and Admin.</p></Card>;
+  if (!canUse) return <Card><p className="text-sm text-muted">{t("This page is for Logistics, Operations and Admin.")}</p></Card>;
 
   // ---- persistence helpers ----
   async function saveRequest(r: PurchaseRequest) {
     setRequests((p) => { const i = p.findIndex((x) => x.id === r.id); const c = p.slice(); if (i === -1) c.unshift(r); else c[i] = r; return c; });
-    try { await upsertRequest(r); } catch { toast("Could not save request.", "error"); void load(); }
+    try { await upsertRequest(r); } catch { toast(t("Could not save request."), "error"); void load(); }
   }
   async function savePO(o: PurchaseOrder) {
     setOrders((p) => { const i = p.findIndex((x) => x.id === o.id); const c = p.slice(); if (i === -1) c.unshift(o); else c[i] = o; return c; });
-    try { await upsertPurchaseOrder(o); } catch { toast("Could not save purchase order.", "error"); void load(); }
+    try { await upsertPurchaseOrder(o); } catch { toast(t("Could not save purchase order."), "error"); void load(); }
   }
   async function saveGRN(g: GoodsReceipt) {
     setReceipts((p) => { const i = p.findIndex((x) => x.id === g.id); const c = p.slice(); if (i === -1) c.unshift(g); else c[i] = g; return c; });
-    try { await upsertReceipt(g); } catch { toast("Could not save goods receipt.", "error"); void load(); }
+    try { await upsertReceipt(g); } catch { toast(t("Could not save goods receipt."), "error"); void load(); }
   }
 
   const pendingApproval = requests.filter((r) => r.status === "submitted").length;
@@ -94,28 +96,28 @@ export default function ProcurementPage() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="Awaiting approval" value={String(pendingApproval)} tone={pendingApproval > 0 ? "gold" : "default"} />
-        <StatTile label="Approved to source" value={String(toSource)} tone="green" />
-        <StatTile label="Open purchase orders" value={String(openPOs)} />
-        <StatTile label="Receipts to hand to Finance" value={String(toHandOff)} tone={toHandOff > 0 ? "gold" : "default"} />
+        <StatTile label={t("Awaiting approval")} value={String(pendingApproval)} tone={pendingApproval > 0 ? "gold" : "default"} />
+        <StatTile label={t("Approved to source")} value={String(toSource)} tone="green" />
+        <StatTile label={t("Open purchase orders")} value={String(openPOs)} />
+        <StatTile label={t("Receipts to hand to Finance")} value={String(toHandOff)} tone={toHandOff > 0 ? "gold" : "default"} />
       </div>
 
       <div className="flex flex-wrap gap-1.5 border-b border-line">
-        {TABS.map((t) => (
-          <button key={t.id} type="button" onClick={() => setTab(t.id)}
-            className={`rounded-t-lg px-3.5 py-2 text-sm font-semibold transition ${tab === t.id ? "border-b-2 border-gold text-gold-dark" : "text-muted hover:text-ink"}`}>
-            {t.label}
+        {TABS.map((tb) => (
+          <button key={tb.id} type="button" onClick={() => setTab(tb.id)}
+            className={`rounded-t-lg px-3.5 py-2 text-sm font-semibold transition ${tab === tb.id ? "border-b-2 border-gold text-gold-dark" : "text-muted hover:text-ink"}`}>
+            {t(tb.label)}
           </button>
         ))}
       </div>
 
       {tab === "requests" && (
         <Card>
-          <CardHeader title={`Purchase requests (${requests.length})`} action={<Button size="sm" onClick={() => setPrEdit(blankRequest(user.email, nextRef("PR", requests)))}>＋ New request</Button>} />
+          <CardHeader title={`${t("Purchase requests")} (${requests.length})`} action={<Button size="sm" onClick={() => setPrEdit(blankRequest(user.email, nextRef("PR", requests)))}>{t("＋ New request")}</Button>} />
           <TableWrap>
-            <thead><tr><Th>Ref</Th><Th>Department</Th><Th>Items</Th><Th>Priority</Th><Th>Required</Th><Th>Status</Th><Th></Th></tr></thead>
+            <thead><tr><Th>{t("Ref")}</Th><Th>{t("Department")}</Th><Th>{t("Items")}</Th><Th>{t("Priority")}</Th><Th>{t("Required")}</Th><Th>{t("Status")}</Th><Th></Th></tr></thead>
             <tbody>
-              {requests.length === 0 ? <EmptyRow colSpan={7} text="No purchase requests yet." /> : requests.map((r) => (
+              {requests.length === 0 ? <EmptyRow colSpan={7} text={t("No purchase requests yet.")} /> : requests.map((r) => (
                 <tr key={r.id}>
                   <Td className="font-medium">{r.ref}</Td>
                   <Td>{r.department}</Td>
@@ -123,7 +125,7 @@ export default function ProcurementPage() {
                   <Td>{r.priority}</Td>
                   <Td>{r.requiredDate ? formatDate(r.requiredDate) : "—"}</Td>
                   <Td><Pill tone={prTone(r.status)}>{r.status}</Pill></Td>
-                  <Td><Button size="sm" variant="ghost" onClick={() => setPrEdit(r)}>Open</Button></Td>
+                  <Td><Button size="sm" variant="ghost" onClick={() => setPrEdit(r)}>{t("Open")}</Button></Td>
                 </tr>
               ))}
             </tbody>
@@ -133,21 +135,21 @@ export default function ProcurementPage() {
 
       {tab === "orders" && (
         <Card>
-          <CardHeader title={`Purchase orders (${orders.length})`} />
+          <CardHeader title={`${t("Purchase orders")} (${orders.length})`} />
           <TableWrap>
-            <thead><tr><Th>Ref</Th><Th>Supplier</Th><Th className="text-right">Total</Th><Th>Received</Th><Th>Delivery</Th><Th>Status</Th><Th></Th></tr></thead>
+            <thead><tr><Th>{t("Ref")}</Th><Th>{t("Supplier")}</Th><Th className="text-right">{t("Total")}</Th><Th>{t("Received")}</Th><Th>{t("Delivery")}</Th><Th>{t("Status")}</Th><Th></Th></tr></thead>
             <tbody>
-              {orders.length === 0 ? <EmptyRow colSpan={7} text="No purchase orders yet — create one from an approved request." /> : orders.map((o) => {
+              {orders.length === 0 ? <EmptyRow colSpan={7} text={t("No purchase orders yet — create one from an approved request.")} /> : orders.map((o) => {
                 const rec = poReceivedQty(o.id, receipts); const ord = poOrderedQty(o);
                 return (
                   <tr key={o.id}>
-                    <Td className="font-medium">{o.ref}{o.requestRef && <div className="text-xs text-muted">from {o.requestRef}</div>}</Td>
+                    <Td className="font-medium">{o.ref}{o.requestRef && <div className="text-xs text-muted">{t("from")} {o.requestRef}</div>}</Td>
                     <Td>{o.supplierName}</Td>
                     <Td className="text-right">{formatRWF(poTotal(o))}</Td>
                     <Td>{ord > 0 ? `${rec.toLocaleString()} / ${ord.toLocaleString()}` : "—"}</Td>
                     <Td>{o.deliveryDate ? formatDate(o.deliveryDate) : "—"}</Td>
                     <Td><Pill tone={poTone(o.status)}>{o.status}</Pill></Td>
-                    <Td><Button size="sm" variant="ghost" onClick={() => setPoEdit(o)}>Open</Button></Td>
+                    <Td><Button size="sm" variant="ghost" onClick={() => setPoEdit(o)}>{t("Open")}</Button></Td>
                   </tr>
                 );
               })}
@@ -158,11 +160,11 @@ export default function ProcurementPage() {
 
       {tab === "grn" && (
         <Card>
-          <CardHeader title={`Goods received (${receipts.length})`} />
+          <CardHeader title={`${t("Goods received")} (${receipts.length})`} />
           <TableWrap>
-            <thead><tr><Th>Ref</Th><Th>PO</Th><Th>Supplier</Th><Th>Received</Th><Th className="text-right">Accepted value</Th><Th>Match</Th><Th>Finance</Th><Th></Th></tr></thead>
+            <thead><tr><Th>{t("Ref")}</Th><Th>{t("PO")}</Th><Th>{t("Supplier")}</Th><Th>{t("Received")}</Th><Th className="text-right">{t("Accepted value")}</Th><Th>{t("Match")}</Th><Th>{t("Finance")}</Th><Th></Th></tr></thead>
             <tbody>
-              {receipts.length === 0 ? <EmptyRow colSpan={8} text="No goods received yet — record delivery against a purchase order." /> : receipts.map((g) => {
+              {receipts.length === 0 ? <EmptyRow colSpan={8} text={t("No goods received yet — record delivery against a purchase order.")} /> : receipts.map((g) => {
                 const m = threeWayMatch(poById.get(g.poId), g);
                 return (
                   <tr key={g.id}>
@@ -171,9 +173,9 @@ export default function ProcurementPage() {
                     <Td>{g.supplierName}</Td>
                     <Td>{formatDate(g.receivedDate)}</Td>
                     <Td className="text-right">{formatRWF(grnAcceptedValue(g))}</Td>
-                    <Td><Pill tone={m.state === "ok" ? "green" : m.state === "flag" ? "red" : "amber"}>{m.state === "ok" ? "Matched" : m.state === "flag" ? "Flagged" : "Pending"}</Pill></Td>
-                    <Td>{g.handedToFinance ? <Pill tone="green">Handed off</Pill> : <Pill tone="neutral">Held</Pill>}</Td>
-                    <Td><Button size="sm" variant="ghost" onClick={() => setGrnEdit(g)}>Open</Button></Td>
+                    <Td><Pill tone={m.state === "ok" ? "green" : m.state === "flag" ? "red" : "amber"}>{m.state === "ok" ? t("Matched") : m.state === "flag" ? t("Flagged") : t("Pending")}</Pill></Td>
+                    <Td>{g.handedToFinance ? <Pill tone="green">{t("Handed off")}</Pill> : <Pill tone="neutral">{t("Held")}</Pill>}</Td>
+                    <Td><Button size="sm" variant="ghost" onClick={() => setGrnEdit(g)}>{t("Open")}</Button></Td>
                   </tr>
                 );
               })}
@@ -186,13 +188,13 @@ export default function ProcurementPage() {
         <RequestModal
           key={prEdit.id} initial={prEdit} email={user.email} canApprove={canApprove} isLogistics={isLogistics}
           onClose={() => setPrEdit(null)}
-          onSave={(r) => { void saveRequest(r); setPrEdit(null); toast("Request saved."); }}
+          onSave={(r) => { void saveRequest(r); setPrEdit(null); toast(t("Request saved.")); }}
           onCreatePO={(r) => {
             const po = poFromRequest(r, user.email, nextRef("PO", orders));
             void savePO(po);
             void saveRequest({ ...r, status: "ordered", history: [...r.history, stamp(user.email, `PO ${po.ref} created`)] });
             setPrEdit(null); setPoEdit(po); setTab("orders");
-            toast(`Created ${po.ref}.`);
+            toast(`${t("Created")} ${po.ref}.`);
           }}
         />
       )}
@@ -202,7 +204,7 @@ export default function ProcurementPage() {
           key={poEdit.id} initial={poEdit} email={user.email} canApprove={canApprove} isLogistics={isLogistics}
           received={poReceivedQty(poEdit.id, receipts)}
           onClose={() => setPoEdit(null)}
-          onSave={(o) => { void savePO(o); setPoEdit(null); toast("Purchase order saved."); }}
+          onSave={(o) => { void savePO(o); setPoEdit(null); toast(t("Purchase order saved.")); }}
           onReceive={(o) => { const g = grnFromPO(o, user.email, nextRef("GRN", receipts)); setPoEdit(null); setGrnEdit(g); setTab("grn"); }}
         />
       )}
@@ -211,8 +213,8 @@ export default function ProcurementPage() {
         <GRNModal
           key={grnEdit.id} initial={grnEdit} po={poById.get(grnEdit.poId)}
           onClose={() => setGrnEdit(null)}
-          onSave={(g) => { void saveGRN(g); reconcilePO(g); setGrnEdit(null); toast("Goods receipt saved."); }}
-          onHandoff={(g) => { const h = { ...g, handedToFinance: true, handedOn: nowISO(), history: [...g.history, stamp(user.email, "handed to Finance")] }; void saveGRN(h); reconcilePO(h); setGrnEdit(null); toast("Sent to Finance for verification."); }}
+          onSave={(g) => { void saveGRN(g); reconcilePO(g); setGrnEdit(null); toast(t("Goods receipt saved.")); }}
+          onHandoff={(g) => { const h = { ...g, handedToFinance: true, handedOn: nowISO(), history: [...g.history, stamp(user.email, "handed to Finance")] }; void saveGRN(h); reconcilePO(h); setGrnEdit(null); toast(t("Sent to Finance for verification.")); }}
         />
       )}
     </div>
@@ -256,6 +258,7 @@ function RequestModal({ initial, email, canApprove, isLogistics, onClose, onSave
   initial: PurchaseRequest; email: string; canApprove: boolean; isLogistics: boolean;
   onClose: () => void; onSave: (r: PurchaseRequest) => void; onCreatePO: (r: PurchaseRequest) => void;
 }) {
+  const { t } = useLang();
   const [r, setR] = useState<PurchaseRequest>(initial);
   const [quote, setQuote] = useState<Quotation | null>(null);
   const isNew = initial.status === "draft" && initial.history.length === 0;
@@ -268,7 +271,7 @@ function RequestModal({ initial, email, canApprove, isLogistics, onClose, onSave
       items: r.items.filter((i) => i.description.trim()), history: isNew ? [stamp(email, "submitted")] : r.history });
   }
   function decide(approve: boolean) {
-    if (!approve && !r.decisionNote?.trim()) { alert("Add a reason so it can go back to the requester."); return; }
+    if (!approve && !r.decisionNote?.trim()) { alert(t("Add a reason so it can go back to the requester.")); return; }
     onSave({ ...r, status: approve ? "approved" : "rejected", decidedBy: email, decidedOn: nowISO(),
       history: [...r.history, stamp(email, approve ? "approved" : `rejected — ${r.decisionNote}`)] });
   }
@@ -282,27 +285,27 @@ function RequestModal({ initial, email, canApprove, isLogistics, onClose, onSave
   const cheapest = r.quotations.length ? r.quotations.reduce((a, b) => quoteTotal(a) <= quoteTotal(b) ? a : b).id : undefined;
 
   return (
-    <Modal open onClose={onClose} title={`${r.ref} · Purchase request`} className="max-w-3xl"
+    <Modal open onClose={onClose} title={`${r.ref} · ${t("Purchase request")}`} className="max-w-3xl"
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Close</Button>
-        {editable && <Button onClick={submit}>{r.status === "draft" ? "Submit request" : "Save"}</Button>}
-        {canApprove && r.status === "submitted" && <><Button variant="secondary" onClick={() => decide(false)}>Reject</Button><Button onClick={() => decide(true)}>Approve</Button></>}
-        {isLogistics && r.status === "approved" && <Button onClick={() => onCreatePO(r)} disabled={!r.recommendedQuoteId}>Create purchase order</Button>}
+        <Button variant="ghost" onClick={onClose}>{t("Close")}</Button>
+        {editable && <Button onClick={submit}>{r.status === "draft" ? t("Submit request") : t("Save")}</Button>}
+        {canApprove && r.status === "submitted" && <><Button variant="secondary" onClick={() => decide(false)}>{t("Reject")}</Button><Button onClick={() => decide(true)}>{t("Approve")}</Button></>}
+        {isLogistics && r.status === "approved" && <Button onClick={() => onCreatePO(r)} disabled={!r.recommendedQuoteId}>{t("Create purchase order")}</Button>}
       </>}>
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Requesting department" required><Input value={r.department} disabled={!editable} onChange={(e) => set({ department: e.target.value })} placeholder="Hatchery, Sales…" /></Field>
-          <Field label="Priority"><Select value={r.priority} disabled={!editable} onChange={(e) => set({ priority: e.target.value as PurchaseRequest["priority"] })} options={PRIORITIES.map((p) => ({ value: p, label: p }))} /></Field>
-          <Field label="Required date"><Input type="date" value={r.requiredDate ?? ""} disabled={!editable} onChange={(e) => set({ requiredDate: e.target.value || undefined })} /></Field>
-          <Field label="Destination"><Input value={r.destination ?? ""} disabled={!editable} onChange={(e) => set({ destination: e.target.value })} placeholder="where it's needed" /></Field>
-          <div className="sm:col-span-2"><Field label="Reason for purchase"><Input value={r.reason ?? ""} disabled={!editable} onChange={(e) => set({ reason: e.target.value })} /></Field></div>
-          <div className="sm:col-span-2"><Field label="Supporting document (reference)"><Input value={r.docRef ?? ""} disabled={!editable} onChange={(e) => set({ docRef: e.target.value })} placeholder="e.g. quote-request.pdf" /></Field></div>
+          <Field label={t("Requesting department")} required><Input value={r.department} disabled={!editable} onChange={(e) => set({ department: e.target.value })} placeholder={t("Hatchery, Sales…")} /></Field>
+          <Field label={t("Priority")}><Select value={r.priority} disabled={!editable} onChange={(e) => set({ priority: e.target.value as PurchaseRequest["priority"] })} options={PRIORITIES.map((p) => ({ value: p, label: p }))} /></Field>
+          <Field label={t("Required date")}><Input type="date" value={r.requiredDate ?? ""} disabled={!editable} onChange={(e) => set({ requiredDate: e.target.value || undefined })} /></Field>
+          <Field label={t("Destination")}><Input value={r.destination ?? ""} disabled={!editable} onChange={(e) => set({ destination: e.target.value })} placeholder={t("where it's needed")} /></Field>
+          <div className="sm:col-span-2"><Field label={t("Reason for purchase")}><Input value={r.reason ?? ""} disabled={!editable} onChange={(e) => set({ reason: e.target.value })} /></Field></div>
+          <div className="sm:col-span-2"><Field label={t("Supporting document (reference)")}><Input value={r.docRef ?? ""} disabled={!editable} onChange={(e) => set({ docRef: e.target.value })} placeholder={t("e.g. quote-request.pdf")} /></Field></div>
         </div>
 
         <div>
-          <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Items</div>
+          <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">{t("Items")}</div>
           <TableWrap>
-            <thead><tr><Th>Item</Th><Th className="w-24 text-right">Qty</Th><Th className="w-28">Unit</Th><Th></Th></tr></thead>
+            <thead><tr><Th>{t("Item")}</Th><Th className="w-24 text-right">{t("Qty")}</Th><Th className="w-28">{t("Unit")}</Th><Th></Th></tr></thead>
             <tbody>
               {r.items.map((it, i) => (
                 <tr key={i}>
@@ -314,27 +317,27 @@ function RequestModal({ initial, email, canApprove, isLogistics, onClose, onSave
               ))}
             </tbody>
           </TableWrap>
-          {editable && <Button size="sm" variant="ghost" className="mt-2" onClick={() => set({ items: [...r.items, { description: "", quantity: 1, unit: "pcs" }] })}>＋ Add item</Button>}
+          {editable && <Button size="sm" variant="ghost" className="mt-2" onClick={() => set({ items: [...r.items, { description: "", quantity: 1, unit: "pcs" }] })}>{t("＋ Add item")}</Button>}
         </div>
 
-        {r.status === "rejected" && r.decisionNote && <div className="rounded-lg border border-red/30 bg-red-bg/50 p-3 text-sm"><strong>Returned:</strong> {r.decisionNote}</div>}
-        {canApprove && r.status === "submitted" && <Field label="Decision note / rejection reason"><Input value={r.decisionNote ?? ""} onChange={(e) => set({ decisionNote: e.target.value })} placeholder="required to reject" /></Field>}
+        {r.status === "rejected" && r.decisionNote && <div className="rounded-lg border border-red/30 bg-red-bg/50 p-3 text-sm"><strong>{t("Returned:")}</strong> {r.decisionNote}</div>}
+        {canApprove && r.status === "submitted" && <Field label={t("Decision note / rejection reason")}><Input value={r.decisionNote ?? ""} onChange={(e) => set({ decisionNote: e.target.value })} placeholder={t("required to reject")} /></Field>}
 
         {(r.status === "approved" || r.status === "ordered" || r.quotations.length > 0) && (
           <div>
-            <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Supplier quotations</div>
+            <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">{t("Supplier quotations")}</div>
             <TableWrap>
-              <thead><tr><Th>Supplier</Th><Th className="text-right">Price</Th><Th className="text-right">Tax</Th><Th className="text-right">Transport</Th><Th className="text-right">Total</Th><Th>Delivery</Th><Th></Th></tr></thead>
+              <thead><tr><Th>{t("Supplier")}</Th><Th className="text-right">{t("Price")}</Th><Th className="text-right">{t("Tax")}</Th><Th className="text-right">{t("Transport")}</Th><Th className="text-right">{t("Total")}</Th><Th>{t("Delivery")}</Th><Th></Th></tr></thead>
               <tbody>
-                {r.quotations.length === 0 ? <EmptyRow colSpan={7} text="No quotations recorded." /> : r.quotations.map((q) => (
+                {r.quotations.length === 0 ? <EmptyRow colSpan={7} text={t("No quotations recorded.")} /> : r.quotations.map((q) => (
                   <tr key={q.id} className={r.recommendedQuoteId === q.id ? "bg-green-bg/40" : ""}>
-                    <Td className="font-medium">{q.supplierName}{cheapest === q.id && <Pill tone="green" className="ml-2">Lowest</Pill>}</Td>
+                    <Td className="font-medium">{q.supplierName}{cheapest === q.id && <Pill tone="green" className="ml-2">{t("Lowest")}</Pill>}</Td>
                     <Td className="text-right">{formatRWF(q.price)}</Td>
                     <Td className="text-right">{formatRWF(q.tax)}</Td>
                     <Td className="text-right">{formatRWF(q.transport)}</Td>
                     <Td className="text-right font-medium">{formatRWF(quoteTotal(q))}</Td>
                     <Td>{q.deliveryDays ? `${q.deliveryDays}d` : "—"}</Td>
-                    <Td>{isLogistics && r.status === "approved" && <Button size="sm" variant={r.recommendedQuoteId === q.id ? "secondary" : "ghost"} onClick={() => set({ recommendedQuoteId: q.id })}>{r.recommendedQuoteId === q.id ? "Recommended" : "Recommend"}</Button>}</Td>
+                    <Td>{isLogistics && r.status === "approved" && <Button size="sm" variant={r.recommendedQuoteId === q.id ? "secondary" : "ghost"} onClick={() => set({ recommendedQuoteId: q.id })}>{r.recommendedQuoteId === q.id ? t("Recommended") : t("Recommend")}</Button>}</Td>
                   </tr>
                 ))}
               </tbody>
@@ -342,18 +345,18 @@ function RequestModal({ initial, email, canApprove, isLogistics, onClose, onSave
             {isLogistics && (r.status === "approved") && (
               quote ? (
                 <div className="mt-3 grid grid-cols-2 gap-3 rounded-lg border border-line p-3 sm:grid-cols-4">
-                  <Field label="Supplier"><Input value={quote.supplierName} onChange={(e) => setQuote({ ...quote, supplierName: e.target.value })} /></Field>
-                  <Field label="Price"><Input type="number" min={0} value={quote.price || ""} onChange={(e) => setQuote({ ...quote, price: Number(e.target.value) || 0 })} /></Field>
-                  <Field label="Tax"><Input type="number" min={0} value={quote.tax || ""} onChange={(e) => setQuote({ ...quote, tax: Number(e.target.value) || 0 })} /></Field>
-                  <Field label="Transport"><Input type="number" min={0} value={quote.transport || ""} onChange={(e) => setQuote({ ...quote, transport: Number(e.target.value) || 0 })} /></Field>
-                  <Field label="Delivery (days)"><Input type="number" min={0} value={quote.deliveryDays ?? ""} onChange={(e) => setQuote({ ...quote, deliveryDays: Number(e.target.value) || undefined })} /></Field>
-                  <Field label="Payment terms"><Input value={quote.paymentTerms ?? ""} onChange={(e) => setQuote({ ...quote, paymentTerms: e.target.value })} /></Field>
-                  <Field label="Document ref"><Input value={quote.docRef ?? ""} onChange={(e) => setQuote({ ...quote, docRef: e.target.value })} /></Field>
-                  <div className="flex items-end gap-2"><Button size="sm" onClick={addQuote}>Save</Button><Button size="sm" variant="ghost" onClick={() => setQuote(null)}>Cancel</Button></div>
+                  <Field label={t("Supplier")}><Input value={quote.supplierName} onChange={(e) => setQuote({ ...quote, supplierName: e.target.value })} /></Field>
+                  <Field label={t("Price")}><Input type="number" min={0} value={quote.price || ""} onChange={(e) => setQuote({ ...quote, price: Number(e.target.value) || 0 })} /></Field>
+                  <Field label={t("Tax")}><Input type="number" min={0} value={quote.tax || ""} onChange={(e) => setQuote({ ...quote, tax: Number(e.target.value) || 0 })} /></Field>
+                  <Field label={t("Transport")}><Input type="number" min={0} value={quote.transport || ""} onChange={(e) => setQuote({ ...quote, transport: Number(e.target.value) || 0 })} /></Field>
+                  <Field label={t("Delivery (days)")}><Input type="number" min={0} value={quote.deliveryDays ?? ""} onChange={(e) => setQuote({ ...quote, deliveryDays: Number(e.target.value) || undefined })} /></Field>
+                  <Field label={t("Payment terms")}><Input value={quote.paymentTerms ?? ""} onChange={(e) => setQuote({ ...quote, paymentTerms: e.target.value })} /></Field>
+                  <Field label={t("Document ref")}><Input value={quote.docRef ?? ""} onChange={(e) => setQuote({ ...quote, docRef: e.target.value })} /></Field>
+                  <div className="flex items-end gap-2"><Button size="sm" onClick={addQuote}>{t("Save")}</Button><Button size="sm" variant="ghost" onClick={() => setQuote(null)}>{t("Cancel")}</Button></div>
                 </div>
-              ) : <Button size="sm" variant="ghost" className="mt-2" onClick={() => setQuote({ id: newQuoteId(), supplierName: "", price: 0, tax: 0, transport: 0, on: nowISO() })}>＋ Add quotation</Button>
+              ) : <Button size="sm" variant="ghost" className="mt-2" onClick={() => setQuote({ id: newQuoteId(), supplierName: "", price: 0, tax: 0, transport: 0, on: nowISO() })}>{t("＋ Add quotation")}</Button>
             )}
-            {isLogistics && r.status === "approved" && !r.recommendedQuoteId && r.quotations.length > 0 && <p className="mt-2 text-xs text-muted">Recommend a supplier to enable creating the purchase order.</p>}
+            {isLogistics && r.status === "approved" && !r.recommendedQuoteId && r.quotations.length > 0 && <p className="mt-2 text-xs text-muted">{t("Recommend a supplier to enable creating the purchase order.")}</p>}
           </div>
         )}
       </div>
@@ -367,6 +370,7 @@ function POModal({ initial, email, canApprove, isLogistics, received, onClose, o
   initial: PurchaseOrder; email: string; canApprove: boolean; isLogistics: boolean; received: number;
   onClose: () => void; onSave: (o: PurchaseOrder) => void; onReceive: (o: PurchaseOrder) => void;
 }) {
+  const { t } = useLang();
   const [o, setO] = useState<PurchaseOrder>(initial);
   const set = (p: Partial<PurchaseOrder>) => setO((x) => ({ ...x, ...p }));
   const editable = o.status === "Draft" || o.status === "Pending Approval";
@@ -375,30 +379,30 @@ function POModal({ initial, email, canApprove, isLogistics, received, onClose, o
   const canReceive = ["Approved", "Sent to Supplier", "Partially Received"].includes(o.status) && received < poOrderedQty(o);
 
   return (
-    <Modal open onClose={onClose} title={`${o.ref} · Purchase order`} className="max-w-3xl"
+    <Modal open onClose={onClose} title={`${o.ref} · ${t("Purchase order")}`} className="max-w-3xl"
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Close</Button>
-        {editable && isLogistics && <Button variant="secondary" onClick={() => onSave({ ...o, history: [...o.history, stamp(email, "saved")] })}>Save draft</Button>}
-        {o.status === "Draft" && isLogistics && <Button onClick={() => move("Pending Approval", "submitted for approval")} disabled={!o.supplierName.trim()}>Submit for approval</Button>}
-        {o.status === "Pending Approval" && canApprove && <Button onClick={() => move("Approved", "approved")}>Approve</Button>}
-        {o.status === "Approved" && isLogistics && <Button onClick={() => move("Sent to Supplier", "sent to supplier")}>Mark sent to supplier</Button>}
-        {canReceive && isLogistics && <Button onClick={() => onReceive(o)}>Record goods received</Button>}
-        {!["Cancelled", "Closed", "Fully Received"].includes(o.status) && isLogistics && <Button variant="secondary" onClick={() => move("Cancelled", "cancelled")}>Cancel</Button>}
-        {o.status === "Fully Received" && isLogistics && <Button onClick={() => move("Closed", "closed")}>Close</Button>}
+        <Button variant="ghost" onClick={onClose}>{t("Close")}</Button>
+        {editable && isLogistics && <Button variant="secondary" onClick={() => onSave({ ...o, history: [...o.history, stamp(email, "saved")] })}>{t("Save draft")}</Button>}
+        {o.status === "Draft" && isLogistics && <Button onClick={() => move("Pending Approval", "submitted for approval")} disabled={!o.supplierName.trim()}>{t("Submit for approval")}</Button>}
+        {o.status === "Pending Approval" && canApprove && <Button onClick={() => move("Approved", "approved")}>{t("Approve")}</Button>}
+        {o.status === "Approved" && isLogistics && <Button onClick={() => move("Sent to Supplier", "sent to supplier")}>{t("Mark sent to supplier")}</Button>}
+        {canReceive && isLogistics && <Button onClick={() => onReceive(o)}>{t("Record goods received")}</Button>}
+        {!["Cancelled", "Closed", "Fully Received"].includes(o.status) && isLogistics && <Button variant="secondary" onClick={() => move("Cancelled", "cancelled")}>{t("Cancel")}</Button>}
+        {o.status === "Fully Received" && isLogistics && <Button onClick={() => move("Closed", "closed")}>{t("Close")}</Button>}
       </>}>
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          <Field label="Supplier" required><Input value={o.supplierName} disabled={!editable} onChange={(e) => set({ supplierName: e.target.value })} /></Field>
-          <Field label="Currency"><Input value={o.currency} disabled={!editable} onChange={(e) => set({ currency: e.target.value })} /></Field>
-          <Field label="Delivery date"><Input type="date" value={o.deliveryDate ?? ""} disabled={!editable} onChange={(e) => set({ deliveryDate: e.target.value || undefined })} /></Field>
-          <Field label="Delivery location"><Input value={o.deliveryLocation ?? ""} disabled={!editable} onChange={(e) => set({ deliveryLocation: e.target.value })} /></Field>
-          <Field label="Payment terms"><Input value={o.paymentTerms ?? ""} disabled={!editable} onChange={(e) => set({ paymentTerms: e.target.value })} /></Field>
-          <Field label="Document ref"><Input value={o.docRef ?? ""} disabled={!editable} onChange={(e) => set({ docRef: e.target.value })} /></Field>
+          <Field label={t("Supplier")} required><Input value={o.supplierName} disabled={!editable} onChange={(e) => set({ supplierName: e.target.value })} /></Field>
+          <Field label={t("Currency")}><Input value={o.currency} disabled={!editable} onChange={(e) => set({ currency: e.target.value })} /></Field>
+          <Field label={t("Delivery date")}><Input type="date" value={o.deliveryDate ?? ""} disabled={!editable} onChange={(e) => set({ deliveryDate: e.target.value || undefined })} /></Field>
+          <Field label={t("Delivery location")}><Input value={o.deliveryLocation ?? ""} disabled={!editable} onChange={(e) => set({ deliveryLocation: e.target.value })} /></Field>
+          <Field label={t("Payment terms")}><Input value={o.paymentTerms ?? ""} disabled={!editable} onChange={(e) => set({ paymentTerms: e.target.value })} /></Field>
+          <Field label={t("Document ref")}><Input value={o.docRef ?? ""} disabled={!editable} onChange={(e) => set({ docRef: e.target.value })} /></Field>
         </div>
         <div>
-          <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Order lines</div>
+          <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">{t("Order lines")}</div>
           <TableWrap>
-            <thead><tr><Th>Item</Th><Th className="w-20 text-right">Qty</Th><Th className="w-24">Unit</Th><Th className="w-28 text-right">Unit price</Th><Th className="w-20 text-right">Tax %</Th><Th className="text-right">Line total</Th><Th></Th></tr></thead>
+            <thead><tr><Th>{t("Item")}</Th><Th className="w-20 text-right">{t("Qty")}</Th><Th className="w-24">{t("Unit")}</Th><Th className="w-28 text-right">{t("Unit price")}</Th><Th className="w-20 text-right">{t("Tax %")}</Th><Th className="text-right">{t("Line total")}</Th><Th></Th></tr></thead>
             <tbody>
               {o.lines.map((l, i) => (
                 <tr key={i}>
@@ -411,13 +415,13 @@ function POModal({ initial, email, canApprove, isLogistics, received, onClose, o
                   <Td>{editable && o.lines.length > 1 && <Button size="sm" variant="ghost" onClick={() => set({ lines: o.lines.filter((_, j) => j !== i) })}>✕</Button>}</Td>
                 </tr>
               ))}
-              <tr className="border-t border-line"><Td>Transport</Td><Td></Td><Td></Td><Td></Td><Td></Td><Td className="text-right"><Input type="number" min={0} value={o.transport || ""} disabled={!editable} onChange={(e) => set({ transport: Number(e.target.value) || 0 })} /></Td><Td></Td></tr>
-              <tr className="border-t border-line font-semibold"><Td>Total</Td><Td></Td><Td></Td><Td></Td><Td></Td><Td className="text-right">{formatRWF(poTotal(o))}</Td><Td></Td></tr>
+              <tr className="border-t border-line"><Td>{t("Transport")}</Td><Td></Td><Td></Td><Td></Td><Td></Td><Td className="text-right"><Input type="number" min={0} value={o.transport || ""} disabled={!editable} onChange={(e) => set({ transport: Number(e.target.value) || 0 })} /></Td><Td></Td></tr>
+              <tr className="border-t border-line font-semibold"><Td>{t("Total")}</Td><Td></Td><Td></Td><Td></Td><Td></Td><Td className="text-right">{formatRWF(poTotal(o))}</Td><Td></Td></tr>
             </tbody>
           </TableWrap>
-          {editable && <Button size="sm" variant="ghost" className="mt-2" onClick={() => set({ lines: [...o.lines, { description: "", quantity: 1, unit: "pcs", unitPrice: 0 }] })}>＋ Add line</Button>}
+          {editable && <Button size="sm" variant="ghost" className="mt-2" onClick={() => set({ lines: [...o.lines, { description: "", quantity: 1, unit: "pcs", unitPrice: 0 }] })}>{t("＋ Add line")}</Button>}
         </div>
-        <p className="text-xs text-muted">Logistics prepares and follows up the order; the Operations Manager approves it; Finance records the bill and runs payment.</p>
+        <p className="text-xs text-muted">{t("Logistics prepares and follows up the order; the Operations Manager approves it; Finance records the bill and runs payment.")}</p>
       </div>
     </Modal>
   );
@@ -429,6 +433,7 @@ function GRNModal({ initial, po, onClose, onSave, onHandoff }: {
   initial: GoodsReceipt; po: PurchaseOrder | undefined;
   onClose: () => void; onSave: (g: GoodsReceipt) => void; onHandoff: (g: GoodsReceipt) => void;
 }) {
+  const { t } = useLang();
   const [g, setG] = useState<GoodsReceipt>(initial);
   const set = (p: Partial<GoodsReceipt>) => setG((x) => ({ ...x, ...p }));
   const setLine = (i: number, p: Partial<GRNLine>) => set({ lines: g.lines.map((l, j) => j === i ? { ...l, ...p } : l) });
@@ -436,26 +441,26 @@ function GRNModal({ initial, po, onClose, onSave, onHandoff }: {
   const match = threeWayMatch(po, g);
 
   return (
-    <Modal open onClose={onClose} title={`${g.ref} · Goods received`} className="max-w-3xl"
+    <Modal open onClose={onClose} title={`${g.ref} · ${t("Goods received")}`} className="max-w-3xl"
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Close</Button>
-        {!locked && <Button variant="secondary" onClick={() => onSave(g)}>Save</Button>}
-        {!locked && <Button onClick={() => onHandoff(g)} disabled={match.state === "pending"}>Hand to Finance</Button>}
+        <Button variant="ghost" onClick={onClose}>{t("Close")}</Button>
+        {!locked && <Button variant="secondary" onClick={() => onSave(g)}>{t("Save")}</Button>}
+        {!locked && <Button onClick={() => onHandoff(g)} disabled={match.state === "pending"}>{t("Hand to Finance")}</Button>}
       </>}>
       <div className="space-y-4">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="PO"><Input value={g.poRef} disabled /></Field>
-          <Field label="Supplier"><Input value={g.supplierName} disabled={locked} onChange={(e) => set({ supplierName: e.target.value })} /></Field>
-          <Field label="Date received"><Input type="date" value={g.receivedDate} disabled={locked} onChange={(e) => set({ receivedDate: e.target.value })} /></Field>
-          <Field label="Delivery note no."><Input value={g.deliveryNoteNo ?? ""} disabled={locked} onChange={(e) => set({ deliveryNoteNo: e.target.value })} /></Field>
-          <Field label="Receiving location"><Input value={g.location ?? ""} disabled={locked} onChange={(e) => set({ location: e.target.value })} /></Field>
-          <Field label="Delivered by"><Input value={g.deliveredBy ?? ""} disabled={locked} onChange={(e) => set({ deliveredBy: e.target.value })} /></Field>
+          <Field label={t("PO")}><Input value={g.poRef} disabled /></Field>
+          <Field label={t("Supplier")}><Input value={g.supplierName} disabled={locked} onChange={(e) => set({ supplierName: e.target.value })} /></Field>
+          <Field label={t("Date received")}><Input type="date" value={g.receivedDate} disabled={locked} onChange={(e) => set({ receivedDate: e.target.value })} /></Field>
+          <Field label={t("Delivery note no.")}><Input value={g.deliveryNoteNo ?? ""} disabled={locked} onChange={(e) => set({ deliveryNoteNo: e.target.value })} /></Field>
+          <Field label={t("Receiving location")}><Input value={g.location ?? ""} disabled={locked} onChange={(e) => set({ location: e.target.value })} /></Field>
+          <Field label={t("Delivered by")}><Input value={g.deliveredBy ?? ""} disabled={locked} onChange={(e) => set({ deliveredBy: e.target.value })} /></Field>
         </div>
         <div>
-          <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Lines — record accepted quantities only (those increase inventory)</div>
+          <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">{t("Lines — record accepted quantities only (those increase inventory)")}</div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
-              <thead><tr className="text-[0.62rem] uppercase tracking-wide text-muted"><th className="p-1.5 text-left">Item</th><th className="p-1.5 text-right">Ord</th><th className="p-1.5 text-right">Recv</th><th className="p-1.5 text-right">Accept</th><th className="p-1.5 text-right">Reject</th><th className="p-1.5 text-right">Damaged</th><th className="p-1.5">Batch</th><th className="p-1.5">Expiry</th></tr></thead>
+              <thead><tr className="text-[0.62rem] uppercase tracking-wide text-muted"><th className="p-1.5 text-left">{t("Item")}</th><th className="p-1.5 text-right">{t("Ord")}</th><th className="p-1.5 text-right">{t("Recv")}</th><th className="p-1.5 text-right">{t("Accept")}</th><th className="p-1.5 text-right">{t("Reject")}</th><th className="p-1.5 text-right">{t("Damaged")}</th><th className="p-1.5">{t("Batch")}</th><th className="p-1.5">{t("Expiry")}</th></tr></thead>
               <tbody>
                 {g.lines.map((l, i) => (
                   <tr key={i} className="border-t border-line">
@@ -474,25 +479,25 @@ function GRNModal({ initial, po, onClose, onSave, onHandoff }: {
           </div>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Supplier invoice no."><Input value={g.invoiceNo ?? ""} disabled={locked} onChange={(e) => set({ invoiceNo: e.target.value })} /></Field>
-          <Field label="Invoice amount"><Input type="number" min={0} value={g.invoiceAmount ?? ""} disabled={locked} onChange={(e) => set({ invoiceAmount: Number(e.target.value) || undefined })} /></Field>
-          <Field label="Invoice document ref"><Input value={g.invoiceDocRef ?? ""} disabled={locked} onChange={(e) => set({ invoiceDocRef: e.target.value })} /></Field>
-          <div className="sm:col-span-3"><Field label="Inspection comments"><Input value={g.comments ?? ""} disabled={locked} onChange={(e) => set({ comments: e.target.value })} /></Field></div>
+          <Field label={t("Supplier invoice no.")}><Input value={g.invoiceNo ?? ""} disabled={locked} onChange={(e) => set({ invoiceNo: e.target.value })} /></Field>
+          <Field label={t("Invoice amount")}><Input type="number" min={0} value={g.invoiceAmount ?? ""} disabled={locked} onChange={(e) => set({ invoiceAmount: Number(e.target.value) || undefined })} /></Field>
+          <Field label={t("Invoice document ref")}><Input value={g.invoiceDocRef ?? ""} disabled={locked} onChange={(e) => set({ invoiceDocRef: e.target.value })} /></Field>
+          <div className="sm:col-span-3"><Field label={t("Inspection comments")}><Input value={g.comments ?? ""} disabled={locked} onChange={(e) => set({ comments: e.target.value })} /></Field></div>
         </div>
 
         <div className={`rounded-lg border p-3 text-sm ${match.state === "ok" ? "border-green/30 bg-green-bg/40" : match.state === "flag" ? "border-red/30 bg-red-bg/40" : "border-gold/30 bg-gold-bg/40"}`}>
           <div className="mb-1 flex items-center gap-2 font-semibold">
-            Three-way match
-            <Pill tone={match.state === "ok" ? "green" : match.state === "flag" ? "red" : "amber"}>{match.state === "ok" ? "Matched" : match.state === "flag" ? "Flagged" : "Pending"}</Pill>
+            {t("Three-way match")}
+            <Pill tone={match.state === "ok" ? "green" : match.state === "flag" ? "red" : "amber"}>{match.state === "ok" ? t("Matched") : match.state === "flag" ? t("Flagged") : t("Pending")}</Pill>
           </div>
           <div className="grid grid-cols-3 gap-2 text-xs">
-            <div>PO value<br /><strong>{formatRWF(match.poValue)}</strong></div>
-            <div>Accepted goods<br /><strong>{formatRWF(match.acceptedValue)}</strong></div>
-            <div>Invoice<br /><strong>{formatRWF(match.invoiceValue)}</strong></div>
+            <div>{t("PO value")}<br /><strong>{formatRWF(match.poValue)}</strong></div>
+            <div>{t("Accepted goods")}<br /><strong>{formatRWF(match.acceptedValue)}</strong></div>
+            <div>{t("Invoice")}<br /><strong>{formatRWF(match.invoiceValue)}</strong></div>
           </div>
           {match.flags.length > 0 && <ul className="mt-2 list-disc pl-5 text-xs">{match.flags.map((f, i) => <li key={i}>{f}</li>)}</ul>}
         </div>
-        {locked && <p className="text-xs text-green">Handed to Finance{g.handedOn ? ` on ${formatDate(g.handedOn)}` : ""} — the Accountant records the bill and runs payment.</p>}
+        {locked && <p className="text-xs text-green">{t("Handed to Finance")}{g.handedOn ? ` ${t("on")} ${formatDate(g.handedOn)}` : ""} {t("— the Accountant records the bill and runs payment.")}</p>}
       </div>
     </Modal>
   );

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
+import { useLang } from "@/components/LanguageProvider";
 import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
@@ -38,6 +39,7 @@ export default function DispatchPage() {
   const { user } = useAuth();
   const { orders, upsertOrder, newId } = useData();
   const { toast } = useToast();
+  const { t } = useLang();
   const [dispatches, setDispatches] = useState<DeliveryDispatch[]>([]);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -71,11 +73,11 @@ export default function DispatchPage() {
   const queue = useMemo(() => orders.filter((o) => readyForDelivery(o) && !dispatchedOrderIds.has(o.id)), [orders, dispatchedOrderIds]);
 
   if (!user) return null;
-  if (!canUse) return <Card><p className="text-sm text-muted">This page is for Logistics and Admin.</p></Card>;
+  if (!canUse) return <Card><p className="text-sm text-muted">{t("This page is for Logistics and Admin.")}</p></Card>;
 
   async function save(d: DeliveryDispatch) {
     setDispatches((p) => { const i = p.findIndex((x) => x.id === d.id); const c = p.slice(); if (i === -1) c.unshift(d); else c[i] = d; return c; });
-    try { await upsertDispatch(d); } catch { toast("Could not save dispatch.", "error"); void load(); }
+    try { await upsertDispatch(d); } catch { toast(t("Could not save dispatch."), "error"); void load(); }
   }
 
   /** Write each stop's proof of delivery back to its order. */
@@ -100,18 +102,18 @@ export default function DispatchPage() {
   return (
     <div className="space-y-5">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <StatTile label="In the queue" value={String(queue.length)} />
-        <StatTile label="Open dispatches" value={String(active.length)} />
-        <StatTile label="In transit" value={String(inTransit)} tone={inTransit > 0 ? "gold" : "default"} />
-        <StatTile label="Awaiting proof" value={String(awaitingPod)} tone={awaitingPod > 0 ? "gold" : "default"} />
+        <StatTile label={t("In the queue")} value={String(queue.length)} />
+        <StatTile label={t("Open dispatches")} value={String(active.length)} />
+        <StatTile label={t("In transit")} value={String(inTransit)} tone={inTransit > 0 ? "gold" : "default"} />
+        <StatTile label={t("Awaiting proof")} value={String(awaitingPod)} tone={awaitingPod > 0 ? "gold" : "default"} />
       </div>
 
       <Card>
-        <CardHeader title={`Dispatches (${dispatches.length})`} action={<Button size="sm" onClick={() => setPicking(true)} disabled={queue.length === 0}>＋ New dispatch</Button>} />
+        <CardHeader title={`${t("Dispatches")} (${dispatches.length})`} action={<Button size="sm" onClick={() => setPicking(true)} disabled={queue.length === 0}>{`＋ ${t("New dispatch")}`}</Button>} />
         <TableWrap>
-          <thead><tr><Th>Ref</Th><Th>Date</Th><Th>Vehicle · Driver</Th><Th className="text-right">Stops</Th><Th className="text-right">Chicks</Th><Th>Status</Th><Th></Th></tr></thead>
+          <thead><tr><Th>{t("Ref")}</Th><Th>{t("Date")}</Th><Th>{t("Vehicle · Driver")}</Th><Th className="text-right">{t("Stops")}</Th><Th className="text-right">{t("Chicks")}</Th><Th>{t("Status")}</Th><Th></Th></tr></thead>
           <tbody>
-            {dispatches.length === 0 ? <EmptyRow colSpan={7} text="No dispatches yet — create one from the delivery queue." /> : dispatches.map((d) => {
+            {dispatches.length === 0 ? <EmptyRow colSpan={7} text={t("No dispatches yet — create one from the delivery queue.")} /> : dispatches.map((d) => {
               const veh = vehicles.find((v) => v.id === d.vehicleId); const dr = drivers.find((x) => x.id === d.driverId);
               return (
                 <tr key={d.id}>
@@ -121,7 +123,7 @@ export default function DispatchPage() {
                   <Td className="text-right">{d.stops.length}</Td>
                   <Td className="text-right">{dispatchChicks(d).toLocaleString()}</Td>
                   <Td><Pill tone={stTone(d.status)}>{d.status}</Pill></Td>
-                  <Td><Button size="sm" variant="ghost" onClick={() => setEditing(d)}>Open</Button></Td>
+                  <Td><Button size="sm" variant="ghost" onClick={() => setEditing(d)}>{t("Open")}</Button></Td>
                 </tr>
               );
             })}
@@ -138,15 +140,15 @@ export default function DispatchPage() {
             const ref = `DISP-${String(dispatches.length + 1).padStart(4, "0")}`;
             const d: DeliveryDispatch = { id: newDispatchId(), ref, date, status: "Ready for Planning", stops, officer: user.email, by: user.email, on: nowISO(), history: [stampAgo(user.email, "created")] };
             void save(d); setPicking(false); setEditing(d);
-            toast(`Created ${ref} with ${stops.length} stop(s).`);
+            toast(`${t("Created")} ${ref} ${t("with")} ${stops.length} ${t("stop(s).")}`);
           }} />
       )}
 
       {editing && (
         <DispatchModal key={editing.id} initial={editing} email={user.email} vehicles={vehicles} drivers={drivers} today={today}
           onClose={() => setEditing(null)}
-          onSave={(d) => { void save(d); setEditing(null); toast("Dispatch saved."); }}
-          onReconcile={(d) => { reconcile(d); void save(d); setEditing(null); toast("Proof of delivery applied to orders."); }} />
+          onSave={(d) => { void save(d); setEditing(null); toast(t("Dispatch saved.")); }}
+          onReconcile={(d) => { reconcile(d); void save(d); setEditing(null); toast(t("Proof of delivery applied to orders.")); }} />
       )}
     </div>
   );
@@ -155,6 +157,7 @@ export default function DispatchPage() {
 // --------------------------------------------------------------------------- Queue picker
 
 function QueueModal({ queue, onClose, onCreate }: { queue: Order[]; onClose: () => void; onCreate: (ids: Set<string>) => void }) {
+  const { t } = useLang();
   const [sel, setSel] = useState<Set<string>>(new Set());
   const byDate = useMemo(() => {
     const m = new Map<string, Order[]>();
@@ -165,15 +168,15 @@ function QueueModal({ queue, onClose, onCreate }: { queue: Order[]; onClose: () 
   const toggleDate = (list: Order[]) => setSel((s) => { const n = new Set(s); const all = list.every((o) => n.has(o.id)); list.forEach((o) => all ? n.delete(o.id) : n.add(o.id)); return n; });
 
   return (
-    <Modal open onClose={onClose} title="Delivery queue — choose orders" className="max-w-2xl"
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={() => onCreate(sel)} disabled={sel.size === 0}>Create dispatch ({sel.size})</Button></>}>
-      <p className="mb-3 text-xs text-muted">Confirmed and debt-approved orders awaiting delivery, grouped by delivery date. Group one date onto one vehicle.</p>
+    <Modal open onClose={onClose} title={t("Delivery queue — choose orders")} className="max-w-2xl"
+      footer={<><Button variant="ghost" onClick={onClose}>{t("Cancel")}</Button><Button onClick={() => onCreate(sel)} disabled={sel.size === 0}>{`${t("Create dispatch")} (${sel.size})`}</Button></>}>
+      <p className="mb-3 text-xs text-muted">{t("Confirmed and debt-approved orders awaiting delivery, grouped by delivery date. Group one date onto one vehicle.")}</p>
       <div className="space-y-4">
-        {byDate.length === 0 ? <p className="text-sm text-muted">Nothing waiting for delivery.</p> : byDate.map(([date, list]) => (
+        {byDate.length === 0 ? <p className="text-sm text-muted">{t("Nothing waiting for delivery.")}</p> : byDate.map(([date, list]) => (
           <div key={date}>
-            <button type="button" onClick={() => toggleDate(list)} className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-gold-dark underline">{formatDate(date)} · {list.length} order(s)</button>
+            <button type="button" onClick={() => toggleDate(list)} className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-gold-dark underline">{formatDate(date)} · {list.length} {t("order(s)")}</button>
             <TableWrap>
-              <thead><tr><Th></Th><Th>Customer</Th><Th>Product</Th><Th className="text-right">Chicks</Th><Th>District</Th></tr></thead>
+              <thead><tr><Th></Th><Th>{t("Customer")}</Th><Th>{t("Product")}</Th><Th className="text-right">{t("Chicks")}</Th><Th>{t("District")}</Th></tr></thead>
               <tbody>
                 {list.map((o) => (
                   <tr key={o.id} className={sel.has(o.id) ? "bg-gold-bg/40" : ""}>
@@ -207,6 +210,7 @@ function DispatchModal({ initial, email, vehicles, drivers, today, onClose, onSa
   initial: DeliveryDispatch; email: string; vehicles: Vehicle[]; drivers: Driver[]; today: string;
   onClose: () => void; onSave: (d: DeliveryDispatch) => void; onReconcile: (d: DeliveryDispatch) => void;
 }) {
+  const { t } = useLang();
   const [d, setD] = useState<DeliveryDispatch>(initial);
   const set = (p: Partial<DeliveryDispatch>) => setD((x) => ({ ...x, ...p }));
   const setStop = (i: number, p: Partial<DispatchStop>) => set({ stops: d.stops.map((s, j) => j === i ? { ...s, ...p } : s) });
@@ -235,74 +239,74 @@ function DispatchModal({ initial, email, vehicles, drivers, today, onClose, onSa
   const next = NEXT[d.status];
 
   return (
-    <Modal open onClose={onClose} title={`${d.ref} · Delivery dispatch`} className="max-w-3xl"
+    <Modal open onClose={onClose} title={`${d.ref} · ${t("Delivery dispatch")}`} className="max-w-3xl"
       footer={<>
-        <Button variant="ghost" onClick={onClose}>Close</Button>
-        {!locked && <Button variant="secondary" onClick={() => onSave(d)}>Save</Button>}
-        {!locked && !inField && next && next !== "Dispatched" && <Button onClick={() => move(next, `→ ${next}`)}>{`Mark ${next}`}</Button>}
-        {!locked && d.status === "Ready for Loading" && <Button onClick={dispatch} disabled={!readiness.ok}>Dispatch</Button>}
-        {inField && <Button onClick={complete} disabled={!allResolved}>Complete &amp; reconcile</Button>}
+        <Button variant="ghost" onClick={onClose}>{t("Close")}</Button>
+        {!locked && <Button variant="secondary" onClick={() => onSave(d)}>{t("Save")}</Button>}
+        {!locked && !inField && next && next !== "Dispatched" && <Button onClick={() => move(next, `→ ${next}`)}>{`${t("Mark")} ${next}`}</Button>}
+        {!locked && d.status === "Ready for Loading" && <Button onClick={dispatch} disabled={!readiness.ok}>{t("Dispatch")}</Button>}
+        {inField && <Button onClick={complete} disabled={!allResolved}>{t("Complete & reconcile")}</Button>}
       </>}>
       <div className="space-y-4">
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone={stTone(d.status)}>{d.status}</Pill>
-          <span className="text-xs text-muted">{d.stops.length} stop(s) · {dispatchChicks(d).toLocaleString()} chicks{dispatchBoxes(d) ? ` · ${dispatchBoxes(d)} boxes` : ""}</span>
+          <span className="text-xs text-muted">{d.stops.length} {t("stop(s)")} · {dispatchChicks(d).toLocaleString()} {t("chicks")}{dispatchBoxes(d) ? ` · ${dispatchBoxes(d)} ${t("boxes")}` : ""}</span>
         </div>
 
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-          <Field label="Delivery date"><Input type="date" value={d.date} disabled={locked} onChange={(e) => set({ date: e.target.value })} /></Field>
-          <Field label="Vehicle"><Select value={d.vehicleId ?? ""} disabled={locked || inField} onChange={(e) => set({ vehicleId: e.target.value || undefined })} options={[{ value: "", label: "Assign vehicle" }, ...vehicles.filter((v) => v.active).map((v) => ({ value: v.id, label: `${v.plate}${vehicleReady(v, today) ? "" : " (unavailable)"}` }))]} /></Field>
-          <Field label="Driver"><Select value={d.driverId ?? ""} disabled={locked || inField} onChange={(e) => set({ driverId: e.target.value || undefined })} options={[{ value: "", label: "Assign driver" }, ...drivers.filter((x) => x.active).map((x) => ({ value: x.id, label: `${x.name}${driverAssignable(x, today) ? "" : " (licence expired)"}` }))]} /></Field>
-          <Field label="Assistant"><Input value={d.assistant ?? ""} disabled={locked} onChange={(e) => set({ assistant: e.target.value })} /></Field>
-          <Field label="Route"><Input value={d.route ?? ""} disabled={locked} onChange={(e) => set({ route: e.target.value })} placeholder="e.g. Rwamagana loop" /></Field>
-          <Field label="Expected arrival"><Input value={d.expectedArrival ?? ""} disabled={locked} onChange={(e) => set({ expectedArrival: e.target.value })} placeholder="e.g. 11:00" /></Field>
+          <Field label={t("Delivery date")}><Input type="date" value={d.date} disabled={locked} onChange={(e) => set({ date: e.target.value })} /></Field>
+          <Field label={t("Vehicle")}><Select value={d.vehicleId ?? ""} disabled={locked || inField} onChange={(e) => set({ vehicleId: e.target.value || undefined })} options={[{ value: "", label: t("Assign vehicle") }, ...vehicles.filter((v) => v.active).map((v) => ({ value: v.id, label: `${v.plate}${vehicleReady(v, today) ? "" : ` ${t("(unavailable)")}`}` }))]} /></Field>
+          <Field label={t("Driver")}><Select value={d.driverId ?? ""} disabled={locked || inField} onChange={(e) => set({ driverId: e.target.value || undefined })} options={[{ value: "", label: t("Assign driver") }, ...drivers.filter((x) => x.active).map((x) => ({ value: x.id, label: `${x.name}${driverAssignable(x, today) ? "" : ` ${t("(licence expired)")}`}` }))]} /></Field>
+          <Field label={t("Assistant")}><Input value={d.assistant ?? ""} disabled={locked} onChange={(e) => set({ assistant: e.target.value })} /></Field>
+          <Field label={t("Route")}><Input value={d.route ?? ""} disabled={locked} onChange={(e) => set({ route: e.target.value })} placeholder={t("e.g. Rwamagana loop")} /></Field>
+          <Field label={t("Expected arrival")}><Input value={d.expectedArrival ?? ""} disabled={locked} onChange={(e) => set({ expectedArrival: e.target.value })} placeholder={t("e.g. 11:00")} /></Field>
         </div>
 
         {!locked && !inField && (
           <label className="flex items-center gap-2 text-sm text-ink">
-            <input type="checkbox" checked={!!d.loadingConfirmed} onChange={(e) => set({ loadingConfirmed: e.target.checked })} /> Chicks loaded and counted (loading confirmed)
+            <input type="checkbox" checked={!!d.loadingConfirmed} onChange={(e) => set({ loadingConfirmed: e.target.checked })} /> {t("Chicks loaded and counted (loading confirmed)")}
           </label>
         )}
 
         {d.status === "Ready for Loading" && !readiness.ok && (
           <div className="rounded-lg border border-red/30 bg-red-bg/40 p-3 text-sm">
-            <strong>Can&apos;t dispatch yet:</strong>
+            <strong>{t("Can't dispatch yet:")}</strong>
             <ul className="mt-1 list-disc pl-5 text-xs">{readiness.reasons.map((r, i) => <li key={i}>{r}</li>)}</ul>
           </div>
         )}
 
         <div>
           <div className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">
-            {inField ? "Stops — record proof of delivery" : "Stops"}
+            {inField ? t("Stops — record proof of delivery") : t("Stops")}
           </div>
           <div className="space-y-2">
             {d.stops.map((s, i) => (
               <div key={s.orderId} className="rounded-lg border border-line p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-medium">{s.customer} <span className="text-muted">· {s.product} · {s.chicks.toLocaleString()} chicks · {s.district}</span></div>
+                  <div className="text-sm font-medium">{s.customer} <span className="text-muted">· {s.product} · {s.chicks.toLocaleString()} {t("chicks")} · {s.district}</span></div>
                   {s.outcome && s.outcome !== "pending" && <Pill tone={s.outcome === "delivered" ? "green" : "red"}>{s.outcome}</Pill>}
                 </div>
                 {!inField && !locked && (
                   <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
-                    <Field label="Boxes"><Input type="number" min={0} value={s.boxes ?? ""} onChange={(e) => setStop(i, { boxes: Number(e.target.value) || undefined })} /></Field>
-                    <Field label="Hatch batch"><Input value={s.batch ?? ""} onChange={(e) => setStop(i, { batch: e.target.value })} /></Field>
+                    <Field label={t("Boxes")}><Input type="number" min={0} value={s.boxes ?? ""} onChange={(e) => setStop(i, { boxes: Number(e.target.value) || undefined })} /></Field>
+                    <Field label={t("Hatch batch")}><Input value={s.batch ?? ""} onChange={(e) => setStop(i, { batch: e.target.value })} /></Field>
                   </div>
                 )}
                 {inField && (
                   <div className="mt-2 space-y-2">
                     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                      <Field label="Delivered / accepted"><Input type="number" min={0} value={s.delivered ?? ""} onChange={(e) => setStop(i, { delivered: Number(e.target.value) || 0 })} /></Field>
-                      <Field label="Dead on arrival"><Input type="number" min={0} value={s.doa ?? ""} onChange={(e) => setStop(i, { doa: Number(e.target.value) || undefined })} /></Field>
-                      <Field label="Damaged boxes"><Input type="number" min={0} value={s.damagedBoxes ?? ""} onChange={(e) => setStop(i, { damagedBoxes: Number(e.target.value) || undefined })} /></Field>
-                      <Field label="POD ref (signed/photo)"><Input value={s.podRef ?? ""} onChange={(e) => setStop(i, { podRef: e.target.value })} /></Field>
+                      <Field label={t("Delivered / accepted")}><Input type="number" min={0} value={s.delivered ?? ""} onChange={(e) => setStop(i, { delivered: Number(e.target.value) || 0 })} /></Field>
+                      <Field label={t("Dead on arrival")}><Input type="number" min={0} value={s.doa ?? ""} onChange={(e) => setStop(i, { doa: Number(e.target.value) || undefined })} /></Field>
+                      <Field label={t("Damaged boxes")}><Input type="number" min={0} value={s.damagedBoxes ?? ""} onChange={(e) => setStop(i, { damagedBoxes: Number(e.target.value) || undefined })} /></Field>
+                      <Field label={t("POD ref (signed/photo)")}><Input value={s.podRef ?? ""} onChange={(e) => setStop(i, { podRef: e.target.value })} /></Field>
                     </div>
                     <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-                      <Field label="Customer comment"><Input value={s.customerComment ?? ""} onChange={(e) => setStop(i, { customerComment: e.target.value })} /></Field>
-                      <Field label="GPS"><Input value={s.gps ?? ""} onChange={(e) => setStop(i, { gps: e.target.value })} placeholder="lat, lng" /></Field>
-                      <Field label="Outcome"><Select value={s.outcome ?? "pending"} onChange={(e) => setStop(i, { outcome: e.target.value as DispatchStop["outcome"], deliveredAt: nowISO() })} options={[{ value: "pending", label: "Pending" }, { value: "delivered", label: "Delivered" }, { value: "failed", label: "Failed" }]} /></Field>
+                      <Field label={t("Customer comment")}><Input value={s.customerComment ?? ""} onChange={(e) => setStop(i, { customerComment: e.target.value })} /></Field>
+                      <Field label={t("GPS")}><Input value={s.gps ?? ""} onChange={(e) => setStop(i, { gps: e.target.value })} placeholder={t("lat, lng")} /></Field>
+                      <Field label={t("Outcome")}><Select value={s.outcome ?? "pending"} onChange={(e) => setStop(i, { outcome: e.target.value as DispatchStop["outcome"], deliveredAt: nowISO() })} options={[{ value: "pending", label: t("Pending") }, { value: "delivered", label: t("Delivered") }, { value: "failed", label: t("Failed") }]} /></Field>
                     </div>
-                    {s.outcome === "failed" && <Field label="Failure reason"><Input value={s.failReason ?? ""} onChange={(e) => setStop(i, { failReason: e.target.value })} /></Field>}
-                    {s.outcome === "delivered" && (Number(s.delivered) || 0) < s.chicks && <p className="text-xs text-red">Discrepancy: {(s.chicks - (Number(s.delivered) || 0)).toLocaleString()} short — a backorder will be created.</p>}
+                    {s.outcome === "failed" && <Field label={t("Failure reason")}><Input value={s.failReason ?? ""} onChange={(e) => setStop(i, { failReason: e.target.value })} /></Field>}
+                    {s.outcome === "delivered" && (Number(s.delivered) || 0) < s.chicks && <p className="text-xs text-red">{t("Discrepancy:")} {(s.chicks - (Number(s.delivered) || 0)).toLocaleString()} {t("short — a backorder will be created.")}</p>}
                   </div>
                 )}
               </div>
@@ -312,12 +316,12 @@ function DispatchModal({ initial, email, vehicles, drivers, today, onClose, onSa
 
         {inField && (
           <div className="rounded-lg border border-line p-3 text-sm">
-            <div className="flex items-center gap-2 font-semibold">Reconciliation <Pill tone={dispatchDiscrepancy(d) > 0 ? "gold" : "green"}>{dispatchDiscrepancy(d) > 0 ? `${dispatchDiscrepancy(d)} short` : "balanced"}</Pill></div>
-            <div className="mt-1 text-xs text-muted">Dispatched {dispatchChicks(d).toLocaleString()} · delivered {dispatchDelivered(d).toLocaleString()}. Completing writes each stop back to its order (full delivery, short-delivery backorder, or a failed-delivery flag).</div>
+            <div className="flex items-center gap-2 font-semibold">{t("Reconciliation")} <Pill tone={dispatchDiscrepancy(d) > 0 ? "gold" : "green"}>{dispatchDiscrepancy(d) > 0 ? `${dispatchDiscrepancy(d)} ${t("short")}` : t("balanced")}</Pill></div>
+            <div className="mt-1 text-xs text-muted">{t("Dispatched")} {dispatchChicks(d).toLocaleString()} · {t("delivered")} {dispatchDelivered(d).toLocaleString()}{t(". Completing writes each stop back to its order (full delivery, short-delivery backorder, or a failed-delivery flag).")}</div>
           </div>
         )}
 
-        {!locked && d.status !== "Cancelled" && <button type="button" onClick={() => move("Cancelled", "cancelled")} className="text-xs text-red underline">Cancel this dispatch</button>}
+        {!locked && d.status !== "Cancelled" && <button type="button" onClick={() => move("Cancelled", "cancelled")} className="text-xs text-red underline">{t("Cancel this dispatch")}</button>}
       </div>
     </Modal>
   );
