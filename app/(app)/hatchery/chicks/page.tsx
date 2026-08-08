@@ -121,7 +121,7 @@ export default function ChickInventoryPage() {
               rows.map((r) => (
                 <tr key={r.inv.id}>
                   <Td>
-                    <Link href={`/hatchery/batches/${r.inv.batchId}`} className="font-medium text-gold-dark underline underline-offset-2">
+                    <Link href={`/hatchery/batches/${r.inv.batchId}`} className="font-medium text-gold-dark">
                       {r.batchNo}
                     </Link>
                   </Td>

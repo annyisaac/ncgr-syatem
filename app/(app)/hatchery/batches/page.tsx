@@ -323,7 +323,7 @@ export default function BatchesPage() {
               <EmptyRow colSpan={isAdmin ? 10 : 9} text="No batches match." />
             ) : pageRows.map((b) => (
               <tr key={b.id}>
-                <Td className="whitespace-nowrap"><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+                <Td className="whitespace-nowrap"><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark">{b.batchNo}</Link></Td>
                 <Td><span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-2 w-2 rounded-full" style={{ background: b.productType === "Ross 308" ? "#1565c0" : "#b8860b" }} />{b.productType}</span></Td>
                 <Td>{b.flocks && b.flocks.length > 1 ? `${b.flocks.length} flocks` : `${b.farm} · ${b.flockId}`}</Td>
                 <Td className="whitespace-nowrap">{stepLabel(b.currentStep)}</Td>

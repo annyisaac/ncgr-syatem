@@ -134,7 +134,7 @@ export default function HatchPage() {
                 return (
                   <tr key={b.id}>
                     <Td className="font-medium">
-                      <Link href={`/hatchery/batches/${b.id}`} className="text-gold-dark underline underline-offset-2">{b.batchNo}</Link>
+                      <Link href={`/hatchery/batches/${b.id}`} className="text-gold-dark">{b.batchNo}</Link>
                     </Td>
                     <Td>{b.productType}</Td>
                     <Td className="text-right">{eggsInHatcher(b).toLocaleString()}</Td>
@@ -165,7 +165,7 @@ export default function HatchPage() {
               const pct = inH > 0 ? (b.hatchedCount / inH) * 100 : 0;
               return (
                 <tr key={b.id}>
-                  <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+                  <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark">{b.batchNo}</Link></Td>
                   <Td>{b.productType}</Td>
                   <Td className="text-right">{inH.toLocaleString()}</Td>
                   <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>

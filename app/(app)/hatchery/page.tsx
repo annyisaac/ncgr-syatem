@@ -110,7 +110,7 @@ function BatchesCard({ batches, filter, title = "Batches" }: { batches: Batch[];
             <EmptyRow colSpan={7} text="No batches yet." />
           ) : rows.map((b) => (
             <tr key={b.id}>
-              <Td><Link href={`/hatchery/batches/${b.id}`} className="text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+              <Td><Link href={`/hatchery/batches/${b.id}`} className="text-gold-dark">{b.batchNo}</Link></Td>
               <Td>{b.productType}</Td>
               <Td>{stepLabel(b.currentStep)}</Td>
               <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
@@ -391,7 +391,7 @@ function BatchOverviewCard({ batches, filter }: { batches: Batch[]; filter: Dash
             <EmptyRow colSpan={7} text="No batches yet." />
           ) : rows.map((b) => (
             <tr key={b.id}>
-              <Td className="whitespace-nowrap"><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+              <Td className="whitespace-nowrap"><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark">{b.batchNo}</Link></Td>
               <Td>{b.productType}</Td>
               <Td><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: dot(b.currentStep) }} />{stepLabel(b.currentStep)}</span></Td>
               <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
@@ -667,7 +667,7 @@ function VetView({ filter }: { filter: DashFilter }) {
           <tbody>
             {toVax.length === 0 ? <EmptyRow colSpan={4} text="Nothing awaiting vaccination." /> : toVax.map((b) => (
               <tr key={b.id}>
-                <Td><Link href={`/hatchery/batches/${b.id}`} className="text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+                <Td><Link href={`/hatchery/batches/${b.id}`} className="text-gold-dark">{b.batchNo}</Link></Td>
                 <Td>{b.productType}</Td>
                 <Td className="text-right">{b.countedTotal.toLocaleString()}</Td>
                 <Td className="text-right">{b.culls.toLocaleString()}</Td>
