@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState, type ReactNode } from "react";
-import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
@@ -60,6 +60,7 @@ export default function CandlingPage() {
   const { user } = useAuth();
   const { batches, machines, upsertBatch, upsertMachine } = useHatchery();
   const { toast } = useToast();
+  const router = useRouter();
 
   const [mode, setMode] = useState<"c1" | "c2">("c1");
   const [sel, setSel] = useState<{ batchId: string; idx: number } | null>(null);
@@ -278,8 +279,8 @@ export default function CandlingPage() {
               const needsAction = mode === "c1" ? !flockHasCandling(flock, 1) : !flockTransferDone(flock);
               const actionLabel = mode === "c1" ? "Candle I" : flockHasCandling(flock, 2) ? "Transfer" : "Candle II";
               return (
-                <tr key={`${batch.id}-${idx}`} className={candled ? "bg-green-bg/40" : undefined}>
-                  <Td className="whitespace-nowrap"><Link href={`/hatchery/batches/${batch.id}`} className="font-medium text-gold-dark underline underline-offset-2">{batch.batchNo}</Link></Td>
+                <tr key={`${batch.id}-${idx}`} onClick={() => router.push(`/hatchery/batches/${batch.id}`)} className={`cursor-pointer transition hover:bg-cream/50 ${candled ? "bg-green-bg/40" : ""}`}>
+                  <Td className="whitespace-nowrap"><span className="font-medium text-gold-dark">{batch.batchNo}</span></Td>
                   <Td><div className="font-medium text-ink">{flock.farm} · {flock.flockId}</div><div className="text-xs text-muted">{batch.productType}</div></Td>
                   <Td className="text-right tabular-nums">{flock.eggsSet.toLocaleString()}</Td>
                   {catCols.map((c) => {
@@ -294,7 +295,7 @@ export default function CandlingPage() {
                   <Td className="text-right tabular-nums"><div className="font-semibold text-green">{fertile.toLocaleString()}</div>{candled && <div className="text-[11px] text-muted">{fertilePct.toFixed(1)}%</div>}</Td>
                   <Td><DueCell setDate={setDateOf(batch)} day={CANDLE_DAY[mode]} candled={candled} candledDate={candledOn(flock, stage)} /></Td>
                   <Td>
-                    <div className="flex items-center gap-1">
+                    <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                       {canAct && needsAction ? (
                         <Button size="sm" onClick={() => selectFlock(batch.id, idx)}>{actionLabel}</Button>
                       ) : (
@@ -303,7 +304,6 @@ export default function CandlingPage() {
                       {canEdit && flockHasCandling(flock, stage) && (
                         <Button size="sm" variant="ghost" onClick={() => editFlock(batch.id, idx, stage)}>Edit</Button>
                       )}
-                      <Link href={`/hatchery/batches/${batch.id}`} className="inline-flex items-center rounded-md border border-line px-2.5 py-1 text-[0.72rem] font-semibold text-ink transition hover:border-gold hover:bg-gold-bg">View</Link>
                     </div>
                   </Td>
                 </tr>
