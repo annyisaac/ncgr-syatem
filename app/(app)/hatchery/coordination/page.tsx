@@ -58,7 +58,7 @@ const mainPayment = (o: Order): Payment | undefined =>
 export default function CoordinationPage() {
   const { user, } = useAuth();
   const { orders, users, upsertOrder } = useData();
-  const { batches, inventory, allocations, upsertAllocation, upsertInventory, newId } = useHatchery();
+  const { batches, inventory, allocations, upsertAllocation, upsertInventory, upsertBatch, newId } = useHatchery();
   const { toast } = useToast();
 
   const [tab, setTab] = useState<"all" | CoordStatus>("all");
@@ -146,7 +146,15 @@ export default function CoordinationPage() {
       history: [`${nowISO()} — Allocated ${qty} from ${batchNo(batchId)} (by ${user!.name})`],
     };
     upsertAllocation(a);
-    upsertInventory({ ...inv, availableCount: inv.availableCount - qty, updatedBy: user!.email, on: nowISO() });
+    const remaining = inv.availableCount - qty;
+    upsertInventory({ ...inv, availableCount: remaining, updatedBy: user!.email, on: nowISO() });
+    // Close the batch once every hatched chick has been allocated to customers.
+    if (remaining <= 0) {
+      const b = batches.find((x) => x.id === batchId);
+      if (b && b.status === "active") {
+        void upsertBatch({ ...b, status: "inactive", history: [...b.history, `${nowISO()} — Deactivated: all hatched chicks allocated to customers (by ${user!.name})`] });
+      }
+    }
     toast(`Allocated ${qty.toLocaleString()} chicks to ${order.name}.`);
     setAllocFor(null);
   }
@@ -171,7 +179,15 @@ export default function CoordinationPage() {
     // Return any reserved chicks to inventory, then reject the order.
     allocations.filter((a) => a.orderId === o.id && a.status !== "cancelled").forEach((a) => {
       const inv = inventory.find((i) => i.batchId === a.batchId);
-      if (inv) upsertInventory({ ...inv, availableCount: inv.availableCount + a.quantity, updatedBy: user!.email, on: nowISO() });
+      if (inv) {
+        const back = inv.availableCount + a.quantity;
+        upsertInventory({ ...inv, availableCount: back, updatedBy: user!.email, on: nowISO() });
+        // Reopen a closed batch if returned chicks make it available again.
+        const b = batches.find((x) => x.id === a.batchId);
+        if (b && b.status === "inactive" && back > 0) {
+          void upsertBatch({ ...b, status: "active", history: [...b.history, `${nowISO()} — Reactivated: chicks returned to inventory (by ${user!.name})`] });
+        }
+      }
       upsertAllocation({ ...a, status: "cancelled", history: [...a.history, `${nowISO()} — Cancelled with order (by ${user!.name})`] });
     });
     upsertOrder(rejectOrder(o, reason, user!));
