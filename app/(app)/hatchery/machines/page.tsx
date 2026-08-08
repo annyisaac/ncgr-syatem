@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -78,6 +78,11 @@ export default function MachinesPage() {
     }
     return m;
   }, [readings]);
+
+  const overTempCount = useMemo(
+    () => machines.filter((m) => { const rd = latestByMachine.get(m.code); return rd ? isMachineOverTemp(rd.dryF, rd.wetF, rd.digitalTempF) : false; }).length,
+    [machines, latestByMachine]
+  );
 
   const visible = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -219,8 +224,27 @@ export default function MachinesPage() {
   }
 
   return (
-    <div className="space-y-5 pb-24">
-      <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="space-y-5 pb-8">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Machines</h1>
+          <p className="text-sm text-muted">Monitor setters &amp; hatchers, record readings and track issues</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {canManage && <Button variant="secondary" onClick={() => { setShowCreate(true); setCErr(null); }}>＋ Add machine</Button>}
+          {canRecord && machines.length > 0 && <Button onClick={() => openRecord()}>＋ Record reading</Button>}
+        </div>
+      </div>
+
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <StatCard icon={<IcoGear />} tone="default" value={String(machines.length)} label="Total machines" />
+        <StatCard icon={<IcoPower />} tone="green" value={String(machines.filter((m) => m.active).length)} label="Active" />
+        <StatCard icon={<IcoTray />} tone="blue" value={String(machines.filter((m) => m.type === "setter").length)} label="Setters" />
+        <StatCard icon={<IcoEgg />} tone="gold" value={String(machines.filter((m) => m.type === "hatcher").length)} label="Hatchers" />
+        <StatCard icon={<IcoAlert />} tone={openIssues.length ? "red" : "default"} value={String(openIssues.length)} label="Open issues" />
+        <StatCard icon={<IcoThermo />} tone={overTempCount ? "red" : "default"} value={String(overTempCount)} label="Over-temp now" />
       </div>
 
       {/* Search + filter */}
@@ -340,16 +364,6 @@ export default function MachinesPage() {
         </div>
       )}
 
-      {/* Floating actions */}
-      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
-        {canManage && (
-          <Button variant="secondary" onClick={() => { setShowCreate(true); setCErr(null); }} className="shadow-pop">+ Add machine</Button>
-        )}
-        {canRecord && machines.length > 0 && (
-          <Button onClick={() => openRecord()} className="shadow-pop">+ Record reading</Button>
-        )}
-      </div>
-
       {/* Add machine modal */}
       <Modal
         open={showCreate}
@@ -461,3 +475,31 @@ function Stat({ label, value, hot }: { label: string; value: string; hot?: boole
     </div>
   );
 }
+
+// ---- summary stat card + icons --------------------------------------------
+
+type CardTone = "green" | "gold" | "blue" | "red" | "default";
+const CARD_CHIP: Record<CardTone, string> = {
+  green: "bg-green-bg text-green", gold: "bg-gold-bg text-gold-dark", blue: "bg-blue-bg text-blue", red: "bg-red-bg text-red", default: "bg-grey-bg text-ink",
+};
+function StatCard({ icon, value, label, tone = "default" }: { icon: ReactNode; value: string; label: string; tone?: CardTone }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-paper px-3.5 py-3 shadow-card">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${CARD_CHIP[tone]}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="truncate text-[1.3rem] font-extrabold leading-none tracking-tight text-ink tabular-nums">{value}</p>
+        <p className="mt-1 truncate text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+const msvg = (children: ReactNode) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoGear = () => msvg(<><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></>);
+const IcoPower = () => msvg(<><path d="M12 3v9" /><path d="M6.5 6.5a8 8 0 1 0 11 0" /></>);
+const IcoTray = () => msvg(<><path d="M4 8l8-4 8 4-8 4-8-4Z" /><path d="M4 8v8l8 4 8-4V8" /></>);
+const IcoEgg = () => msvg(<ellipse cx="12" cy="13" rx="6" ry="8" />);
+const IcoAlert = () => msvg(<><path d="M12 4l9 16H3L12 4Z" /><path d="M12 10v4M12 17h.01" /></>);
+const IcoThermo = () => msvg(<><path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0Z" /><path d="M12 9v6" /></>);
