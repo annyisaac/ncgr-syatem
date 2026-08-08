@@ -223,10 +223,12 @@ export default function CandlingPage() {
 
   return (
     <div className="space-y-5">
-      {/* Tabs */}
-      <div className="inline-flex rounded-xl border border-line bg-paper p-1">
-        <button type="button" onClick={() => switchMode("c1")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === "c1" ? "bg-gold text-[#231b04] shadow-sm" : "text-muted hover:text-ink"}`}>Candling I ({pendingC1} to candle)</button>
-        <button type="button" onClick={() => switchMode("c2")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === "c2" ? "bg-gold text-[#231b04] shadow-sm" : "text-muted hover:text-ink"}`}>Candling II ({pendingC2} to candle)</button>
+      {/* Tabs (stick below the app top bar while scrolling) */}
+      <div className="sticky top-16 z-20 -mx-4 border-b border-line bg-cream/90 px-4 py-2.5 backdrop-blur md:-mx-8 md:px-8">
+        <div className="inline-flex rounded-xl border border-line bg-paper p-1">
+          <button type="button" onClick={() => switchMode("c1")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === "c1" ? "bg-gold text-[#231b04] shadow-sm" : "text-muted hover:text-ink"}`}>Candling I ({pendingC1} to candle)</button>
+          <button type="button" onClick={() => switchMode("c2")} className={`rounded-lg px-4 py-1.5 text-sm font-semibold transition ${mode === "c2" ? "bg-gold text-[#231b04] shadow-sm" : "text-muted hover:text-ink"}`}>Candling II ({pendingC2} to candle)</button>
+        </div>
       </div>
 
       {/* Summary */}
