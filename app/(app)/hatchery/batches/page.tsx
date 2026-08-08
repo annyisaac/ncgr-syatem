@@ -1,17 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
-import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
+import { TableWrap, Td, EmptyRow } from "@/components/ui/Table";
 
 import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from "@/lib/hatchery/types";
@@ -20,18 +20,14 @@ import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs,
 import { batchAvailabilityRow, hatchDateOf } from "@/lib/projection";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
+const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 interface Group {
   key: string; farm: string; flockId: string; product: Reception["productType"]; recs: Reception[];
-  /** Remaining settable eggs (what can still be set) — drives the form limits. */
   eggs: number;
-  /** Total settable across the group's receptions, and how much is already set. */
   settableTotal: number; alreadySet: number;
   date: string;
 }
-/** One assignment line: a flock's eggs going into a setter machine.
- *  `setterOnly` lines have no flock picker — they inherit the flock of the
- *  nearest preceding flock line. */
 interface AssignRow { groupKey: string; machineCode: string; eggs: string; setterOnly?: boolean; }
 
 export default function BatchesPage() {
@@ -40,24 +36,24 @@ export default function BatchesPage() {
   const { availability, upsertAvailability } = useData();
   const { toast } = useToast();
 
+  const [show, setShow] = useState(false);
   const [rowsIn, setRowsIn] = useState<AssignRow[]>([{ groupKey: "", machineCode: "", eggs: "" }]);
   const [setDate, setSetDate] = useState(todayISO());
   const [batchCode, setBatchCode] = useState("");
   const [err, setErr] = useState<string | null>(null);
 
-  // Move a trolley of eggs from one setter to another
   const [moveB, setMoveB] = useState<Batch | null>(null);
   const [mv, setMv] = useState({ from: "", to: "", eggs: "", trolleys: "" });
   const [mvErr, setMvErr] = useState<string | null>(null);
 
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
   const canSet = !!user && CAN_SET.includes(user.role);
   const isAdmin = !!user && user.role === "Admin";
-  // Idle setters are inactive; setting eggs into one activates it, so the picker
-  // lists all setters (occupancy/free capacity guards over-filling).
   const setters = machines.filter((m) => m.type === "setter");
 
-  // Receptions marked "ready to set" that still have unset eggs can be batched.
-  // A partially-set reception stays here (with its remaining count) until fully set.
   const groups: Group[] = useMemo(() => {
     const map = new Map<string, Reception[]>();
     for (const r of receptions) {
@@ -79,8 +75,6 @@ export default function BatchesPage() {
   }, [receptions]);
 
   const rows = useMemo(() => batches.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)), [batches]);
-  // Resolve each line's flock: setter-only lines inherit the nearest preceding
-  // flock line, so changing a flock cascades to its setter lines.
   const resolved = useMemo(() => {
     const eff = (i: number) => { for (let j = i; j >= 0; j--) if (!rowsIn[j].setterOnly) return rowsIn[j].groupKey; return ""; };
     return rowsIn.map((r, i) => ({ ...r, groupKey: r.setterOnly ? eff(i) : r.groupKey }));
@@ -89,7 +83,6 @@ export default function BatchesPage() {
   const assignedTotal = rowsIn.reduce((s, r) => s + (Number(r.eggs) || 0), 0);
   const flockCount = new Set(resolved.filter((r) => r.groupKey && (Number(r.eggs) || 0) > 0).map((r) => r.groupKey)).size;
 
-  // Per-flock: how many eggs assigned (across setters) vs settable.
   const flockSummary = useMemo(() => {
     const m = new Map<string, number>();
     for (const r of resolved) if (r.groupKey) m.set(r.groupKey, (m.get(r.groupKey) ?? 0) + (Number(r.eggs) || 0));
@@ -99,14 +92,12 @@ export default function BatchesPage() {
     });
   }, [resolved, groups]);
 
-  // Setter free capacity, minus what other rows in this form already claim.
   const rowFree = (machineCode: string, selfIndex: number) => {
     const m = setters.find((x) => x.code === machineCode);
     if (!m) return 0;
     const claimedElsewhere = rowsIn.reduce((s, r, i) => (i !== selfIndex && r.machineCode === machineCode ? s + (Number(r.eggs) || 0) : s), 0);
     return machineFreeCapacity(m, batches, "setters") - claimedElsewhere;
   };
-  // A flock's settable eggs, minus what other rows already claim for it.
   const groupFree = (groupKey: string, selfIndex: number) => {
     const g = groups.find((x) => x.key === groupKey);
     if (!g) return 0;
@@ -114,15 +105,26 @@ export default function BatchesPage() {
     return g.eggs - claimedElsewhere;
   };
 
+  // Summary + filtered/paginated batches.
+  const eggsSetTotal = batches.reduce((s, b) => s + (b.eggsSet || 0), 0);
+  const activeBatches = batches.filter((b) => b.status === "active").length;
+  const inSetting = batches.filter((b) => b.steps?.["setting"] && !b.steps?.["transfer"]).length;
+  const readyEggs = groups.reduce((s, g) => s + g.eggs, 0);
+  const qs = q.trim().toLowerCase();
+  const filtered = rows.filter((b) => !qs || b.batchNo.toLowerCase().includes(qs) || b.productType.toLowerCase().includes(qs) || b.farm.toLowerCase().includes(qs) || b.flockId.toLowerCase().includes(qs) || stepLabel(b.currentStep).toLowerCase().includes(qs));
+  const total = filtered.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const curPage = Math.min(page, pageCount);
+  const start = (curPage - 1) * perPage;
+  const pageRows = filtered.slice(start, start + perPage);
+
   if (!user) return null;
 
-  // New flock line (blank), vs another setter line for the last flock.
   function addFlock() { setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "" }]); }
-  function addSetter() {
-    setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "", setterOnly: true }]);
-  }
+  function addSetter() { setRowsIn([...rowsIn, { groupKey: "", machineCode: "", eggs: "", setterOnly: true }]); }
   function removeRow(i: number) { setRowsIn(rowsIn.length === 1 ? rowsIn : rowsIn.filter((_, j) => j !== i)); }
   function updateRow(i: number, patch: Partial<AssignRow>) { setRowsIn(rowsIn.map((r, j) => (j === i ? { ...r, ...patch } : r))); }
+  function openNew() { setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]); setBatchCode(""); setSetDate(todayISO()); setErr(null); setShow(true); }
 
   function createBatch() {
     setErr(null);
@@ -149,8 +151,6 @@ export default function BatchesPage() {
       if (eggs > machineFreeCapacity(m, batches, "setters")) return setErr(`${mc} does not have room for ${eggs.toLocaleString()} eggs.`);
     }
 
-    // Spread each flock's eggs-set across its receptions (fill each up to its
-    // remaining), so a receipt is only fully consumed once nothing is left.
     const recUpdates: { r: Reception; setNow: number }[] = [];
     const plan = usedGroups.map((g) => {
       let toSet = valid.filter((r) => r.groupKey === g.key).reduce((s, r) => s + r.eggs, 0);
@@ -168,65 +168,43 @@ export default function BatchesPage() {
     });
 
     const flocks: BatchFlock[] = plan.map(({ g, eggsSet, contributions }) => ({
-      flockId: g.flockId,
-      farm: g.farm,
-      ageOfFlock: g.recs[0]?.ageOfFlock ?? 0,
-      receptionIds: contributions.map((c) => c.receptionId),
-      receptionSets: contributions,
-      eggsSet,
-      candlings: [],
-      transfers: [],
+      flockId: g.flockId, farm: g.farm, ageOfFlock: g.recs[0]?.ageOfFlock ?? 0,
+      receptionIds: contributions.map((c) => c.receptionId), receptionSets: contributions,
+      eggsSet, candlings: [], transfers: [],
     }));
     const setterList: MachineAssignment[] = valid.map((r) => ({ machineCode: r.machineCode, eggs: r.eggs }));
     const product = usedGroups[0].product;
-    // Batch number is counted sequentially per set (not the calendar week);
-    // the set date groups the Ross + Tetra of one setting onto the same week.
     const date = setDate || todayISO();
-    const total = flocks.reduce((s, f) => s + f.eggsSet, 0);
+    const totalEggs = flocks.reduce((s, f) => s + f.eggsSet, 0);
     const on = nowISO();
     const id = newId("batch");
     let batch: Batch = {
-      id,
-      batchNo: code,
-      setDate: date,
-      productType: product,
+      id, batchNo: code, setDate: date, productType: product,
       farm: flocks.length === 1 ? flocks[0].farm : "Multiple flocks",
       flockId: flocks.length === 1 ? flocks[0].flockId : `${flocks.length} flocks`,
       receptionIds: flocks.flatMap((f) => f.receptionIds),
-      eggsSet: total,
-      flocks,
-      setters: setterList,
-      transfers: [],
-      candlings: [],
+      eggsSet: totalEggs, flocks, setters: setterList, transfers: [], candlings: [],
       hatchedCount: 0, culls: 0, unhatchedCount: 0, saleableCount: 0, countedTotal: 0,
-      vaccinated: false,
-      currentStep: "setting",
-      status: "active",
-      steps: {},
-      history: [`${on} — Batch set: ${total.toLocaleString()} eggs across ${flocks.length} flock(s) (by ${user!.name})`],
-      by: user!.email,
-      createdAt: on,
+      vaccinated: false, currentStep: "setting", status: "active", steps: {},
+      history: [`${on} — Batch set: ${totalEggs.toLocaleString()} eggs across ${flocks.length} flock(s) (by ${user!.name})`],
+      by: user!.email, createdAt: on,
     };
     batch = markStep(batch, "reception", user!);
     batch = markStep(batch, "setting", user!);
     upsertBatch(batch);
-    // Auto-open the delivery date (set date + 21 days) with the batch's projected
-    // chicks (80% of eggs set) so sales can order against it right away.
     const hatchDate = hatchDateOf(date);
     const availRow = batchAvailabilityRow(hatchDate, [...batches, batch], availability.find((a) => a.id === hatchDate), user!.email, on);
     if (availRow) void upsertAvailability(availRow);
-    // Increment each reception's eggs-set; a reception keeps its remainder (and
-    // stays settable) until fully consumed, at which point it's tagged with the batch.
     recUpdates.forEach(({ r, setNow }) => {
       const eggsSet = (r.eggsSet ?? 0) + setNow;
       const fullyConsumed = eggsSet >= settableEggs(r);
       upsertReception({ ...r, eggsSet, batchId: fullyConsumed ? id : r.batchId });
     });
-    // Setting eggs activates the setters they went into.
     machinesToSync(machines, setterList.map((s) => s.machineCode), [...batches, batch]).forEach(upsertMachine);
-    toast(`Batch ${batch.batchNo} set — ${total.toLocaleString()} eggs, ${flocks.length} flock(s).`);
+    toast(`Batch ${batch.batchNo} set — ${totalEggs.toLocaleString()} eggs, ${flocks.length} flock(s).`);
     setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]);
     setBatchCode("");
+    setShow(false);
   }
 
   function openMove(b: Batch) {
@@ -235,9 +213,6 @@ export default function BatchesPage() {
     setMvErr(null);
   }
 
-  // Admin-only: delete a batch — a full undo. Its eggs are returned to the
-  // receptions (they become settable again) and any downstream candling /
-  // transfer / hatch records on the batch go with it.
   function deleteBatch(b: Batch) {
     const progressed = b.currentStep !== "setting";
     const msg = progressed
@@ -245,22 +220,19 @@ export default function BatchesPage() {
       : `Delete batch ${b.batchNo}?\n\nIts ${b.eggsSet.toLocaleString()} set egg(s) return to the receptions so they can be set again. This cannot be undone.`;
     if (!confirm(msg)) return;
 
-    // Return the eggs each reception supplied (exact when recorded; legacy
-    // batches fall back to freeing a reception this batch fully consumed).
     const returns = new Map<string, number>();
     for (const f of b.flocks ?? []) for (const rs of f.receptionSets ?? []) returns.set(rs.receptionId, (returns.get(rs.receptionId) ?? 0) + rs.eggs);
     const ids = new Set<string>([...(b.receptionIds ?? []), ...returns.keys()]);
-    for (const id of ids) {
-      const r = receptions.find((x) => x.id === id);
+    for (const rid of ids) {
+      const r = receptions.find((x) => x.id === rid);
       if (!r) continue;
       const clearBatch = r.batchId === b.id;
-      const back = returns.get(id);
+      const back = returns.get(rid);
       const eggsSet = back != null ? Math.max(0, (r.eggsSet ?? 0) - back) : clearBatch ? 0 : r.eggsSet;
       if (clearBatch || eggsSet !== r.eggsSet) upsertReception({ ...r, eggsSet, batchId: clearBatch ? undefined : r.batchId });
     }
 
     void removeBatch(b.id);
-    // Free the setters this batch occupied (recompute from the remaining batches).
     const affected = (b.setters ?? []).map((s) => s.machineCode);
     if (affected.length) machinesToSync(machines, affected, batches.filter((x) => x.id !== b.id)).forEach(upsertMachine);
     toast(`Batch ${b.batchNo} deleted.`);
@@ -283,7 +255,6 @@ export default function BatchesPage() {
     const free = machineFreeCapacity(toMachine, batches, "setters");
     if (eggs > free) return setMvErr(`${to} only has room for ${free.toLocaleString()} more.`);
 
-    // Update the CURRENT setter distribution: out of `from`, into `to`.
     const next = moveB.setters
       .map((s) => (s.machineCode === from ? { ...s, eggs: s.eggs - eggs } : s))
       .filter((s) => s.eggs > 0);
@@ -293,13 +264,8 @@ export default function BatchesPage() {
 
     const move: SetterMove = { from, to, eggs, trolleys: trolleys || undefined, on: nowISO(), by: user!.email };
     const nb: Batch = {
-      ...moveB,
-      setters: next,
-      setterMoves: [...(moveB.setterMoves ?? []), move],
-      history: [
-        ...moveB.history,
-        `${nowISO()} — Moved ${eggs.toLocaleString()} eggs${trolleys ? ` (${trolleys} trolley${trolleys > 1 ? "s" : ""})` : ""} from ${from} to ${to} (by ${user!.name})`,
-      ],
+      ...moveB, setters: next, setterMoves: [...(moveB.setterMoves ?? []), move],
+      history: [...moveB.history, `${nowISO()} — Moved ${eggs.toLocaleString()} eggs${trolleys ? ` (${trolleys} trolley${trolleys > 1 ? "s" : ""})` : ""} from ${from} to ${to} (by ${user!.name})`],
     };
     upsertBatch(nb);
     machinesToSync(machines, [from, to], batches.map((x) => (x.id === nb.id ? nb : x))).forEach(upsertMachine);
@@ -309,44 +275,123 @@ export default function BatchesPage() {
 
   return (
     <div className="space-y-5">
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Batches &amp; Setting</h1>
+          <p className="text-sm text-muted">Set new batches and track them through the hatchery</p>
+        </div>
+        {canSet && <Button onClick={openNew}>＋ New Batch</Button>}
+      </div>
 
-      {canSet && (
-        <Card>
-          <CardHeader title="Set a new batch" />
-          {groups.length === 0 ? (
-            <p className="text-sm text-muted">No receptions ready to set. Mark receptions “ready to set” on the Egg Reception or Store Room page first.</p>
-          ) : setters.length === 0 ? (
-            <p className="text-sm text-status-refunded">No setter machines. Create one on the Machines page first.</p>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <p className="text-sm text-muted">Add a flock, then add a setter line for it. A flock&apos;s eggs can be split across several setters — use “Add setter” until all its eggs are set. All flocks must be the same product.</p>
-                <div className="flex gap-2">
-                  <Button size="sm" variant="ghost" onClick={addFlock}>+ Add flock</Button>
-                  <Button size="sm" variant="ghost" onClick={addSetter}>+ Add setter</Button>
-                </div>
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
+        <StatCard icon={<IcoTray />} tone="default" value={batches.length.toLocaleString()} label="Total batches" />
+        <StatCard icon={<IcoCheck />} tone="green" value={activeBatches.toLocaleString()} label="Active" />
+        <StatCard icon={<IcoGear />} tone="blue" value={inSetting.toLocaleString()} label="In setting" />
+        <StatCard icon={<IcoEgg />} tone="gold" value={eggsSetTotal.toLocaleString()} label="Eggs set" />
+        <StatCard icon={<IcoFlock />} tone="gold" value={groups.length.toLocaleString()} label="Flocks ready" />
+        <StatCard icon={<IcoEgg />} tone="green" value={readyEggs.toLocaleString()} label="Eggs ready to set" />
+      </div>
+
+      {/* Batches table */}
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[0.95rem] font-bold text-ink">Batches</h2>
+          <div className="relative w-full max-w-xs">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+            <Input className="pl-9" placeholder="Search batch, product, farm, flock, step…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+          </div>
+        </div>
+        <TableWrap>
+          <thead>
+            <tr>
+              <th className={`${HG} first:rounded-tl-lg`}>Batch</th>
+              <th className={HG}>Product</th>
+              <th className={HG}>Farm / flock</th>
+              <th className={HG}>Step</th>
+              <th className={HG}>Setters</th>
+              <th className={`${HG} text-right`}>Eggs set</th>
+              <th className={`${HG} text-right`}>Hatched</th>
+              <th className={`${HG} text-right`}>Saleable</th>
+              <th className={HG}>Status</th>
+              {isAdmin && <th className={`${HG} last:rounded-tr-lg text-right`}>Actions</th>}
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.length === 0 ? (
+              <EmptyRow colSpan={isAdmin ? 10 : 9} text="No batches match." />
+            ) : pageRows.map((b) => (
+              <tr key={b.id}>
+                <Td className="whitespace-nowrap"><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
+                <Td><span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-2 w-2 rounded-full" style={{ background: b.productType === "Ross 308" ? "#1565c0" : "#b8860b" }} />{b.productType}</span></Td>
+                <Td>{b.flocks && b.flocks.length > 1 ? `${b.flocks.length} flocks` : `${b.farm} · ${b.flockId}`}</Td>
+                <Td className="whitespace-nowrap">{stepLabel(b.currentStep)}</Td>
+                <Td>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-xs text-muted">{b.setters.length ? b.setters.map((s) => `${s.machineCode}·${s.eggs.toLocaleString()}`).join(", ") : "—"}</span>
+                    {canSet && b.steps?.["setting"] && !b.steps?.["transfer"] && b.setters.length > 0 && (
+                      <div><Button size="sm" variant="ghost" onClick={() => openMove(b)}>Move trolley</Button></div>
+                    )}
+                  </div>
+                </Td>
+                <Td className="text-right tabular-nums">{b.eggsSet.toLocaleString()}</Td>
+                <Td className="text-right tabular-nums">{b.hatchedCount.toLocaleString()}</Td>
+                <Td className="text-right tabular-nums">{b.saleableCount.toLocaleString()}</Td>
+                <Td><Pill tone={b.status === "inactive" ? "neutral" : b.status === "delivered" ? "fulfilled" : b.status === "dispatched" ? "gold" : "green"}>{b.status}</Pill></Td>
+                {isAdmin && (
+                  <Td className="text-right"><Button size="sm" variant="ghost" className="text-red hover:border-red" onClick={() => deleteBatch(b)}>Delete</Button></Td>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+          <span>{total === 0 ? "No batches" : `Showing ${start + 1} to ${Math.min(start + perPage, total)} of ${total} batches`}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" disabled={curPage <= 1} onClick={() => setPage(curPage - 1)}>‹</Button>
+              {Array.from({ length: pageCount }, (_, i) => i + 1).slice(Math.max(0, curPage - 3), Math.max(0, curPage - 3) + 5).map((p) => (
+                <Button key={p} size="sm" variant={p === curPage ? "primary" : "ghost"} onClick={() => setPage(p)}>{p}</Button>
+              ))}
+              <Button size="sm" variant="ghost" disabled={curPage >= pageCount} onClick={() => setPage(curPage + 1)}>›</Button>
+            </div>
+            <label className="flex items-center gap-2">Rows per page:
+              <span className="w-20"><Select value={String(perPage)} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }} options={[10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))} /></span>
+            </label>
+          </div>
+        </div>
+      </Card>
+
+      {/* New batch modal */}
+      <Modal open={show && canSet} onClose={() => setShow(false)} title="Set a new batch" className="max-w-3xl">
+        {groups.length === 0 ? (
+          <p className="text-sm text-muted">No receptions ready to set. Mark receptions “ready to set” on the Egg Reception or Store Room page first.</p>
+        ) : setters.length === 0 ? (
+          <p className="text-sm text-status-refunded">No setter machines. Create one on the Machines page first.</p>
+        ) : (
+          <div className="space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-sm text-muted">Add a flock, then a setter line for it. A flock&apos;s eggs can be split across several setters — use “Add setter” until all its eggs are set. All flocks must be the same product.</p>
+              <div className="flex gap-2">
+                <Button size="sm" variant="ghost" onClick={addFlock}>+ Add flock</Button>
+                <Button size="sm" variant="ghost" onClick={addSetter}>+ Add setter</Button>
               </div>
-              {rowsIn.map((row, i) => {
-                const eff = resolved[i].groupKey;
-                const g = groups.find((x) => x.key === eff);
-                return (
+            </div>
+            {rowsIn.map((row, i) => {
+              const eff = resolved[i].groupKey;
+              const g = groups.find((x) => x.key === eff);
+              return (
                 <div key={i} className="grid grid-cols-1 gap-2 sm:grid-cols-[1.7fr_1.1fr_0.9fr_auto] sm:items-end">
                   {row.setterOnly ? (
                     <Field label="Flock">
-                      <div className="truncate rounded-[9px] border border-line bg-cream/40 px-3.5 py-2.5 text-sm text-muted">
-                        ↳ {g ? `${g.farm} · Flock ${g.flockId}` : "same flock"}
-                      </div>
+                      <div className="truncate rounded-[9px] border border-line bg-cream/40 px-3.5 py-2.5 text-sm text-muted">↳ {g ? `${g.farm} · Flock ${g.flockId}` : "same flock"}</div>
                     </Field>
                   ) : (
                     <Field label="Flock (farm · flock)">
                       <Select value={row.groupKey} onChange={(e) => updateRow(i, { groupKey: e.target.value })}
                         placeholder="Select flock"
-                        options={groups.map((gg) => ({
-                          value: gg.key,
-                          label: `${gg.farm} · Flock ${gg.flockId} · ${gg.product} · ${gg.alreadySet > 0
-                            ? `${gg.eggs.toLocaleString()} remaining (of ${gg.settableTotal.toLocaleString()} settable)`
-                            : `${gg.eggs.toLocaleString()} settable`}`,
-                        }))} />
+                        options={groups.map((gg) => ({ value: gg.key, label: `${gg.farm} · Flock ${gg.flockId} · ${gg.product} · ${gg.alreadySet > 0 ? `${gg.eggs.toLocaleString()} remaining (of ${gg.settableTotal.toLocaleString()} settable)` : `${gg.eggs.toLocaleString()} settable`}` }))} />
                     </Field>
                   )}
                   <Field label="Setter">
@@ -359,79 +404,33 @@ export default function BatchesPage() {
                   </Field>
                   <Button size="sm" variant="ghost" onClick={() => removeRow(i)} disabled={rowsIn.length === 1}>Remove</Button>
                 </div>
-                );
-              })}
-              {flockSummary.length > 0 && (
-                <div className="space-y-1 rounded-lg border border-line bg-cream/40 p-2.5 text-xs">
-                  {flockSummary.map((s) => (
-                    <div key={s.key} className="flex items-center justify-between gap-2">
-                      <span className="text-muted">{s.label}</span>
-                      <span className={s.assigned > s.settable ? "font-semibold text-status-refunded" : s.assigned === s.settable ? "font-semibold text-green" : "text-muted"}>
-                        {s.assigned.toLocaleString()} / {s.settable.toLocaleString()} set{s.assigned > s.settable ? " · over!" : s.assigned === s.settable ? " · full ✓" : ""}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-              <div className="flex flex-wrap items-end gap-3 border-t border-line pt-3">
-                <div className="w-44">
-                  <Field label="Set date">
-                    <Input type="date" value={setDate} onChange={(e) => setSetDate(e.target.value)} />
-                  </Field>
-                </div>
-                <div className="w-52">
-                  <Field label="Batch code (max 15 chars)">
-                    <Input value={batchCode} maxLength={15} onChange={(e) => setBatchCode(e.target.value)} placeholder="e.g. R-W29-02" />
-                  </Field>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                <p className="text-sm">Total to set: <strong>{assignedTotal.toLocaleString()}</strong> egg(s) · <strong>{flockCount}</strong> flock(s)</p>
-                <Button onClick={createBatch}>Create batch</Button>
-              </div>
-              {err && <p className="text-sm text-status-refunded">{err}</p>}
-            </div>
-          )}
-        </Card>
-      )}
-
-      <Card>
-        <CardHeader title={`${rows.length} batch(es)`} />
-        <TableWrap>
-          <thead>
-            <tr><Th>Batch</Th><Th>Product</Th><Th>Farm / flock</Th><Th>Step</Th><Th>Setters</Th><Th className="text-right">Eggs set</Th><Th className="text-right">Hatched</Th><Th className="text-right">Saleable</Th><Th>Status</Th>{isAdmin && <Th>Actions</Th>}</tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? <EmptyRow colSpan={isAdmin ? 10 : 9} text="No batches yet." /> : rows.map((b) => (
-              <tr key={b.id}>
-                <Td><Link href={`/hatchery/batches/${b.id}`} className="font-medium text-gold-dark underline underline-offset-2">{b.batchNo}</Link></Td>
-                <Td>{b.productType}</Td>
-                <Td>{b.flocks && b.flocks.length > 1 ? `${b.flocks.length} flocks` : `${b.farm} · ${b.flockId}`}</Td>
-                <Td>{stepLabel(b.currentStep)}</Td>
-                <Td>
-                  <div className="flex flex-col gap-1">
-                    <span className="text-xs text-muted">
-                      {b.setters.length ? b.setters.map((s) => `${s.machineCode}·${s.eggs.toLocaleString()}`).join(", ") : "—"}
+              );
+            })}
+            {flockSummary.length > 0 && (
+              <div className="space-y-1 rounded-lg border border-line bg-cream/40 p-2.5 text-xs">
+                {flockSummary.map((s) => (
+                  <div key={s.key} className="flex items-center justify-between gap-2">
+                    <span className="text-muted">{s.label}</span>
+                    <span className={s.assigned > s.settable ? "font-semibold text-status-refunded" : s.assigned === s.settable ? "font-semibold text-green" : "text-muted"}>
+                      {s.assigned.toLocaleString()} / {s.settable.toLocaleString()} set{s.assigned > s.settable ? " · over!" : s.assigned === s.settable ? " · full ✓" : ""}
                     </span>
-                    {canSet && b.steps?.["setting"] && !b.steps?.["transfer"] && b.setters.length > 0 && (
-                      <div><Button size="sm" variant="ghost" onClick={() => openMove(b)}>Move trolley</Button></div>
-                    )}
                   </div>
-                </Td>
-                <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
-                <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>
-                <Td className="text-right">{b.saleableCount.toLocaleString()}</Td>
-                <Td><Pill tone={b.status === "inactive" ? "neutral" : b.status === "delivered" ? "fulfilled" : b.status === "dispatched" ? "gold" : "info"}>{b.status}</Pill></Td>
-                {isAdmin && (
-                  <Td>
-                    <Button size="sm" variant="ghost" className="text-red hover:border-red" onClick={() => deleteBatch(b)}>Delete</Button>
-                  </Td>
-                )}
-              </tr>
-            ))}
-          </tbody>
-        </TableWrap>
-      </Card>
+                ))}
+              </div>
+            )}
+            <div className="flex flex-wrap items-end gap-3 border-t border-line pt-3">
+              <div className="w-44"><Field label="Set date"><Input type="date" value={setDate} onChange={(e) => setSetDate(e.target.value)} /></Field></div>
+              <div className="w-52"><Field label="Batch code (max 15 chars)"><Input value={batchCode} maxLength={15} onChange={(e) => setBatchCode(e.target.value)} placeholder="e.g. R-W29-02" /></Field></div>
+            </div>
+            <p className="text-sm">Total to set: <strong>{assignedTotal.toLocaleString()}</strong> egg(s) · <strong>{flockCount}</strong> flock(s)</p>
+            {err && <p className="text-sm text-status-refunded">{err}</p>}
+            <div className="flex justify-end gap-2 border-t border-line pt-3">
+              <Button variant="ghost" onClick={() => setShow(false)}>Cancel</Button>
+              <Button onClick={createBatch}>Create batch</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
 
       {/* Move a trolley between setters */}
       <Modal
@@ -443,13 +442,11 @@ export default function BatchesPage() {
         {moveB && (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <Field label="From setter">
-              <Select value={mv.from} onChange={(e) => setMv({ ...mv, from: e.target.value })}
-                placeholder="Select"
+              <Select value={mv.from} onChange={(e) => setMv({ ...mv, from: e.target.value })} placeholder="Select"
                 options={moveB.setters.map((s) => ({ value: s.machineCode, label: `${s.machineCode} (${s.eggs.toLocaleString()} eggs)` }))} />
             </Field>
             <Field label="To setter">
-              <Select value={mv.to} onChange={(e) => setMv({ ...mv, to: e.target.value })}
-                placeholder="Select"
+              <Select value={mv.to} onChange={(e) => setMv({ ...mv, to: e.target.value })} placeholder="Select"
                 options={setters.filter((m) => m.code !== mv.from).map((m) => ({ value: m.code, label: `${m.code} (free ${Math.max(0, machineFreeCapacity(m, batches, "setters")).toLocaleString()})` }))} />
             </Field>
             <Field label="Eggs on the trolley"><Input type="number" min={1} value={mv.eggs} onChange={(e) => setMv({ ...mv, eggs: e.target.value })} /></Field>
@@ -461,3 +458,30 @@ export default function BatchesPage() {
     </div>
   );
 }
+
+// ---- summary stat card + icons --------------------------------------------
+
+type CardTone = "green" | "gold" | "blue" | "red" | "default";
+const CARD_CHIP: Record<CardTone, string> = {
+  green: "bg-green-bg text-green", gold: "bg-gold-bg text-gold-dark", blue: "bg-blue-bg text-blue", red: "bg-red-bg text-red", default: "bg-grey-bg text-ink",
+};
+function StatCard({ icon, value, label, tone = "default" }: { icon: ReactNode; value: string; label: string; tone?: CardTone }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-paper px-3.5 py-3 shadow-card">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${CARD_CHIP[tone]}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="truncate text-[1.3rem] font-extrabold leading-none tracking-tight text-ink tabular-nums">{value}</p>
+        <p className="mt-1 truncate text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+const bsvg = (children: ReactNode) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoTray = () => bsvg(<><path d="M4 8l8-4 8 4-8 4-8-4Z" /><path d="M4 8v8l8 4 8-4V8" /></>);
+const IcoCheck = () => bsvg(<><circle cx="12" cy="12" r="8" /><path d="M8.5 12l2.5 2.5 4.5-4.5" /></>);
+const IcoGear = () => bsvg(<><circle cx="12" cy="12" r="3" /><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M18.4 5.6l-2.1 2.1M7.7 16.3l-2.1 2.1" /></>);
+const IcoEgg = () => bsvg(<ellipse cx="12" cy="13" rx="6" ry="8" />);
+const IcoFlock = () => bsvg(<><path d="M4 15a4 4 0 0 1 8 0" /><circle cx="8" cy="8" r="2.5" /><path d="M14 15a4 4 0 0 1 6-3.5" /><circle cx="16.5" cy="8.5" r="2" /></>);
