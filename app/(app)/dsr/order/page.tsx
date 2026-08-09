@@ -167,7 +167,7 @@ export default function DsrOrderPage() {
             <Field label="Product">
               <Select value={product} placeholder="Select product" options={PRODUCTS.map((p) => ({ value: p, label: p }))} onChange={(e) => setProduct(e.target.value as Product)} />
             </Field>
-            <Field label="Delivery date">
+            <Field label="Delivery date" required>
               {openDates.length === 0 ? (
                 <p className="text-sm text-status-refunded">No ordering dates are open yet. Check back later.</p>
               ) : (
@@ -186,12 +186,12 @@ export default function DsrOrderPage() {
             </div>
           )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Client name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
+            <Field label="Client name" required><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
             <Field label="Phone" required><Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => onPhoneChange(e.target.value)} placeholder="07xxxxxxxx" /></Field>
-            <Field label="District" hint={`Your zone (${myDsr.zone}) only`}><Select value={district} placeholder="Select district" options={myZoneDistricts.map((d) => ({ value: d, label: d }))} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} /></Field>
-            <Field label="Sector"><Select value={sector} placeholder={district ? "Select sector" : "Choose district first"} options={sectorOptions} disabled={!district} onChange={(e) => setSector(e.target.value)} /></Field>
-            <Field label="Chicks ordered"><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
-            <Field label="Unit price (RWF)"><Input type="number" min={1} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+            <Field label="District" required hint={`Your zone (${myDsr.zone}) only`}><Select value={district} placeholder="Select district" options={myZoneDistricts.map((d) => ({ value: d, label: d }))} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} /></Field>
+            <Field label="Sector" required><Select value={sector} placeholder={district ? "Select sector" : "Choose district first"} options={sectorOptions} disabled={!district} onChange={(e) => setSector(e.target.value)} /></Field>
+            <Field label="Chicks ordered" required><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
+            <Field label="Unit price (RWF)" required><Input type="number" min={1} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-3 rounded-md bg-ink/5 p-3 text-sm">
             <Calc label="2% extra (free)" value={String(extra2)} />

@@ -392,7 +392,7 @@ export default function NewOrderPage() {
                     }}
                   />
                 </Field>
-                <Field label="District">
+                <Field label="District" required>
                   <Select
                     value={district}
                     placeholder={province ? "Select district" : "Choose province first"}
@@ -417,7 +417,7 @@ export default function NewOrderPage() {
                     }}
                   />
                 </Field>
-                <Field label="Sector (from DSR)">
+                <Field label="Sector (from DSR)" required>
                   <Select
                     value={sector}
                     placeholder={dsrId ? "Select sector" : "Choose DSR first"}
@@ -454,10 +454,10 @@ export default function NewOrderPage() {
                         onChange={(e) => selectRossDsr(e.target.value)}
                       />
                     </Field>
-                    <Field label="District (from DSR)">
+                    <Field label="District (from DSR)" required>
                       <Input value={district} disabled placeholder="Filled from the DSR" />
                     </Field>
-                    <Field label="Sector (from DSR)">
+                    <Field label="Sector (from DSR)" required>
                       <Select
                         value={sector}
                         placeholder={dsrId ? "Select sector" : "Choose DSR first"}
@@ -469,7 +469,7 @@ export default function NewOrderPage() {
                   </>
                 ) : (
                   <>
-                    <Field label="District">
+                    <Field label="District" required>
                       <Select
                         value={district}
                         placeholder="Select district"
@@ -480,7 +480,7 @@ export default function NewOrderPage() {
                         }}
                       />
                     </Field>
-                    <Field label="Sector">
+                    <Field label="Sector" required>
                       <Select
                         value={sector}
                         placeholder={district ? "Select sector" : "Choose district first"}
@@ -518,13 +518,13 @@ export default function NewOrderPage() {
                 </div>
               )}
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-                <Field label="Client name">
+                <Field label="Client name" required>
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
                 </Field>
                 <Field label="Phone" required>
                   <Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => onPhoneChange(e.target.value)} placeholder="07xxxxxxxx" />
                 </Field>
-                <Field label="District">
+                <Field label="District" required>
                   <Select
                     value={clientDistrict}
                     placeholder="Select district"
@@ -535,7 +535,7 @@ export default function NewOrderPage() {
                     }}
                   />
                 </Field>
-                <Field label="Sector">
+                <Field label="Sector" required>
                   <Select
                     value={clientSector}
                     placeholder={clientDistrict ? "Select sector" : "Choose district first"}
@@ -544,16 +544,16 @@ export default function NewOrderPage() {
                     onChange={(e) => setClientSector(e.target.value)}
                   />
                 </Field>
-                <Field label="Chicks ordered">
+                <Field label="Chicks ordered" required>
                   <Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} />
                 </Field>
                 <Field label="Compensated (free) chicks">
                   <Input type="number" min={0} value={comp} onChange={(e) => setComp(e.target.value)} />
                 </Field>
-                <Field label="Unit price (RWF)">
+                <Field label="Unit price (RWF)" required>
                   <Input type="number" min={1} value={price} onChange={(e) => setPrice(e.target.value)} />
                 </Field>
-                <Field label="Delivery date" hint={canSeeAvail && selAvail && product ? `${remaining.toLocaleString()} ${product} chicks left this day` : undefined}>
+                <Field label="Delivery date" required hint={canSeeAvail && selAvail && product ? `${remaining.toLocaleString()} ${product} chicks left this day` : undefined}>
                   {openDates.length === 0 ? (
                     <p className="text-sm text-status-refunded">No ordering dates are open. Ask the Admin to open dates on the Availability page.</p>
                   ) : (
