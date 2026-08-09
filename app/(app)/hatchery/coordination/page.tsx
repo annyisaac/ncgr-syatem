@@ -138,9 +138,9 @@ export default function CoordinationPage() {
         const delivered = list.filter((o) => o.deliverOk).length;
         return { r, list, chicks, delivered, date: r.date ?? list[0]?.date ?? "" };
       })
-      .filter((x) => x.list.length > 0)
+      .filter((x) => x.list.length > 0 && (!dateF || x.date === dateF))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
-  }, [routes, orders]);
+  }, [routes, orders, dateF]);
 
   const deliveryDates = useMemo(
     () => Array.from(new Set(orderList.map((o) => o.date))).sort(),
