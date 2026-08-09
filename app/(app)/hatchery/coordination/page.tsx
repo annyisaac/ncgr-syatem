@@ -23,7 +23,7 @@ import { manifestPDF } from "@/lib/reports";
 import type { Allocation } from "@/lib/hatchery/types";
 import {
   PRODUCTS, balance, paidAmount, orderTotal, toDeliver, extra2, isFullyPaid,
-  type Order, type Payment,
+  type Order, type Payment, type Route,
 } from "@/lib/types";
 
 const CAN_MANAGE = ["Admin", "Hatchery Manager", "Hatchery Sales & Coordination Officer"];
@@ -58,7 +58,7 @@ const mainPayment = (o: Order): Payment | undefined =>
 
 export default function CoordinationPage() {
   const { user, } = useAuth();
-  const { orders, users, dsrs, routes, upsertOrder } = useData();
+  const { orders, users, dsrs, routes, upsertOrder, upsertRoute } = useData();
   const { batches, inventory, allocations, upsertAllocation, upsertInventory, upsertBatch, newId } = useHatchery();
   const { toast } = useToast();
 
@@ -67,6 +67,7 @@ export default function CoordinationPage() {
   const [allocFor, setAllocFor] = useState<Order | null>(null);
   const [cancelFor, setCancelFor] = useState<Order | null>(null);
   const [payFor, setPayFor] = useState<Order | null>(null);
+  const [viewRoute, setViewRoute] = useState<{ r: Route; list: Order[]; date: string } | null>(null);
 
   const [dateF, setDateF] = useState("");
   const [productF, setProductF] = useState("all");
@@ -160,6 +161,14 @@ export default function CoordinationPage() {
   if (!user) return null;
 
   // ---- actions -------------------------------------------------------------
+  // Staff confirmation of a truck's chick load (the driver can also confirm by
+  // signing on their delivery link).
+  function confirmLoad(r: Route, total: number) {
+    if (!confirm(`Confirm the chick load for ${r.name} — ${total.toLocaleString()} chicks?`)) return;
+    void upsertRoute({ ...r, pickupConfirmed: { by: r.driver || user!.name, at: nowISO(), chicks: total } });
+    toast(`Load confirmed for ${r.name}.`);
+  }
+
   function allocate(order: Order, batchId: string, qty: number) {
     const inv = inventory.find((i) => i.batchId === batchId);
     if (!inv || inv.availableCount < qty) return toast("Not enough available chicks in that batch.", "error");
@@ -238,42 +247,87 @@ export default function CoordinationPage() {
       </div>
 
       {/* Delivery routes + manifests — prepare each truck's load, hand the manifest to the driver */}
-      <Card>
+      <div>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-[0.95rem] font-bold text-ink">Delivery routes &amp; manifests</h2>
           <span className="text-xs text-muted">Prepare each truck&apos;s chick load, then hand the driver the manifest.</span>
         </div>
-        <TableWrap>
-          <thead>
-            <tr><Th>Date</Th><Th>Route</Th><Th>Driver</Th><Th className="text-right">Stops</Th><Th>Chicks by product (ordered + 2% + comp)</Th><Th className="text-right">Total</Th><Th>Driver confirmed</Th><Th>Manifest</Th></tr>
-          </thead>
-          <tbody>
-            {routeRows.length === 0 ? (
-              <EmptyRow colSpan={8} text="No routes with orders yet." />
-            ) : routeRows.map(({ r, list, chicks, delivered, byProduct, date }) => (
-              <tr key={r.id}>
-                <Td className="whitespace-nowrap">{date ? formatDate(date) : "—"}</Td>
-                <Td className="font-medium">{r.name}</Td>
-                <Td className="whitespace-nowrap">{r.driver || "—"}</Td>
-                <Td className="text-right tabular-nums">{list.length}{delivered > 0 && <span className="text-xs text-muted"> · {delivered} done</span>}</Td>
-                <Td>
-                  <div className="space-y-0.5">
-                    {byProduct.map((p) => (
-                      <div key={p.product} className="whitespace-nowrap text-xs">
-                        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: p.product === "Ross 308" ? "#1565c0" : "#b8860b" }} /><strong className="text-ink">{p.product === "Ross 308" ? "Ross" : "Tetra"} {p.total.toLocaleString()}</strong></span>
-                        <span className="text-muted"> — {p.ordered.toLocaleString()} ordered + {p.extra.toLocaleString()} (2%) + {p.comp.toLocaleString()} comp</span>
+        {routeRows.length === 0 ? (
+          <Card><p className="text-sm text-muted">No routes with orders {dateF ? "on this date" : "yet"}.</p></Card>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            {routeRows.map(({ r, list, chicks, delivered, byProduct, date }) => {
+              const confirmed = !!r.pickupConfirmed;
+              return (
+                <div key={r.id} className="flex flex-col rounded-2xl border border-line bg-paper p-4 shadow-card">
+                  {/* header */}
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <span className="inline-flex items-center gap-1.5 text-xs text-muted"><IcoCal />{date ? formatDate(date) : "—"}</span>
+                      <h3 className="mt-0.5 truncate text-lg font-extrabold text-ink">{r.name}</h3>
+                      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
+                        <span className="inline-flex items-center gap-1"><IcoPin />{list.length} stop(s){delivered > 0 ? ` · ${delivered} done` : ""}</span>
+                        <span className="inline-flex items-center gap-1"><IcoUser />Driver: <strong className="text-ink">{r.driver || "—"}</strong></span>
                       </div>
-                    ))}
+                    </div>
+                    {confirmed
+                      ? <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-green-bg px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-green">✓ Confirmed</span>
+                      : <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-gold-bg px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-gold-dark">⚠ Not confirmed</span>}
                   </div>
-                </Td>
-                <Td className="text-right font-semibold tabular-nums">{chicks.toLocaleString()}</Td>
-                <Td>{r.pickupConfirmed ? <Pill tone="green">✓ {r.pickupConfirmed.chicks.toLocaleString()} · {r.pickupConfirmed.by}</Pill> : <Pill tone="neutral">Not yet</Pill>}</Td>
-                <Td><Button size="sm" variant="secondary" onClick={() => void manifestPDF(r, date ? formatDate(date) : "", list, dsrs)} disabled={list.length === 0}>Manifest (PDF)</Button></Td>
-              </tr>
-            ))}
-          </tbody>
-        </TableWrap>
-      </Card>
+
+                  {/* chick load */}
+                  <p className="mb-2 mt-4 text-[0.58rem] font-bold uppercase tracking-[0.08em] text-muted">Chick load</p>
+                  <div className="space-y-2">
+                    {byProduct.map((p) => {
+                      const isRoss = p.product === "Ross 308";
+                      return (
+                        <div key={p.product} className={`flex items-center gap-3 rounded-xl border-l-4 px-3 py-2.5 ${isRoss ? "border-blue bg-blue-bg/40" : "border-gold bg-gold-bg/40"}`}>
+                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${isRoss ? "bg-blue-bg text-blue" : "bg-gold-bg text-gold-dark"}`}>{isRoss ? <IcoHen /> : <IcoChick />}</span>
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-bold text-ink">{p.product}</p>
+                            <div className="mt-0.5 flex flex-wrap gap-x-4 text-[0.64rem]">
+                              <span className="text-muted">Ordered <strong className="text-ink">{p.ordered.toLocaleString()}</strong></span>
+                              <span className="text-muted">+2% <strong className="text-ink">{p.extra.toLocaleString()}</strong></span>
+                              <span className="text-muted">Comp <strong className="text-ink">{p.comp.toLocaleString()}</strong></span>
+                            </div>
+                          </div>
+                          <div className="shrink-0 text-right"><p className="text-lg font-extrabold tabular-nums text-ink">{p.total.toLocaleString()}</p><p className="text-[0.56rem] uppercase text-muted">chicks</p></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* total */}
+                  <div className="mt-2 flex items-center justify-between rounded-xl bg-cream/60 px-3 py-2.5">
+                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.08em] text-muted">Total load</span>
+                    <span><strong className="text-lg font-extrabold tabular-nums text-green">{chicks.toLocaleString()}</strong> <span className="text-[0.56rem] uppercase text-muted">chicks</span></span>
+                  </div>
+
+                  {/* footer */}
+                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
+                    {confirmed ? (
+                      <div className="flex items-center gap-2 rounded-lg bg-green-bg px-2.5 py-1.5 text-xs text-green">
+                        <span aria-hidden>✓</span>
+                        <div><p className="font-semibold">Driver confirmed by {r.pickupConfirmed!.by}</p><p className="text-[0.62rem] text-green/80">{formatDateTime(r.pickupConfirmed!.at)}</p></div>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 rounded-lg bg-gold-bg px-2.5 py-1.5 text-xs text-gold-dark">
+                        <span aria-hidden>⏳</span>
+                        <div><p className="font-semibold">Driver confirmation pending</p><p className="text-[0.62rem]">Awaiting driver to confirm chick load</p></div>
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      {!confirmed && canManage && <Button size="sm" onClick={() => confirmLoad(r, chicks)}>Confirm Load</Button>}
+                      <Button size="sm" variant="secondary" onClick={() => setViewRoute({ r, list, date })}>View Route</Button>
+                      <Button size="sm" variant="secondary" onClick={() => void manifestPDF(r, date ? formatDate(date) : "", list, dsrs)} disabled={list.length === 0}>Manifest PDF</Button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
         <div className="space-y-4">
@@ -368,9 +422,36 @@ export default function CoordinationPage() {
         <CancelModal order={cancelFor} onClose={() => setCancelFor(null)} onSave={(reason) => cancelOrder(cancelFor, reason)} />
       )}
       {payFor && <PaymentModal order={payFor} nameOf={nameOf} onClose={() => setPayFor(null)} />}
+
+      {viewRoute && (
+        <Modal open onClose={() => setViewRoute(null)} title={`${viewRoute.r.name}${viewRoute.date ? ` — ${formatDate(viewRoute.date)}` : ""}`} className="max-w-2xl" footer={<Button variant="ghost" onClick={() => setViewRoute(null)}>Close</Button>}>
+          <p className="mb-2 text-sm text-muted">Driver: <strong className="text-ink">{viewRoute.r.driver || "—"}</strong> · {viewRoute.list.length} stop(s)</p>
+          <TableWrap>
+            <thead><tr><Th>Customer</Th><Th>Product</Th><Th className="text-right">Chicks</Th><Th>Pickup</Th><Th>Status</Th></tr></thead>
+            <tbody>
+              {viewRoute.list.map((o) => (
+                <tr key={o.id}>
+                  <Td className="font-medium">{o.name}<div className="text-xs text-muted">{o.phone}</div></Td>
+                  <Td className="whitespace-nowrap"><span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: o.product === "Ross 308" ? "#1565c0" : "#b8860b" }} />{o.product}</span></Td>
+                  <Td className="text-right tabular-nums">{(o.deliveryChicks ?? toDeliver(o)).toLocaleString()}</Td>
+                  <Td>{o.pickupLocation ?? "—"}</Td>
+                  <Td>{o.deliverOk ? <Pill tone="green">Delivered</Pill> : o.allocatedOk ? <Pill tone="info">Ready</Pill> : <Pill tone="gold">To allocate</Pill>}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Modal>
+      )}
     </div>
   );
 }
+
+// ---- route card icons -----------------------------------------------------
+const IcoCal = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="3.5" y="4.5" width="17" height="16" rx="2" /><path d="M3.5 9h17M8 3v3M16 3v3" /></svg>;
+const IcoPin = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M12 21s7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 7 11 7 11z" /><circle cx="12" cy="10" r="2.4" /></svg>;
+const IcoUser = () => <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="3.5" /><path d="M5 20a7 7 0 0 1 14 0" /></svg>;
+const IcoChick = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="13.5" rx="6" ry="7" /><path d="M12 6.5V4" /><circle cx="10" cy="12" r=".6" fill="currentColor" /></svg>;
+const IcoHen = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M6 20c0-5 3-8 7-8 2 0 3 1 3 1l3-4-1 5c1 1 1 3 0 4" /><path d="M13 12l-1-3 3 1" /></svg>;
 
 // ---------------------------------------------------------------------------
 
