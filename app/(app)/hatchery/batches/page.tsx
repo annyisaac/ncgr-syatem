@@ -17,6 +17,7 @@ import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from "@/lib/hatchery/types";
 import { Modal } from "@/components/ui/Modal";
 import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
+import { commitBatchSet } from "@/lib/hatchery/db";
 import { batchAvailabilityRow, hatchDateOf } from "@/lib/projection";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
@@ -32,7 +33,7 @@ interface AssignRow { groupKey: string; machineCode: string; eggs: string; sette
 
 export default function BatchesPage() {
   const { user } = useAuth();
-  const { receptions, machines, batches, upsertBatch, upsertReception, upsertMachine, removeBatch, newId } = useHatchery();
+  const { receptions, machines, batches, upsertBatch, upsertReception, upsertMachine, removeBatch, newId, reload } = useHatchery();
   const { availability, upsertAvailability } = useData();
   const { toast } = useToast();
 
@@ -126,7 +127,7 @@ export default function BatchesPage() {
   function updateRow(i: number, patch: Partial<AssignRow>) { setRowsIn(rowsIn.map((r, j) => (j === i ? { ...r, ...patch } : r))); }
   function openNew() { setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]); setBatchCode(""); setSetDate(todayISO()); setErr(null); setShow(true); }
 
-  function createBatch() {
+  async function createBatch() {
     setErr(null);
     const code = batchCode.trim();
     if (!code) return setErr("Enter a batch code.");
@@ -191,20 +192,34 @@ export default function BatchesPage() {
     };
     batch = markStep(batch, "reception", user!);
     batch = markStep(batch, "setting", user!);
-    upsertBatch(batch);
+
+    const receptionRows: Reception[] = recUpdates.map(({ r, setNow }) => {
+      const eggsSet = (r.eggsSet ?? 0) + setNow;
+      const fullyConsumed = eggsSet >= settableEggs(r);
+      return { ...r, eggsSet, batchId: fullyConsumed ? id : r.batchId };
+    });
+    const machineRows = machinesToSync(machines, setterList.map((s) => s.machineCode), [...batches, batch]);
+
+    // One transaction: batch + receptions + machines commit together or not at
+    // all, so a batch can never save while its receptions stay "ready to set".
+    try {
+      await commitBatchSet(batch, receptionRows, machineRows);
+    } catch (e) {
+      setErr(`Could not set the batch — nothing was saved, please try again.${e instanceof Error && e.message ? ` (${e.message})` : ""}`);
+      return;
+    }
+
+    // Availability is a derived sales projection — best-effort, recomputed on
+    // later sets, so it never blocks or half-commits the batch.
     const hatchDate = hatchDateOf(date);
     const availRow = batchAvailabilityRow(hatchDate, [...batches, batch], availability.find((a) => a.id === hatchDate), user!.email, on);
     if (availRow) void upsertAvailability(availRow);
-    recUpdates.forEach(({ r, setNow }) => {
-      const eggsSet = (r.eggsSet ?? 0) + setNow;
-      const fullyConsumed = eggsSet >= settableEggs(r);
-      upsertReception({ ...r, eggsSet, batchId: fullyConsumed ? id : r.batchId });
-    });
-    machinesToSync(machines, setterList.map((s) => s.machineCode), [...batches, batch]).forEach(upsertMachine);
+
     toast(`Batch ${batch.batchNo} set — ${totalEggs.toLocaleString()} eggs, ${flocks.length} flock(s).`);
     setRowsIn([{ groupKey: "", machineCode: "", eggs: "" }]);
     setBatchCode("");
     setShow(false);
+    void reload();
   }
 
   function openMove(b: Batch) {

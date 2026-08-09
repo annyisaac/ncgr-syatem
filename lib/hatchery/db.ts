@@ -4,6 +4,7 @@
  */
 
 import { getSupabase } from "../supabase";
+import type { Batch, Machine, Reception } from "./types";
 
 const inBrowser = () => typeof window !== "undefined";
 
@@ -88,6 +89,27 @@ export async function deleteRow(table: HatcheryTable, id: string): Promise<void>
 export async function setBatchNo(id: string, batchNo: string): Promise<void> {
   if (!inBrowser()) return;
   const { error } = await getSupabase().rpc("set_batch_no", { p_id: id, p_no: batchNo });
+  if (error) throw new Error(error.message);
+}
+
+/**
+ * Set a batch atomically: the batch, its contributing receptions, and the
+ * affected setter machines are written in a single server-side transaction
+ * (the set_hatchery_batch RPC). This replaces the old fire-and-forget path
+ * where the batch could save while a reception link silently failed, leaving
+ * eggs that looked "ready to set" and could be set twice.
+ */
+export async function commitBatchSet(
+  batch: Batch,
+  receptions: Reception[],
+  machines: Machine[]
+): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase().rpc("set_hatchery_batch", {
+    p_batch: batch,
+    p_receptions: receptions,
+    p_machines: machines,
+  });
   if (error) throw new Error(error.message);
 }
 
