@@ -113,6 +113,26 @@ export async function commitBatchSet(
   if (error) throw new Error(error.message);
 }
 
+/**
+ * Delete a batch atomically: its eggs return to the contributing receptions and
+ * the setter machines are freed in the SAME transaction as the batch delete
+ * (the delete_hatchery_batch RPC) — so eggs can never be lost or double-counted
+ * by a half-completed deletion.
+ */
+export async function commitBatchDelete(
+  batchId: string,
+  receptions: Reception[],
+  machines: Machine[]
+): Promise<void> {
+  if (!inBrowser()) return;
+  const { error } = await getSupabase().rpc("delete_hatchery_batch", {
+    p_batch_id: batchId,
+    p_receptions: receptions,
+    p_machines: machines,
+  });
+  if (error) throw new Error(error.message);
+}
+
 export function newId(prefix: string): string {
   return `${prefix}_${Date.now().toString(36)}_${Math.random()
     .toString(36)

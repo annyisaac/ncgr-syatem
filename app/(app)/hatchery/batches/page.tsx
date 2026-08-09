@@ -17,7 +17,7 @@ import { nowISO, todayISO } from "@/lib/format";
 import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from "@/lib/hatchery/types";
 import { Modal } from "@/components/ui/Modal";
 import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
-import { commitBatchSet } from "@/lib/hatchery/db";
+import { commitBatchSet, commitBatchDelete } from "@/lib/hatchery/db";
 import { batchAvailabilityRow, hatchDateOf } from "@/lib/projection";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
@@ -33,7 +33,7 @@ interface AssignRow { groupKey: string; machineCode: string; eggs: string; sette
 
 export default function BatchesPage() {
   const { user } = useAuth();
-  const { receptions, machines, batches, upsertBatch, upsertReception, upsertMachine, removeBatch, newId, reload } = useHatchery();
+  const { receptions, machines, batches, upsertBatch, upsertMachine, newId, reload } = useHatchery();
   const { availability, upsertAvailability } = useData();
   const { toast } = useToast();
 
@@ -228,7 +228,7 @@ export default function BatchesPage() {
     setMvErr(null);
   }
 
-  function deleteBatch(b: Batch) {
+  async function deleteBatch(b: Batch) {
     const progressed = b.currentStep !== "setting";
     const msg = progressed
       ? `Delete batch ${b.batchNo}?\n\nIt has progressed to “${stepLabel(b.currentStep)}”, so this also discards its candling / transfer / hatch records. Its ${b.eggsSet.toLocaleString()} egg(s) return to the receptions. This cannot be undone.`
@@ -238,19 +238,28 @@ export default function BatchesPage() {
     const returns = new Map<string, number>();
     for (const f of b.flocks ?? []) for (const rs of f.receptionSets ?? []) returns.set(rs.receptionId, (returns.get(rs.receptionId) ?? 0) + rs.eggs);
     const ids = new Set<string>([...(b.receptionIds ?? []), ...returns.keys()]);
+    const receptionRows: Reception[] = [];
     for (const rid of ids) {
       const r = receptions.find((x) => x.id === rid);
       if (!r) continue;
       const clearBatch = r.batchId === b.id;
       const back = returns.get(rid);
       const eggsSet = back != null ? Math.max(0, (r.eggsSet ?? 0) - back) : clearBatch ? 0 : r.eggsSet;
-      if (clearBatch || eggsSet !== r.eggsSet) upsertReception({ ...r, eggsSet, batchId: clearBatch ? undefined : r.batchId });
+      if (clearBatch || eggsSet !== r.eggsSet) receptionRows.push({ ...r, eggsSet, batchId: clearBatch ? undefined : r.batchId });
     }
-
-    void removeBatch(b.id);
     const affected = (b.setters ?? []).map((s) => s.machineCode);
-    if (affected.length) machinesToSync(machines, affected, batches.filter((x) => x.id !== b.id)).forEach(upsertMachine);
+    const machineRows = affected.length ? machinesToSync(machines, affected, batches.filter((x) => x.id !== b.id)) : [];
+
+    // One transaction: eggs return to the receptions, machines free up, and the
+    // batch is removed together — or nothing changes.
+    try {
+      await commitBatchDelete(b.id, receptionRows, machineRows);
+    } catch (e) {
+      toast(`Could not delete the batch — nothing was changed.${e instanceof Error && e.message ? ` (${e.message})` : ""}`, "error");
+      return;
+    }
     toast(`Batch ${b.batchNo} deleted.`);
+    void reload();
   }
 
   function doMove() {
