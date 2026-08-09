@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 
 import type { Order, Payment, Product, Province } from "@/lib/types";
-import { availableFor, customerCredit, orderTotal } from "@/lib/types";
+import { availableFor, customerCredit, orderTotal, sameCustomer } from "@/lib/types";
 import {
   DISTRICTS_BY_PROVINCE,
   PROVINCES,
@@ -286,6 +286,20 @@ export default function NewOrderPage() {
       ...(pickup.trim() ? { pickupLocation: pickup.trim() } : {}),
     };
 
+    // One order per customer (name + phone) per product per delivery date.
+    const dupMsg = (o: Order) =>
+      `${order.name} (${order.phone}) already has a ${order.product} order for ${formatDate(order.date)}${o.by ? ` — created by ${o.by}` : ""}. You can't create another for the same customer on the same day.`;
+    const dup = orders.find(
+      (o) =>
+        o.id !== order.id &&
+        o.date === order.date &&
+        o.product === order.product &&
+        o.status !== "rejected" &&
+        o.status !== "refunded" &&
+        sameCustomer(o, order)
+    );
+    if (dup) return setError(dupMsg(dup));
+
     setSaving(true);
     const res = await placeOrder(order);
     setSaving(false);
@@ -296,6 +310,7 @@ export default function NewOrderPage() {
           : `Not enough ${product} chicks available on ${formatDate(date)}. Please pick another day or a smaller order.`);
       }
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
+      if (res.reason === "duplicate") return setError(`${order.name} already has a ${order.product} order for ${formatDate(date)}. You can't create another for the same customer on the same day.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
     toast(`Order created for ${order.name}.`);

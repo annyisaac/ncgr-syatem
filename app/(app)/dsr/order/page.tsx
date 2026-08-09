@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 
 import { PRODUCTS, type Product, type Order, type Payment, type Province } from "@/lib/types";
-import { availableFor } from "@/lib/types";
+import { availableFor, sameCustomer } from "@/lib/types";
 import { ALL_DISTRICTS, formatRWF, provinceOfDistrict, sectorsOfDistrict, zoneOfDistrict } from "@/lib/config";
 import { nowISO, formatDate, normalizePhone } from "@/lib/format";
 import { logLine } from "@/lib/orders";
@@ -110,6 +110,18 @@ export default function DsrOrderPage() {
       status: "pending", by: user!.email, zone, created: date, createdAt: nowISO(),
       history, plan: samedate, payments,
     };
+    // One order per customer (name + phone) per product per delivery date.
+    const dup = orders.find(
+      (o) =>
+        o.id !== order.id &&
+        o.date === order.date &&
+        o.product === order.product &&
+        o.status !== "rejected" &&
+        o.status !== "refunded" &&
+        sameCustomer(o, order)
+    );
+    if (dup) return setError(`${order.name} (${order.phone}) already has a ${order.product} order for ${formatDate(order.date)}. You can't create another for the same customer on the same day.`);
+
     setSaving(true);
     const res = await placeOrder(order);
     setSaving(false);
@@ -118,6 +130,7 @@ export default function DsrOrderPage() {
         return setError(`Not enough ${product} chicks available on ${formatDate(date)} anymore. Please pick another day or a smaller order.`);
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
       if (res.reason === "out_of_zone") return setError(`That client is outside your zone (${myDsr!.zone}). You can only take clients in your zone.`);
+      if (res.reason === "duplicate") return setError(`${order.name} already has a ${order.product} order for ${formatDate(order.date)}. You can't create another for the same customer on the same day.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
     toast(`Order created for ${order.name}.`);

@@ -373,7 +373,7 @@ export const deleteOrderOne = (id: string) => deleteOne("orders", "id", id);
 
 export type PlaceResult =
   | { ok: true }
-  | { ok: false; reason: "not_enough" | "date_closed" | "out_of_zone" | "failed"; left?: number; message?: string };
+  | { ok: false; reason: "not_enough" | "date_closed" | "out_of_zone" | "duplicate" | "failed"; left?: number; message?: string };
 
 export async function placeOrder(order: Order): Promise<PlaceResult> {
   if (!inBrowser()) return { ok: false, reason: "failed" };
@@ -384,6 +384,7 @@ export async function placeOrder(order: Order): Promise<PlaceResult> {
   if (nm) return { ok: false, reason: "not_enough", left: Math.max(0, Number(nm[1])) };
   if (m.includes("DATE_CLOSED")) return { ok: false, reason: "date_closed" };
   if (m.includes("OUT_OF_ZONE")) return { ok: false, reason: "out_of_zone" };
+  if (m.includes("DUPLICATE_CUSTOMER")) return { ok: false, reason: "duplicate" };
   return { ok: false, reason: "failed", message: m };
 }
 export const saveDSROne = (d: DSR) => upsertOne("dsrs", "id", d.id, d);
