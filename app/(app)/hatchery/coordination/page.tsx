@@ -22,7 +22,7 @@ import { withHistory, fulfillOrder, rejectOrder } from "@/lib/orders";
 import { manifestPDF } from "@/lib/reports";
 import type { Allocation } from "@/lib/hatchery/types";
 import {
-  PRODUCTS, balance, paidAmount, orderTotal, toDeliver, isFullyPaid,
+  PRODUCTS, balance, paidAmount, orderTotal, toDeliver, extra2, isFullyPaid,
   type Order, type Payment,
 } from "@/lib/types";
 
@@ -136,7 +136,15 @@ export default function CoordinationPage() {
         const list = active.filter((o) => o.routeId === r.id && o.confirmedOk);
         const chicks = list.reduce((s, o) => s + (o.deliveryChicks ?? toDeliver(o)), 0);
         const delivered = list.filter((o) => o.deliverOk).length;
-        return { r, list, chicks, delivered, date: r.date ?? list[0]?.date ?? "" };
+        // Per product: ordered chicks + 2% extra + compensation.
+        const byProduct = PRODUCTS.map((p) => {
+          const ol = list.filter((o) => o.product === p);
+          const ordered = ol.reduce((s, o) => s + (o.chicks || 0), 0);
+          const extra = ol.reduce((s, o) => s + extra2(o), 0);
+          const comp = ol.reduce((s, o) => s + (o.comp || 0), 0);
+          return { product: p, ordered, extra, comp, total: ordered + extra + comp };
+        }).filter((x) => x.total > 0);
+        return { r, list, chicks, delivered, byProduct, date: r.date ?? list[0]?.date ?? "" };
       })
       .filter((x) => x.list.length > 0 && (!dateF || x.date === dateF))
       .sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -237,18 +245,28 @@ export default function CoordinationPage() {
         </div>
         <TableWrap>
           <thead>
-            <tr><Th>Date</Th><Th>Route</Th><Th>Driver</Th><Th className="text-right">Stops</Th><Th className="text-right">Chicks</Th><Th>Driver confirmed</Th><Th>Manifest</Th></tr>
+            <tr><Th>Date</Th><Th>Route</Th><Th>Driver</Th><Th className="text-right">Stops</Th><Th>Chicks by product (ordered + 2% + comp)</Th><Th className="text-right">Total</Th><Th>Driver confirmed</Th><Th>Manifest</Th></tr>
           </thead>
           <tbody>
             {routeRows.length === 0 ? (
-              <EmptyRow colSpan={7} text="No routes with orders yet." />
-            ) : routeRows.map(({ r, list, chicks, delivered, date }) => (
+              <EmptyRow colSpan={8} text="No routes with orders yet." />
+            ) : routeRows.map(({ r, list, chicks, delivered, byProduct, date }) => (
               <tr key={r.id}>
                 <Td className="whitespace-nowrap">{date ? formatDate(date) : "—"}</Td>
                 <Td className="font-medium">{r.name}</Td>
                 <Td className="whitespace-nowrap">{r.driver || "—"}</Td>
                 <Td className="text-right tabular-nums">{list.length}{delivered > 0 && <span className="text-xs text-muted"> · {delivered} done</span>}</Td>
-                <Td className="text-right tabular-nums">{chicks.toLocaleString()}</Td>
+                <Td>
+                  <div className="space-y-0.5">
+                    {byProduct.map((p) => (
+                      <div key={p.product} className="whitespace-nowrap text-xs">
+                        <span className="inline-flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: p.product === "Ross 308" ? "#1565c0" : "#b8860b" }} /><strong className="text-ink">{p.product === "Ross 308" ? "Ross" : "Tetra"} {p.total.toLocaleString()}</strong></span>
+                        <span className="text-muted"> — {p.ordered.toLocaleString()} ordered + {p.extra.toLocaleString()} (2%) + {p.comp.toLocaleString()} comp</span>
+                      </div>
+                    ))}
+                  </div>
+                </Td>
+                <Td className="text-right font-semibold tabular-nums">{chicks.toLocaleString()}</Td>
                 <Td>{r.pickupConfirmed ? <Pill tone="green">✓ {r.pickupConfirmed.chicks.toLocaleString()} · {r.pickupConfirmed.by}</Pill> : <Pill tone="neutral">Not yet</Pill>}</Td>
                 <Td><Button size="sm" variant="secondary" onClick={() => void manifestPDF(r, date ? formatDate(date) : "", list, dsrs)} disabled={list.length === 0}>Manifest (PDF)</Button></Td>
               </tr>
