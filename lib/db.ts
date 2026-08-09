@@ -516,6 +516,26 @@ export async function ensureRouteLink(routeId: string, driver: string, by: strin
   return token;
 }
 
+/** Share a route's driver link ONCE: creates it if needed and marks it shared so
+ *  it can't be copied / QR'd again. Returns the token and whether it was already shared. */
+export async function shareRouteLink(routeId: string, driver: string, by: string): Promise<{ token: string; alreadyShared: boolean }> {
+  if (!inBrowser()) throw new Error("Not in browser");
+  const sb = getSupabase();
+  const now = new Date().toISOString();
+  const { data: rows } = await sb.from("delivery_links").select("id, data");
+  const found = rows?.find((r) => { const d = r.data as DeliveryLink; return d.active && d.routeId === routeId; });
+  if (found) {
+    const link = found.data as DeliveryLink;
+    if (link.shared) return { token: link.token, alreadyShared: true };
+    await upsertOne("delivery_links", "id", link.id, { ...link, shared: true, sharedBy: by, sharedAt: now });
+    return { token: link.token, alreadyShared: false };
+  }
+  const token = randomToken();
+  const link: DeliveryLink = { id: token, token, driver, routeId, by, createdAt: now, active: true, shared: true, sharedBy: by, sharedAt: now };
+  await upsertOne("delivery_links", "id", token, link);
+  return { token, alreadyShared: false };
+}
+
 export interface DriverStop {
   id: string;
   name: string;
@@ -532,6 +552,7 @@ export interface DriverStop {
   extra: number; // 2% free extra
   comp: number; // compensation (free) chicks
   allocated: boolean; // hatchery has allocated the chicks — required before delivery
+  delivered: boolean; // already delivered — shown (read-only) for 24h after delivery
   failReason: string | null;
 }
 

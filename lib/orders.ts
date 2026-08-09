@@ -173,7 +173,7 @@ export function fulfillOrder(
   note?: string
 ): Order {
   return withHistory(
-    { ...order, deliverOk: true, status: "fulfilled" },
+    { ...order, deliverOk: true, status: "fulfilled", deliveredAt: nowISO() },
     actor,
     note ?? "Fulfilled (delivered)"
   );

@@ -248,6 +248,7 @@ export interface Order {
   /** The hatchery has finalized an allocation of chicks to this order (reserved). */
   allocatedOk?: boolean;
   deliverOk?: boolean; // fulfilled/delivered
+  deliveredAt?: string; // ISO datetime delivered — drives the 24h driver-link window
   /** Approved to be delivered on debt — may be allocated without verified payment. */
   debtOk?: boolean;
   /** Set when a driver marks the stop NOT delivered (order stays open for sales). */
@@ -290,6 +291,10 @@ export interface DeliveryLink {
   by: string; // salesperson who created it
   createdAt: string; // ISO datetime
   active: boolean;
+  /** Once shared from the system, the link can't be copied / QR'd again. */
+  shared?: boolean;
+  sharedBy?: string;
+  sharedAt?: string;
 }
 
 // ---------------------------------------------------------------------------

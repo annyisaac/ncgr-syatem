@@ -21,7 +21,7 @@ import { formatRWF } from "@/lib/config";
 import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
 import { withHistory, fulfillOrder, rejectOrder } from "@/lib/orders";
 import { manifestPDF } from "@/lib/reports";
-import { ensureRouteLink, listDeliveryLinks } from "@/lib/db";
+import { shareRouteLink, listDeliveryLinks } from "@/lib/db";
 import type { Allocation } from "@/lib/hatchery/types";
 import {
   PRODUCTS, balance, paidAmount, orderTotal, toDeliver, extra2, isFullyPaid,
@@ -71,20 +71,19 @@ export default function CoordinationPage() {
   const [payFor, setPayFor] = useState<Order | null>(null);
   const [viewRoute, setViewRoute] = useState<{ r: Route; list: Order[]; date: string } | null>(null);
   const [showRoutes, setShowRoutes] = useState(false);
-  const [driverLinks, setDriverLinks] = useState<Record<string, string>>({});
+  const [sharedRoutes, setSharedRoutes] = useState<Set<string>>(new Set());
   const [qrFor, setQrFor] = useState<{ url: string; driver: string } | null>(null);
 
-  // Existing per-route driver links, so we can copy / show a QR without re-creating.
+  // Which routes' driver links have already been shared (one-time share).
   useEffect(() => {
     let active = true;
     (async () => {
       try {
         const links = await listDeliveryLinks();
         if (!active) return;
-        const origin = typeof window !== "undefined" ? window.location.origin : "";
-        const map: Record<string, string> = {};
-        for (const l of links) if (l.active && l.routeId) map[l.routeId] = `${origin}/deliver/${l.token}`;
-        setDriverLinks(map);
+        const shared = new Set<string>();
+        for (const l of links) if (l.active && l.routeId && l.shared) shared.add(l.routeId);
+        setSharedRoutes(shared);
       } catch { /* links stay hidden until available */ }
     })();
     return () => { active = false; };
@@ -184,23 +183,27 @@ export default function CoordinationPage() {
   // ---- actions -------------------------------------------------------------
   async function copyDriverLink(r: Route) {
     if (!r.driver?.trim()) return toast("This route has no driver name.", "info");
+    if (sharedRoutes.has(r.id)) return toast("This link was already shared once — it can't be shared again.", "info");
     try {
-      const token = await ensureRouteLink(r.id, r.driver.trim(), user!.email);
+      const { token, alreadyShared } = await shareRouteLink(r.id, r.driver.trim(), user!.name);
       const url = `${window.location.origin}/deliver/${token}`;
-      setDriverLinks((m) => ({ ...m, [r.id]: url }));
-      try { await navigator.clipboard.writeText(url); toast(`Driver link copied — send it to ${r.driver}.`); }
+      setSharedRoutes((s) => new Set(s).add(r.id));
+      if (alreadyShared) return toast("This link was already shared once — it can't be shared again.", "info");
+      try { await navigator.clipboard.writeText(url); toast(`Driver link copied — send it to ${r.driver}. It can only be shared once.`); }
       catch { toast(`Driver link ready for ${r.driver}.`); }
     } catch { toast("Could not create the driver link.", "info"); }
   }
 
   async function showQr(r: Route) {
     if (!r.driver?.trim()) return toast("This route has no driver name.", "info");
-    let url = driverLinks[r.id];
-    if (!url) {
-      try { const token = await ensureRouteLink(r.id, r.driver.trim(), user!.email); url = `${window.location.origin}/deliver/${token}`; setDriverLinks((m) => ({ ...m, [r.id]: url! })); }
-      catch { return toast("Could not create the driver link.", "info"); }
-    }
-    setQrFor({ url, driver: r.driver });
+    if (sharedRoutes.has(r.id)) return toast("This link was already shared once — it can't be shared again.", "info");
+    try {
+      const { token, alreadyShared } = await shareRouteLink(r.id, r.driver.trim(), user!.name);
+      const url = `${window.location.origin}/deliver/${token}`;
+      setSharedRoutes((s) => new Set(s).add(r.id));
+      if (alreadyShared) return toast("This link was already shared once — it can't be shared again.", "info");
+      setQrFor({ url, driver: r.driver });
+    } catch { toast("Could not create the driver link.", "info"); }
   }
 
   function allocate(order: Order, batchId: string, qty: number) {
@@ -358,6 +361,7 @@ export default function CoordinationPage() {
             <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {routeRows.map(({ r, list, chicks, delivered, byProduct, date }) => {
                 const confirmed = !!r.pickupConfirmed;
+                const shared = sharedRoutes.has(r.id);
                 return (
                   <div key={r.id} className="flex flex-col rounded-xl border border-line bg-paper p-3 shadow-card">
                     {/* header */}
@@ -406,8 +410,14 @@ export default function CoordinationPage() {
                     {/* actions */}
                     <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
                       <Button size="sm" variant="ghost" onClick={() => setViewRoute({ r, list, date })}>View</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void copyDriverLink(r)} disabled={!r.driver}>Copy link</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void showQr(r)} disabled={!r.driver}>QR</Button>
+                      {shared ? (
+                        <span className="inline-flex items-center gap-1 text-[0.66rem] font-semibold text-green">✓ Link shared</span>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" onClick={() => void copyDriverLink(r)} disabled={!r.driver}>Copy link</Button>
+                          <Button size="sm" variant="ghost" onClick={() => void showQr(r)} disabled={!r.driver}>QR</Button>
+                        </>
+                      )}
                       <Button size="sm" variant="secondary" onClick={() => void manifestPDF(r, date ? formatDate(date) : "", list, dsrs)} disabled={list.length === 0}>Manifest PDF</Button>
                     </div>
                   </div>

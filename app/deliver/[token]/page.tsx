@@ -97,10 +97,12 @@ export default function DriverDeliveryPage() {
     return [...m.entries()].sort((a, b) => (a[0] < b[0] ? -1 : 1));
   }, [shownStops]);
 
-  const totalChicks = stops.reduce((s, o) => s + (o.chicks || 0), 0);
-  const rossChicks = stops.filter((s) => s.product === "Ross 308").reduce((n, s) => n + (s.chicks || 0), 0);
-  const tetraChicks = stops.filter((s) => s.product === "Tetra Super Harco").reduce((n, s) => n + (s.chicks || 0), 0);
-  const needsPickup = pickupRequired && !confirmed && stops.length > 0;
+  const pendingStops = stops.filter((s) => !s.delivered);
+  const deliveredCount = stops.length - pendingStops.length;
+  const totalChicks = pendingStops.reduce((s, o) => s + (o.chicks || 0), 0);
+  const rossChicks = pendingStops.filter((s) => s.product === "Ross 308").reduce((n, s) => n + (s.chicks || 0), 0);
+  const tetraChicks = pendingStops.filter((s) => s.product === "Tetra Super Harco").reduce((n, s) => n + (s.chicks || 0), 0);
+  const needsPickup = pickupRequired && !confirmed && pendingStops.length > 0;
 
   async function confirmPickup() {
     if (!pickupSig) { setFlash("Please sign to confirm the load."); setTimeout(() => setFlash(null), 2500); return; }
@@ -167,10 +169,12 @@ export default function DriverDeliveryPage() {
           <p className="text-sm text-muted">
             {stops.length === 0
               ? "No deliveries waiting. You're all caught up. 🎉"
-              : `${stops.length} stop(s) · ${totalChicks.toLocaleString()} chicks`}
+              : pendingStops.length === 0
+              ? `All delivered 🎉 · ${deliveredCount} today`
+              : `${pendingStops.length} stop(s) · ${totalChicks.toLocaleString()} chicks${deliveredCount > 0 ? ` · ${deliveredCount} delivered` : ""}`}
           </p>
         </div>
-        {stops.length > 0 && (
+        {pendingStops.length > 0 && (
           <div className="shrink-0 space-y-1 text-right">
             <div className="rounded-lg bg-blue-bg px-2.5 py-1">
               <span className="text-[10px] font-bold uppercase text-blue">Ross</span>{" "}
@@ -226,7 +230,7 @@ export default function DriverDeliveryPage() {
           <h2 className="mb-2 text-sm font-semibold text-ink">{formatDate(date)}</h2>
           <div className="space-y-3">
             {list.map((s) => (
-              <div key={s.id} className="rounded-2xl border border-line bg-paper p-4 shadow-sm">
+              <div key={s.id} className={cn("rounded-2xl border p-4 shadow-sm", s.delivered ? "border-green/40 bg-green-bg/30" : "border-line bg-paper")}>
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
@@ -265,7 +269,9 @@ export default function DriverDeliveryPage() {
                   </p>
                 )}
 
-                {reasonFor === s.id ? (
+                {s.delivered ? (
+                  <div className="mt-3 rounded-lg bg-green px-3 py-2 text-center text-sm font-bold text-white">✓ Delivered</div>
+                ) : reasonFor === s.id ? (
                   <div className="mt-3 space-y-2">
                     <div className="flex flex-wrap gap-1.5">
                       {FAIL_REASONS.map((r) => {
