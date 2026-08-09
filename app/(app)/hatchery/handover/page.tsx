@@ -1,12 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
 import { useOperator } from "@/components/OperatorProvider";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Modal } from "@/components/ui/Modal";
@@ -16,6 +16,7 @@ import { todayISO, formatDate, formatDateTime } from "@/lib/format";
 import type { Batch, HandoverChecks, HandoverEnv, HandoverMachine, HandoverStatus, Reception, ShiftHandover, ShiftName, Machine } from "@/lib/hatchery/types";
 
 const AREA = "w-full rounded-[9px] border border-line bg-field px-3.5 py-2.5 text-[0.9rem] text-ink outline-none focus:border-gold";
+const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 /** Default machine rows for the form — the real machines, or the template's four. */
 function defaultMachines(machines: Machine[]): HandoverMachine[] {
@@ -69,8 +70,33 @@ export default function HandoverPage() {
   const [f, setF] = useState(() => blankForm(machines, batches, receptions));
   const [err, setErr] = useState<string | null>(null);
   const [view, setView] = useState<ShiftHandover | null>(null);
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   const rows = useMemo(() => shiftHandovers.slice().sort((a, b) => (a.on < b.on ? 1 : -1)), [shiftHandovers]);
+
+  // Summary KPIs derived from existing handover data.
+  const today = todayISO();
+  const todayCount = rows.filter((h) => h.date === today).length;
+  const dayCount = rows.filter((h) => h.shift === "day").length;
+  const nightCount = rows.filter((h) => h.shift === "night").length;
+  const withFaults = rows.filter((h) => (h.machines ?? []).some((m) => !m.ok)).length;
+
+  // Filtered + paginated handovers.
+  const s = q.trim().toLowerCase();
+  const filtered = rows.filter((h) => !s
+    || (h.summary ?? "").toLowerCase().includes(s)
+    || (h.outgoingLeader ?? "").toLowerCase().includes(s)
+    || (h.incomingLeader ?? "").toLowerCase().includes(s)
+    || (h.shift ?? "").toLowerCase().includes(s)
+    || (h.byName ?? h.by ?? "").toLowerCase().includes(s));
+  const total = filtered.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const curPage = Math.min(page, pageCount);
+  const start = (curPage - 1) * perPage;
+  const pageRows = filtered.slice(start, start + perPage);
+
   if (!user) return null;
 
   const set = (p: Partial<ReturnType<typeof blankForm>>) => setF((x) => ({ ...x, ...p }));
@@ -126,15 +152,27 @@ export default function HandoverPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted">End-of-shift log so the next shift knows the state of the floor.</p>
-        <Button onClick={() => (show ? setShow(false) : open())}>{show ? "Hide form" : "Record handover"}</Button>
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Shift Handover</h1>
+          <p className="text-sm text-muted">End-of-shift log so the next shift knows the state of the floor</p>
+        </div>
+        <Button onClick={open}>＋ New handover</Button>
       </div>
 
-      {show && (
-        <Card>
-          <CardHeader title="Hatchery shift handover log" />
-          <form onSubmit={submit} className="space-y-5">
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <StatCard icon={<IcoClipboard />} tone="blue" value={rows.length.toLocaleString()} label="Total handovers" />
+        <StatCard icon={<IcoCalendar />} tone="green" value={todayCount.toLocaleString()} label="Today" />
+        <StatCard icon={<IcoSun />} tone="gold" value={dayCount.toLocaleString()} label="Day shift" />
+        <StatCard icon={<IcoMoon />} tone="default" value={nightCount.toLocaleString()} label="Night shift" />
+        <StatCard icon={<IcoAlert />} tone="red" value={withFaults.toLocaleString()} label="With faults" />
+      </div>
+
+      {/* New handover modal */}
+      <Modal open={show} onClose={() => setShow(false)} title="Record shift handover" className="max-w-3xl">
+        <form onSubmit={submit} className="space-y-5">
             {/* Header — the date & time are stamped by the system when you save. */}
             <p className="rounded-lg border border-line bg-field px-3 py-2 text-xs text-muted">
               Recording now — <strong className="text-ink">{formatDate(todayISO())}</strong>. The time is saved automatically when you press Save.
@@ -240,19 +278,33 @@ export default function HandoverPage() {
               <Button type="submit">Save handover</Button>
             </div>
           </form>
-        </Card>
-      )}
+      </Modal>
 
+      {/* Recent handovers */}
       <Card>
-        <CardHeader title={`Recent handovers (${rows.length})`} />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[0.95rem] font-bold text-ink">Recent handovers</h2>
+          <div className="relative w-full max-w-xs">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+            <Input className="pl-9" placeholder="Search shift, leader or work…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+          </div>
+        </div>
         <TableWrap>
           <thead>
-            <tr><Th>Date</Th><Th>Shift</Th><Th>Leaders (out → in)</Th><Th>Work completed</Th><Th>Machines</Th><Th>By</Th><Th></Th></tr>
+            <tr>
+              <th className={`${HG} first:rounded-tl-lg`}>Date</th>
+              <th className={HG}>Shift</th>
+              <th className={HG}>Leaders (out → in)</th>
+              <th className={HG}>Work completed</th>
+              <th className={HG}>Machines</th>
+              <th className={HG}>By</th>
+              <th className={`${HG} last:rounded-tr-lg`}></th>
+            </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
-              <EmptyRow colSpan={7} text="No handovers recorded yet." />
-            ) : rows.map((h) => {
+            {pageRows.length === 0 ? (
+              <EmptyRow colSpan={7} text="No handovers match." />
+            ) : pageRows.map((h) => {
               const faults = (h.machines ?? []).filter((m) => !m.ok).length;
               return (
                 <tr key={h.id}>
@@ -268,6 +320,21 @@ export default function HandoverPage() {
             })}
           </tbody>
         </TableWrap>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+          <span>{total === 0 ? "No handovers" : `Showing ${start + 1} to ${Math.min(start + perPage, total)} of ${total} handovers`}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" disabled={curPage <= 1} onClick={() => setPage(curPage - 1)}>‹</Button>
+              {Array.from({ length: pageCount }, (_, i) => i + 1).slice(Math.max(0, curPage - 3), Math.max(0, curPage - 3) + 5).map((p) => (
+                <Button key={p} size="sm" variant={p === curPage ? "primary" : "ghost"} onClick={() => setPage(p)}>{p}</Button>
+              ))}
+              <Button size="sm" variant="ghost" disabled={curPage >= pageCount} onClick={() => setPage(curPage + 1)}>›</Button>
+            </div>
+            <label className="flex items-center gap-2">Rows per page:
+              <span className="w-20"><Select value={String(perPage)} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }} options={[10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))} /></span>
+            </label>
+          </div>
+        </div>
       </Card>
 
       {view && <HandoverView h={view} onClose={() => setView(null)} />}
@@ -370,3 +437,30 @@ function Detail({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+// ---- stat card + icons ----------------------------------------------------
+
+type Tone = "green" | "gold" | "blue" | "red" | "default";
+const CHIP: Record<Tone, string> = {
+  green: "bg-green-bg text-green", gold: "bg-gold-bg text-gold-dark", blue: "bg-blue-bg text-blue", red: "bg-red-bg text-red", default: "bg-grey-bg text-ink",
+};
+function StatCard({ icon, value, label, tone = "default" }: { icon: ReactNode; value: string; label: string; tone?: Tone }) {
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-paper px-3.5 py-3 shadow-card">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${CHIP[tone]}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="truncate text-[1.3rem] font-extrabold leading-none tracking-tight text-ink tabular-nums">{value}</p>
+        <p className="mt-1 truncate text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      </div>
+    </div>
+  );
+}
+
+const fsvg = (children: ReactNode) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoClipboard = () => fsvg(<><rect x="6" y="4" width="12" height="17" rx="2" /><path d="M9 4h6v2.5H9zM9 11h6M9 15h4" /></>);
+const IcoCalendar = () => fsvg(<><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M4 9h16M8 3v4M16 3v4" /></>);
+const IcoSun = () => fsvg(<><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4 12H2M22 12h-2M5 5l1.5 1.5M17.5 17.5 19 19M19 5l-1.5 1.5M6.5 17.5 5 19" /></>);
+const IcoMoon = () => fsvg(<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5Z" />);
+const IcoAlert = () => fsvg(<><path d="M12 3 2.5 20h19L12 3Z" /><path d="M12 10v4M12 17h.01" /></>);

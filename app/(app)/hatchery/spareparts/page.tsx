@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
@@ -8,9 +8,9 @@ import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field, Input } from "@/components/ui/Select";
+import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
-import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
+import { TableWrap, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
 import type { SparePart, SparePartRequest, Purchase } from "@/lib/hatchery/types";
 
@@ -19,6 +19,7 @@ const CAN_MANAGE = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery
 // Approve/reject requests to take parts out of the room — kept from the
 // Hatchery Operations Manager: they run the room but don't self-authorise issues.
 const CAN_APPROVE = ["Admin", "Hatchery Manager", "Operations Manager"];
+const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 const num = (v: string) => Number(v) || 0;
 const rwf = (n: number) => `${Math.round(n).toLocaleString()} RWF`;
@@ -42,6 +43,10 @@ export default function SparePartsPage() {
   const [req, setReq] = useState({ qty: "", reason: "" });
   const [reqErr, setReqErr] = useState<string | null>(null);
 
+  const [q, setQ] = useState("");
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
   const canManage = !!user && CAN_MANAGE.includes(user.role);
   const canApprove = !!user && CAN_APPROVE.includes(user.role);
   const partName = (id: string) => spareParts.find((p) => p.id === id)?.name ?? "—";
@@ -56,6 +61,20 @@ export default function SparePartsPage() {
     () => spareRequests.filter((r) => r.status !== "pending").sort((a, b) => ((a.decidedOn ?? a.on) < (b.decidedOn ?? b.on) ? 1 : -1)).slice(0, 20),
     [spareRequests]
   );
+
+  // Summary.
+  const outOfStock = parts.filter((p) => p.quantity <= 0).length;
+  const unitsInStock = parts.reduce((a, p) => a + p.quantity, 0);
+  const spentAll = parts.reduce((a, p) => a + totalSpent(p), 0);
+
+  // Filtered + paginated parts.
+  const s = q.trim().toLowerCase();
+  const filtered = parts.filter((p) => !s || p.name.toLowerCase().includes(s) || (p.location ?? "").toLowerCase().includes(s) || p.unit.toLowerCase().includes(s));
+  const total = filtered.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const curPage = Math.min(page, pageCount);
+  const start = (curPage - 1) * perPage;
+  const pageRows = filtered.slice(start, start + perPage);
 
   if (!user) return null;
 
@@ -130,42 +149,38 @@ export default function SparePartsPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {canManage && <Button onClick={() => setShowAdd((v) => !v)}>{showAdd ? "Hide" : "Record part"}</Button>}
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Spare Parts</h1>
+          <p className="text-sm text-muted">Stock the spare-part room, record purchases and issue parts on request</p>
+        </div>
+        {canManage && <Button onClick={() => setShowAdd(true)}>＋ Record part</Button>}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi label="Parts tracked" value={parts.length.toLocaleString()} />
-        <Kpi label="Out of stock" value={parts.filter((p) => p.quantity <= 0).length.toLocaleString()} />
-        <Kpi label="Pending requests" value={pending.length.toLocaleString()} tone={pending.length ? "gold" : "green"} />
-        <Kpi label="Total spent" value={rwf(parts.reduce((a, p) => a + totalSpent(p), 0))} tone="gold" />
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <StatCard icon={<IcoBox />} tone="blue" value={parts.length.toLocaleString()} label="Parts tracked" />
+        <StatCard icon={<IcoStack />} tone="green" value={unitsInStock.toLocaleString()} label="Units in stock" />
+        <StatCard icon={<IcoAlert />} tone={outOfStock ? "red" : "default"} value={outOfStock.toLocaleString()} label="Out of stock" />
+        <StatCard icon={<IcoClock />} tone={pending.length ? "gold" : "green"} value={pending.length.toLocaleString()} label="Pending requests" />
+        <StatCard icon={<IcoCoin />} tone="gold" value={rwf(spentAll)} label="Total spent" />
       </div>
-
-      {showAdd && canManage && (
-        <Card>
-          <CardHeader title="Record a spare part" />
-          <form onSubmit={addPart} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Part name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Setter fan motor" /></Field>
-            <Field label="Unit"><Input value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></Field>
-            <Field label="Location (shelf/bin)"><Input value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></Field>
-            <Field label="Quantity"><Input type="number" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></Field>
-            <Field label="Unit cost (RWF)"><Input type="number" value={f.unitCost} onChange={(e) => setF({ ...f, unitCost: e.target.value })} /></Field>
-            <Field label="Supplier"><Input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} /></Field>
-            <Field label="Date bought"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-            {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
-            <div className="sm:col-span-3 flex justify-end gap-2">
-              <Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
-              <Button type="submit">Save part</Button>
-            </div>
-          </form>
-        </Card>
-      )}
 
       {canApprove && (
         <Card>
           <CardHeader title={`Requests to approve (${pending.length})`} />
           <TableWrap>
-            <thead><tr><Th>When</Th><Th>Part</Th><Th className="text-right">Qty</Th><Th>For</Th><Th>Requested by</Th><Th>Decision</Th></tr></thead>
+            <thead>
+              <tr>
+                <th className={`${HG} first:rounded-tl-lg`}>When</th>
+                <th className={HG}>Part</th>
+                <th className={`${HG} text-right`}>Qty</th>
+                <th className={HG}>For</th>
+                <th className={HG}>Requested by</th>
+                <th className={`${HG} last:rounded-tr-lg`}>Decision</th>
+              </tr>
+            </thead>
             <tbody>
               {pending.length === 0 ? <EmptyRow colSpan={6} text="No pending requests." /> : pending.map((r) => {
                 const part = spareParts.find((p) => p.id === r.partId);
@@ -191,20 +206,29 @@ export default function SparePartsPage() {
         </Card>
       )}
 
+      {/* Spare-part room */}
       <Card>
-        <CardHeader title="Spare-part room" />
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[0.95rem] font-bold text-ink">Spare-part room</h2>
+          <div className="relative w-full max-w-xs">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+            <Input className="pl-9" placeholder="Search part, location or unit…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+          </div>
+        </div>
         <TableWrap>
           <thead>
             <tr>
-              <Th>Part</Th><Th>Location</Th><Th className="text-right">In stock</Th>
-              {canManage && <><Th className="text-right">Bought</Th><Th className="text-right">Spent</Th></>}
-              <Th>Action</Th>
+              <th className={`${HG} first:rounded-tl-lg`}>Part</th>
+              <th className={HG}>Location</th>
+              <th className={`${HG} text-right`}>In stock</th>
+              {canManage && <><th className={`${HG} text-right`}>Bought</th><th className={`${HG} text-right`}>Spent</th></>}
+              <th className={`${HG} last:rounded-tr-lg`}>Action</th>
             </tr>
           </thead>
           <tbody>
-            {parts.length === 0 ? (
-              <EmptyRow colSpan={canManage ? 6 : 4} text="No spare parts recorded yet." />
-            ) : parts.map((p) => (
+            {pageRows.length === 0 ? (
+              <EmptyRow colSpan={canManage ? 6 : 4} text={parts.length === 0 ? "No spare parts recorded yet." : "No spare parts match."} />
+            ) : pageRows.map((p) => (
               <tr key={p.id}>
                 <Td className="font-medium">{p.name}</Td>
                 <Td className="text-muted">{p.location ?? "—"}</Td>
@@ -220,12 +244,36 @@ export default function SparePartsPage() {
             ))}
           </tbody>
         </TableWrap>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+          <span>{total === 0 ? "No parts" : `Showing ${start + 1} to ${Math.min(start + perPage, total)} of ${total} parts`}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" disabled={curPage <= 1} onClick={() => setPage(curPage - 1)}>‹</Button>
+              {Array.from({ length: pageCount }, (_, i) => i + 1).slice(Math.max(0, curPage - 3), Math.max(0, curPage - 3) + 5).map((p) => (
+                <Button key={p} size="sm" variant={p === curPage ? "primary" : "ghost"} onClick={() => setPage(p)}>{p}</Button>
+              ))}
+              <Button size="sm" variant="ghost" disabled={curPage >= pageCount} onClick={() => setPage(curPage + 1)}>›</Button>
+            </div>
+            <label className="flex items-center gap-2">Rows per page:
+              <span className="w-20"><Select value={String(perPage)} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }} options={[10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))} /></span>
+            </label>
+          </div>
+        </div>
       </Card>
 
       <Card>
         <CardHeader title={canManage ? "Recent decisions" : "My requests"} />
         <TableWrap>
-          <thead><tr><Th>When</Th><Th>Part</Th><Th className="text-right">Qty</Th>{canManage && <Th>Requested by</Th>}<Th>Status</Th><Th>By</Th></tr></thead>
+          <thead>
+            <tr>
+              <th className={`${HG} first:rounded-tl-lg`}>When</th>
+              <th className={HG}>Part</th>
+              <th className={`${HG} text-right`}>Qty</th>
+              {canManage && <th className={HG}>Requested by</th>}
+              <th className={HG}>Status</th>
+              <th className={`${HG} last:rounded-tr-lg`}>By</th>
+            </tr>
+          </thead>
           <tbody>
             {(canManage ? history : myRequests).length === 0 ? (
               <EmptyRow colSpan={canManage ? 6 : 5} text="Nothing yet." />
@@ -243,11 +291,30 @@ export default function SparePartsPage() {
         </TableWrap>
       </Card>
 
+      {/* Record part modal */}
+      <Modal open={showAdd && canManage} onClose={() => setShowAdd(false)} title="Record a spare part" className="max-w-2xl">
+        <form onSubmit={addPart} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Part name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Setter fan motor" /></Field>
+          <Field label="Unit"><Input value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></Field>
+          <Field label="Location (shelf/bin)"><Input value={f.location} onChange={(e) => setF({ ...f, location: e.target.value })} /></Field>
+          <Field label="Quantity"><Input type="number" value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></Field>
+          <Field label="Unit cost (RWF)"><Input type="number" value={f.unitCost} onChange={(e) => setF({ ...f, unitCost: e.target.value })} /></Field>
+          <Field label="Supplier"><Input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} /></Field>
+          <Field label="Date bought"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
+          <div className="sm:col-span-3 flex justify-end gap-2">
+            <Button variant="ghost" onClick={() => setShowAdd(false)}>Cancel</Button>
+            <Button type="submit">Save part</Button>
+          </div>
+        </form>
+      </Modal>
+
       {/* Request modal */}
       <Modal
         open={!!reqFor}
         onClose={() => setReqFor(null)}
         title={reqFor ? `Request — ${reqFor.name}` : "Request a part"}
+        className="max-w-2xl"
         footer={<><Button variant="ghost" onClick={() => setReqFor(null)}>Cancel</Button><Button onClick={saveReq}>Send request</Button></>}
       >
         <div className="space-y-3">
@@ -263,6 +330,7 @@ export default function SparePartsPage() {
         open={!!buyFor}
         onClose={() => setBuyFor(null)}
         title={buyFor ? `Record purchase — ${buyFor.name}` : "Record purchase"}
+        className="max-w-2xl"
         footer={<><Button variant="ghost" onClick={() => setBuyFor(null)}>Cancel</Button><Button onClick={saveBuy}>Save purchase</Button></>}
       >
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -281,12 +349,29 @@ export default function SparePartsPage() {
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: "gold" | "green" }) {
-  const color = tone === "gold" ? "text-gold-dark" : tone === "green" ? "text-green" : "text-ink";
+// ---- stat card + icons ----------------------------------------------------
+
+type Tone = "green" | "gold" | "blue" | "red" | "default";
+const CHIP: Record<Tone, string> = {
+  green: "bg-green-bg text-green", gold: "bg-gold-bg text-gold-dark", blue: "bg-blue-bg text-blue", red: "bg-red-bg text-red", default: "bg-grey-bg text-ink",
+};
+function StatCard({ icon, value, label, tone = "default" }: { icon: ReactNode; value: string; label: string; tone?: Tone }) {
   return (
-    <div className="rounded-xl border border-line bg-paper p-3.5">
-      <p className="text-xs text-muted">{label}</p>
-      <p className={`text-xl font-bold ${color}`}>{value}</p>
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-paper px-3.5 py-3 shadow-card">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${CHIP[tone]}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="truncate text-[1.3rem] font-extrabold leading-none tracking-tight text-ink tabular-nums">{value}</p>
+        <p className="mt-1 truncate text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      </div>
     </div>
   );
 }
+
+const fsvg = (children: ReactNode) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoBox = () => fsvg(<><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3z" /><path d="M4 7.5l8 4.5 8-4.5M12 12v9" /></>);
+const IcoStack = () => fsvg(<><path d="M12 3l9 5-9 5-9-5 9-5z" /><path d="M3 12l9 5 9-5M3 16l9 5 9-5" /></>);
+const IcoAlert = () => fsvg(<><path d="M12 3l9 16H3l9-16z" /><path d="M12 10v4M12 17h.01" /></>);
+const IcoClock = () => fsvg(<><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>);
+const IcoCoin = () => fsvg(<><circle cx="12" cy="12" r="8" /><path d="M9.5 14.5h4a1.5 1.5 0 0 0 0-3h-3a1.5 1.5 0 0 1 0-3h4M12 7v10" /></>);

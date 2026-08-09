@@ -13,6 +13,7 @@ export default function MaintenancePage() {
   return (
     <LogModule
       title="Maintenance & Equipment"
+      subtitle="Track preventive and corrective work, downtime and inspections"
       areaLabel="Equipment"
       kinds={["Preventive", "Corrective", "Downtime", "Generator", "Inspection"]}
       withDowntime

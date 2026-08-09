@@ -1,20 +1,22 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
+import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
-import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
+import { TableWrap, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
 import { SUPPLY_CATEGORIES, type Supply, type SupplyKind, type Purchase } from "@/lib/hatchery/types";
 
 const CAN_MANAGE = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Hatchery Sales & Coordination Officer"];
+const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 const num = (v: string) => Number(v) || 0;
 const catLabel = (k: SupplyKind) => SUPPLY_CATEGORIES.find((c) => c.value === k)?.label ?? k;
@@ -35,6 +37,8 @@ export default function InventoryPage() {
   const [q, setQ] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [f, setF] = useState(blankForm());
+  const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
 
   const canManage = !!user && CAN_MANAGE.includes(user.role);
 
@@ -58,6 +62,16 @@ export default function InventoryPage() {
     for (const i of inventory) if (i.availableCount > 0) m.set(i.productType, (m.get(i.productType) ?? 0) + i.availableCount);
     return [...m.entries()];
   }, [inventory]);
+
+  // Low stock = in stock but running short.
+  const lowStock = supplies.filter((s) => s.quantity > 0 && s.quantity < 20).length;
+
+  // Paginated stock rows.
+  const total = rows.length;
+  const pageCount = Math.max(1, Math.ceil(total / perPage));
+  const curPage = Math.min(page, pageCount);
+  const start = (curPage - 1) * perPage;
+  const pageRows = rows.slice(start, start + perPage);
 
   if (!user) return null;
 
@@ -110,65 +124,57 @@ export default function InventoryPage() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {canManage && <Button onClick={() => (showForm ? closeForm() : openAdd())}>{showForm ? "Hide" : "Add item"}</Button>}
+      {/* Header */}
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Supplies Inventory</h1>
+          <p className="text-sm text-muted">Track hatchery supplies, purchases and stock levels</p>
+        </div>
+        {canManage && <Button onClick={openAdd}>＋ Add item</Button>}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Kpi label="Total spent" value={rwf(totals.spent)} tone="gold" />
-        <Kpi label="Items tracked" value={totals.items.toLocaleString()} />
-        <Kpi label="Out of stock" value={totals.low.toLocaleString()} tone={totals.low ? "gold" : "green"} />
-        <Kpi label="Chicks available" value={totals.chicks.toLocaleString()} tone="green" />
+      {/* Summary */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
+        <StatCard icon={<IcoBox />} tone="blue" value={totals.items.toLocaleString()} label="Items tracked" />
+        <StatCard icon={<IcoAlert />} tone="red" value={totals.low.toLocaleString()} label="Out of stock" />
+        <StatCard icon={<IcoLow />} tone="gold" value={lowStock.toLocaleString()} label="Low stock" />
+        <StatCard icon={<IcoCoins />} tone="gold" value={rwf(totals.spent)} label="Total spent" />
+        <StatCard icon={<IcoChick />} tone="green" value={totals.chicks.toLocaleString()} label="Chicks available" />
       </div>
 
-      {showForm && canManage && (
-        <Card>
-          <CardHeader title={editingId ? "Edit inventory item" : "Add inventory item"} />
-          <form onSubmit={saveItem} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="Category">
-              <Select value={f.kind} onChange={(e) => pickCategory(e.target.value as SupplyKind)}
-                options={SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))} />
-            </Field>
-            <Field label="Name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Newcastle vaccine / Soap" /></Field>
-            <Field label="Unit"><Input value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></Field>
-            <Field label="Quantity in stock"><Input type="number" min={0} value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></Field>
-            <Field label="Unit cost (RWF)"><Input type="number" min={0} value={f.unitCost} onChange={(e) => setF({ ...f, unitCost: e.target.value })} /></Field>
-            <Field label="Supplier"><Input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} /></Field>
-            <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
-            <div className="sm:col-span-3 rounded-md border border-line bg-cream/40 px-3 py-2 text-sm">
-              Total value: <strong className="text-ink">{rwf(num(f.qty) * num(f.unitCost))}</strong>
-            </div>
-            {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
-            <div className="sm:col-span-3 flex justify-end gap-2">
-              <Button variant="ghost" onClick={closeForm}>Cancel</Button>
-              <Button type="submit">{editingId ? "Save changes" : "Save item"}</Button>
-            </div>
-          </form>
-        </Card>
-      )}
-
+      {/* Stock */}
       <Card>
-        <CardHeader title="Stock" />
-        <div className="mb-3 grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr] sm:items-end">
-          <Field label="Category">
-            <Select value={cat} onChange={(e) => setCat(e.target.value as "all" | SupplyKind)}
-              options={[{ value: "all", label: "All categories" }, ...SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))]} />
-          </Field>
-          <Field label="Search"><Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Item name…" /></Field>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[0.95rem] font-bold text-ink">Stock</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="w-44">
+              <Select value={cat} onChange={(e) => { setCat(e.target.value as "all" | SupplyKind); setPage(1); }}
+                options={[{ value: "all", label: "All categories" }, ...SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))]} />
+            </span>
+            <div className="relative w-full max-w-xs">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+              <Input className="pl-9" placeholder="Search item name…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />
+            </div>
+          </div>
         </div>
         <TableWrap>
           <thead>
             <tr>
-              <Th>Item</Th><Th>Category</Th><Th className="text-right">In stock</Th>
-              <Th className="text-right">Unit cost</Th><Th className="text-right">Value</Th><Th>Supplier</Th><Th>Updated</Th>
-              {canManage && <Th></Th>}
+              <th className={`${HG} first:rounded-tl-lg`}>Item</th>
+              <th className={HG}>Category</th>
+              <th className={`${HG} text-right`}>In stock</th>
+              <th className={`${HG} text-right`}>Unit cost</th>
+              <th className={`${HG} text-right`}>Value</th>
+              <th className={HG}>Supplier</th>
+              <th className={canManage ? HG : `${HG} last:rounded-tr-lg`}>Updated</th>
+              {canManage && <th className={`${HG} last:rounded-tr-lg`}></th>}
             </tr>
           </thead>
           <tbody>
-            {rows.length === 0 ? (
+            {pageRows.length === 0 ? (
               <EmptyRow colSpan={canManage ? 8 : 7} text="Nothing in stock." />
             ) : (
-              rows.map((s) => {
+              pageRows.map((s) => {
                 const last = s.purchases?.slice(-1)[0];
                 return (
                   <tr key={s.id}>
@@ -191,10 +197,26 @@ export default function InventoryPage() {
             )}
           </tbody>
         </TableWrap>
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
+          <span>{total === 0 ? "No items" : `Showing ${start + 1} to ${Math.min(start + perPage, total)} of ${total} items`}</span>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1">
+              <Button size="sm" variant="ghost" disabled={curPage <= 1} onClick={() => setPage(curPage - 1)}>‹</Button>
+              {Array.from({ length: pageCount }, (_, i) => i + 1).slice(Math.max(0, curPage - 3), Math.max(0, curPage - 3) + 5).map((p) => (
+                <Button key={p} size="sm" variant={p === curPage ? "primary" : "ghost"} onClick={() => setPage(p)}>{p}</Button>
+              ))}
+              <Button size="sm" variant="ghost" disabled={curPage >= pageCount} onClick={() => setPage(curPage + 1)}>›</Button>
+            </div>
+            <label className="flex items-center gap-2">Rows per page:
+              <span className="w-20"><Select value={String(perPage)} onChange={(e) => { setPerPage(Number(e.target.value)); setPage(1); }} options={[10, 25, 50].map((n) => ({ value: String(n), label: String(n) }))} /></span>
+            </label>
+          </div>
+        </div>
       </Card>
 
+      {/* Hatched chicks (read-only) */}
       <Card>
-        <CardHeader title="Hatched chicks (read-only)" />
+        <h2 className="mb-3 text-[0.95rem] font-bold text-ink">Hatched chicks (read-only)</h2>
         <div className="flex flex-wrap items-center gap-3 text-sm">
           {chicksByProduct.length === 0 ? (
             <p className="text-muted">No chicks in inventory.</p>
@@ -209,16 +231,57 @@ export default function InventoryPage() {
         </div>
         <p className="mt-2 text-xs text-muted">Chicks are produced by the hatch/counting flow and consumed by sales allocation — managed there, not bought here.</p>
       </Card>
+
+      {/* Add / edit modal */}
+      <Modal open={showForm && canManage} onClose={closeForm} title={editingId ? "Edit inventory item" : "Add inventory item"} className="max-w-2xl">
+        <form onSubmit={saveItem} className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          <Field label="Category">
+            <Select value={f.kind} onChange={(e) => pickCategory(e.target.value as SupplyKind)}
+              options={SUPPLY_CATEGORIES.map((c) => ({ value: c.value, label: c.label }))} />
+          </Field>
+          <Field label="Name"><Input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="e.g. Newcastle vaccine / Soap" /></Field>
+          <Field label="Unit"><Input value={f.unit} onChange={(e) => setF({ ...f, unit: e.target.value })} /></Field>
+          <Field label="Quantity in stock"><Input type="number" min={0} value={f.qty} onChange={(e) => setF({ ...f, qty: e.target.value })} /></Field>
+          <Field label="Unit cost (RWF)"><Input type="number" min={0} value={f.unitCost} onChange={(e) => setF({ ...f, unitCost: e.target.value })} /></Field>
+          <Field label="Supplier"><Input value={f.supplier} onChange={(e) => setF({ ...f, supplier: e.target.value })} /></Field>
+          <Field label="Date"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
+          <div className="sm:col-span-3 rounded-md border border-line bg-cream/40 px-3 py-2 text-sm">
+            Total value: <strong className="text-ink">{rwf(num(f.qty) * num(f.unitCost))}</strong>
+          </div>
+          {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
+          <div className="sm:col-span-3 flex justify-end gap-2">
+            <Button variant="ghost" onClick={closeForm}>Cancel</Button>
+            <Button type="submit">{editingId ? "Save changes" : "Save item"}</Button>
+          </div>
+        </form>
+      </Modal>
     </div>
   );
 }
 
-function Kpi({ label, value, tone }: { label: string; value: string; tone?: "gold" | "green" }) {
-  const color = tone === "gold" ? "text-gold-dark" : tone === "green" ? "text-green" : "text-ink";
+// ---- stat card + icons ----------------------------------------------------
+
+type Tone = "green" | "gold" | "blue" | "red" | "default";
+const CHIP: Record<Tone, string> = {
+  green: "bg-green-bg text-green", gold: "bg-gold-bg text-gold-dark", blue: "bg-blue-bg text-blue", red: "bg-red-bg text-red", default: "bg-grey-bg text-ink",
+};
+function StatCard({ icon, value, label, tone = "default" }: { icon: ReactNode; value: string; label: string; tone?: Tone }) {
   return (
-    <div className="rounded-xl border border-line bg-paper p-3.5">
-      <p className="text-xs text-muted">{label}</p>
-      <p className={`text-xl font-bold ${color}`}>{value}</p>
+    <div className="flex items-center gap-3 rounded-xl border border-line bg-paper px-3.5 py-3 shadow-card">
+      <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${CHIP[tone]}`}>{icon}</span>
+      <div className="min-w-0">
+        <p className="truncate text-[1.3rem] font-extrabold leading-none tracking-tight text-ink tabular-nums">{value}</p>
+        <p className="mt-1 truncate text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      </div>
     </div>
   );
 }
+
+const fsvg = (children: ReactNode) => (
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoBox = () => fsvg(<><path d="M3.5 7.5 12 3l8.5 4.5v9L12 21l-8.5-4.5z" /><path d="M3.5 7.5 12 12l8.5-4.5M12 12v9" /></>);
+const IcoAlert = () => fsvg(<><path d="M12 3.5 21 19H3z" /><path d="M12 10v4M12 16.5v.5" /></>);
+const IcoLow = () => fsvg(<><path d="M12 5v10" /><path d="m7 11 5 5 5-5" /><path d="M5 19h14" /></>);
+const IcoCoins = () => fsvg(<><ellipse cx="12" cy="6" rx="7" ry="3" /><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" /></>);
+const IcoChick = () => fsvg(<><circle cx="12" cy="13" r="6" /><path d="M12 7V4M10 4h4" /><path d="M18 12l2-1" /></>);

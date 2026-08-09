@@ -18,6 +18,7 @@ export default function BiosecurityPage() {
   return (
     <LogModule
       title="Biosecurity & Sanitation"
+      subtitle="Log cleaning, disinfection, footbaths and access control"
       areaLabel="Area"
       kinds={["Cleaning", "Disinfection", "Footbath", "Access control", "Incident"]}
       logs={biosecurity}
