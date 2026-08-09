@@ -51,8 +51,25 @@ export default function DsrOrderPage() {
     const theirs = orders.filter((o) => normalizePhone(o.phone) === key);
     if (theirs.length === 0) return null;
     const latest = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-    return { name: latest.name, count: theirs.length };
+    return { name: latest.name, count: theirs.length, latest };
   }, [phone, orders]);
+
+  // Returning customer → reuse their saved name & location, once per matched
+  // customer. Product, chicks, unit price, date and payment stay fresh. Only
+  // reuse the district/sector if it's in this DSR's zone (their zone rule).
+  const [customerFilledKey, setCustomerFilledKey] = useState<string | null>(null);
+  if (existingCustomer) {
+    const key = normalizePhone(phone);
+    if (key !== customerFilledKey) {
+      setCustomerFilledKey(key);
+      const o = existingCustomer.latest;
+      setName(o.name);
+      if (o.district && zoneOfDistrict(o.district) === myDsr?.zone) {
+        setDistrict(o.district);
+        setSector(o.sector ?? "");
+      }
+    }
+  }
 
   // A DSR may only take clients located in their own zone.
   const myZoneDistricts = useMemo(

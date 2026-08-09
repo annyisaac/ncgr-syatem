@@ -138,8 +138,28 @@ export default function NewOrderPage() {
     const theirs = orders.filter((o) => normalizePhone(o.phone) === key);
     if (theirs.length === 0) return null;
     const latest = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-    return { name: latest.name, count: theirs.length };
+    return { name: latest.name, count: theirs.length, latest };
   }, [phone, orders]);
+
+  // Returning customer → reuse their saved identity & location, filled once per
+  // matched customer (set-state-during-render, like AppShell's route guard).
+  // Order-specific fields — product, chicks, compensation, unit price, date and
+  // payment — are always left for fresh entry.
+  const [customerFilledKey, setCustomerFilledKey] = useState<string | null>(null);
+  if (existingCustomer) {
+    const key = normalizePhone(phone);
+    if (key !== customerFilledKey) {
+      setCustomerFilledKey(key);
+      const o = existingCustomer.latest;
+      setName(o.name);
+      if (o.province) setProvince(o.province as Province);
+      setDistrict(o.district ?? "");
+      setSector(o.sector ?? "");
+      if (o.clientDistrict) setClientDistrict(o.clientDistrict);
+      setClientSector(o.clientSector ?? "");
+      if (o.dsrId) { setDsrId(o.dsrId); setRossSource("dsr"); }
+    }
+  }
 
   // Any credit this customer is carrying — auto-applied to this order on save.
   const custCredit = useMemo(() => {
