@@ -17,7 +17,7 @@ import { StatTile } from "@/components/dashboard/DashKit";
 import { visibleOrders } from "@/lib/permissions";
 import { smartMatch } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
-import { nowISO, formatDate, formatDateTime } from "@/lib/format";
+import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
 import { withHistory, fulfillOrder, rejectOrder } from "@/lib/orders";
 import { manifestPDF } from "@/lib/reports";
 import type { Allocation } from "@/lib/hatchery/types";
@@ -184,6 +184,62 @@ export default function CoordinationPage() {
     setAllocFor(null);
   }
 
+  // Auto-allocate due orders (delivery date on/before today) from available
+  // inventory — matching product, oldest hatch date first, partial fills allowed.
+  function autoAllocate() {
+    const today = todayISO();
+    const targets = awaiting
+      .filter((o) => isFullyPaid(o) && o.date <= today && (allocByOrder.get(o.id) ?? 0) < toDeliver(o))
+      .sort((a, b) => (a.date < b.date ? 1 : -1)); // latest due date first (from today going back)
+
+    const invLeft = new Map<string, number>(inventory.map((i) => [i.id, i.availableCount]));
+    const plan: { order: Order; batchId: string; qty: number }[] = [];
+    for (const o of targets) {
+      let need = toDeliver(o) - (allocByOrder.get(o.id) ?? 0);
+      const invs = inventory
+        .filter((i) => i.productType === o.product && (invLeft.get(i.id) ?? 0) > 0)
+        .sort((a, b) => (a.hatchDate < b.hatchDate ? -1 : 1));
+      for (const inv of invs) {
+        if (need <= 0) break;
+        const take = Math.min(invLeft.get(inv.id) ?? 0, need);
+        if (take <= 0) continue;
+        plan.push({ order: o, batchId: inv.batchId, qty: take });
+        invLeft.set(inv.id, (invLeft.get(inv.id) ?? 0) - take);
+        need -= take;
+      }
+    }
+
+    if (plan.length === 0) return toast("Nothing to auto-allocate — no due orders or no matching inventory.", "info");
+    const totalChicks = plan.reduce((s, p) => s + p.qty, 0);
+    const orderIds = new Set(plan.map((p) => p.order.id));
+    if (!confirm(`Auto-allocate ${totalChicks.toLocaleString()} chicks to ${orderIds.size} order(s) due on/before ${formatDate(today)}?`)) return;
+
+    for (const p of plan) {
+      void upsertAllocation({
+        id: newId("alloc"), orderId: p.order.id, batchId: p.batchId, quantity: p.qty, productType: p.order.product,
+        status: "finalized", by: user!.email, finalizedBy: user!.email, on: nowISO(),
+        history: [`${nowISO()} — Auto-allocated ${p.qty} from ${batchNo(p.batchId)} (by ${user!.name})`],
+      });
+    }
+    for (const inv of inventory) {
+      const left = invLeft.get(inv.id) ?? inv.availableCount;
+      if (left !== inv.availableCount) void upsertInventory({ ...inv, availableCount: left, updatedBy: user!.email, on: nowISO() });
+      if (left <= 0 && inv.availableCount > 0) {
+        const b = batches.find((x) => x.id === inv.batchId);
+        if (b && b.status === "active") void upsertBatch({ ...b, status: "inactive", history: [...b.history, `${nowISO()} — Deactivated: all hatched chicks allocated to customers (by ${user!.name})`] });
+      }
+    }
+    // Mark orders now fully allocated as ready for delivery.
+    for (const oid of orderIds) {
+      const o = orders.find((x) => x.id === oid);
+      const added = plan.filter((p) => p.order.id === oid).reduce((s, p) => s + p.qty, 0);
+      if (o && !o.allocatedOk && (allocByOrder.get(oid) ?? 0) + added >= toDeliver(o)) {
+        void upsertOrder(withHistory({ ...o, allocatedOk: true }, user!, "Marked ready for delivery (auto-allocated)"));
+      }
+    }
+    toast(`Auto-allocated ${totalChicks.toLocaleString()} chicks to ${orderIds.size} order(s).`);
+  }
+
   function markReady(o: Order) {
     const allocated = allocByOrder.get(o.id) ?? 0;
     if (allocated < toDeliver(o)) return toast(`Allocate all ${toDeliver(o).toLocaleString()} chicks first (currently ${allocated.toLocaleString()}).`, "info");
@@ -221,6 +277,8 @@ export default function CoordinationPage() {
     setSelectedId(null);
   }
 
+  const dueToAllocate = awaiting.filter((o) => isFullyPaid(o) && o.date <= todayISO() && (allocByOrder.get(o.id) ?? 0) < toDeliver(o)).length;
+
   return (
     <div className="space-y-5">
       {/* Filters + search — compact row at the top of the page */}
@@ -238,6 +296,13 @@ export default function CoordinationPage() {
         <StatTile label="Orders awaiting delivery" value={String(kpis.awaiting)} />
         <StatTile label="Chicks in inventory" value={kpis.inStock.toLocaleString()} tone={kpis.inStock ? "green" : "default"} />
       </div>
+
+      {canManage && dueToAllocate > 0 && (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold/40 bg-gold-bg/30 px-3.5 py-2.5">
+          <span className="text-sm text-ink"><strong>{dueToAllocate}</strong> fully-paid order(s) due on/before {formatDate(todayISO())} are awaiting chick allocation.</span>
+          <Button size="sm" onClick={autoAllocate}>Auto-allocate from inventory</Button>
+        </div>
+      )}
 
       {/* Delivery routes + manifests — shown on demand */}
       <div>
