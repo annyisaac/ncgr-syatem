@@ -9,7 +9,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { nowISO, todayISO } from "@/lib/format";
 import {
-  PS_BREEDS, newFlockId, newPlacementId, stamp, upsertFlock, type BreederFlock, type Sex,
+  PS_BREEDS, PS_STAGES, newFlockId, newPlacementId, stamp, upsertFlock, type BreederFlock, type FlockStage, type Sex,
 } from "@/lib/parentStock";
 
 /** Place a new breeder delivery — female and male birds entered separately and
@@ -22,6 +22,7 @@ export function PlaceFlock({ flocks, onPlaced }: { flocks: BreederFlock[]; onPla
 
   const [placementDate, setPlacementDate] = useState(todayISO());
   const [breed, setBreed] = useState<string>(PS_BREEDS[0]);
+  const [stage, setStage] = useState<FlockStage>("Rearing");
   const [supplier, setSupplier] = useState("");
   const [hatchDate, setHatchDate] = useState("");
   const [notes, setNotes] = useState("");
@@ -44,6 +45,7 @@ export function PlaceFlock({ flocks, onPlaced }: { flocks: BreederFlock[]; onPla
   function openNew() {
     setPlacementDate(todayISO());
     setBreed(PS_BREEDS[0]);
+    setStage("Rearing");
     setSupplier(""); setHatchDate(""); setNotes("");
     setFemaleCode(suggestCode("Female")); setFemaleHouse(""); setFemalePop("");
     setMaleCode(suggestCode("Male")); setMaleHouse(""); setMalePop("");
@@ -66,7 +68,7 @@ export function PlaceFlock({ flocks, onPlaced }: { flocks: BreederFlock[]; onPla
       supplier: supplier.trim() || undefined,
       hatchDate: hatchDate || undefined,
       placementDate: placementDate || undefined,
-      stage: "Rearing" as const,
+      stage,
       active: true,
       notes: notes.trim() || undefined,
       by: user!.email,
@@ -112,6 +114,7 @@ export function PlaceFlock({ flocks, onPlaced }: { flocks: BreederFlock[]; onPla
             <Field label="Supplier"><Input value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="e.g. Hatchery / importer" /></Field>
             <Field label="Hatch date"><Input type="date" value={hatchDate} onChange={(e) => setHatchDate(e.target.value)} /></Field>
             <Field label="Placement date"><Input type="date" value={placementDate} onChange={(e) => setPlacementDate(e.target.value)} /></Field>
+            <Field label="Stage"><Select value={stage} onChange={(e) => setStage(e.target.value as FlockStage)} options={PS_STAGES.map((s) => ({ value: s, label: s }))} /></Field>
           </div>
 
           {/* Female birds */}
