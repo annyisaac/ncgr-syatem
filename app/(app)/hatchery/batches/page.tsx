@@ -33,7 +33,7 @@ interface AssignRow { groupKey: string; machineCode: string; eggs: string; sette
 
 export default function BatchesPage() {
   const { user } = useAuth();
-  const { receptions, machines, batches, upsertBatch, upsertMachine, newId, reload } = useHatchery();
+  const { receptions, machines, batches, newId, reload } = useHatchery();
   const { availability, upsertAvailability } = useData();
   const { toast } = useToast();
 
@@ -262,7 +262,7 @@ export default function BatchesPage() {
     void reload();
   }
 
-  function doMove() {
+  async function doMove() {
     if (!moveB) return;
     setMvErr(null);
     const { from, to } = mv;
@@ -291,10 +291,19 @@ export default function BatchesPage() {
       ...moveB, setters: next, setterMoves: [...(moveB.setterMoves ?? []), move],
       history: [...moveB.history, `${nowISO()} — Moved ${eggs.toLocaleString()} eggs${trolleys ? ` (${trolleys} trolley${trolleys > 1 ? "s" : ""})` : ""} from ${from} to ${to} (by ${user!.name})`],
     };
-    upsertBatch(nb);
-    machinesToSync(machines, [from, to], batches.map((x) => (x.id === nb.id ? nb : x))).forEach(upsertMachine);
+    const machineRows = machinesToSync(machines, [from, to], batches.map((x) => (x.id === nb.id ? nb : x)));
+
+    // One transaction: the batch's new setter split and the two machines commit
+    // together — no move partway.
+    try {
+      await commitBatchSet(nb, [], machineRows);
+    } catch (e) {
+      setMvErr(`Could not move the eggs — nothing was changed.${e instanceof Error && e.message ? ` (${e.message})` : ""}`);
+      return;
+    }
     toast(`Moved ${eggs.toLocaleString()} eggs from ${from} to ${to}.`);
     setMoveB(null);
+    void reload();
   }
 
   return (
