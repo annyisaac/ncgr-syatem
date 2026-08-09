@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -142,23 +142,26 @@ export default function NewOrderPage() {
   }, [phone, orders]);
 
   // Returning customer → reuse their saved identity & location, filled once per
-  // matched customer (set-state-during-render, like AppShell's route guard).
-  // Order-specific fields — product, chicks, compensation, unit price, date and
-  // payment — are always left for fresh entry.
-  const [customerFilledKey, setCustomerFilledKey] = useState<string | null>(null);
-  if (existingCustomer) {
-    const key = normalizePhone(phone);
-    if (key !== customerFilledKey) {
-      setCustomerFilledKey(key);
-      const o = existingCustomer.latest;
-      setName(o.name);
-      if (o.province) setProvince(o.province as Province);
-      setDistrict(o.district ?? "");
-      setSector(o.sector ?? "");
-      if (o.clientDistrict) setClientDistrict(o.clientDistrict);
-      setClientSector(o.clientSector ?? "");
-      if (o.dsrId) { setDsrId(o.dsrId); setRossSource("dsr"); }
-    }
+  // matched customer directly from the phone field. Runs in an event handler
+  // (never during render), so it can't trigger a render loop. Order-specific
+  // fields — product, chicks, compensation, unit price, date and payment — are
+  // always left for fresh entry.
+  const filledCustomerRef = useRef<string | null>(null);
+  function onPhoneChange(value: string) {
+    setPhone(value);
+    const key = normalizePhone(value);
+    const theirs = key.length >= 6 ? orders.filter((o) => normalizePhone(o.phone) === key) : [];
+    if (theirs.length === 0) { filledCustomerRef.current = null; return; }
+    const o = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    if (filledCustomerRef.current === o.id) return;
+    filledCustomerRef.current = o.id;
+    setName(o.name);
+    if (o.province) setProvince(o.province as Province);
+    if (o.district) setDistrict(o.district);
+    if (o.sector) setSector(o.sector);
+    if (o.clientDistrict) setClientDistrict(o.clientDistrict);
+    if (o.clientSector) setClientSector(o.clientSector);
+    if (o.dsrId) { setDsrId(o.dsrId); setRossSource("dsr"); }
   }
 
   // Any credit this customer is carrying — auto-applied to this order on save.
@@ -518,7 +521,7 @@ export default function NewOrderPage() {
                   <Input value={name} onChange={(e) => setName(e.target.value)} />
                 </Field>
                 <Field label="Phone" required>
-                  <Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" />
+                  <Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => onPhoneChange(e.target.value)} placeholder="07xxxxxxxx" />
                 </Field>
                 <Field label="District">
                   <Select

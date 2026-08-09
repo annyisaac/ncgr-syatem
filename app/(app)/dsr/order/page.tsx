@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -55,19 +55,22 @@ export default function DsrOrderPage() {
   }, [phone, orders]);
 
   // Returning customer → reuse their saved name & location, once per matched
-  // customer. Product, chicks, unit price, date and payment stay fresh. Only
+  // customer, straight from the phone field (event handler — never during
+  // render). Product, chicks, unit price, date and payment stay fresh. Only
   // reuse the district/sector if it's in this DSR's zone (their zone rule).
-  const [customerFilledKey, setCustomerFilledKey] = useState<string | null>(null);
-  if (existingCustomer) {
-    const key = normalizePhone(phone);
-    if (key !== customerFilledKey) {
-      setCustomerFilledKey(key);
-      const o = existingCustomer.latest;
-      setName(o.name);
-      if (o.district && zoneOfDistrict(o.district) === myDsr?.zone) {
-        setDistrict(o.district);
-        setSector(o.sector ?? "");
-      }
+  const filledCustomerRef = useRef<string | null>(null);
+  function onPhoneChange(value: string) {
+    setPhone(value);
+    const key = normalizePhone(value);
+    const theirs = key.length >= 6 ? orders.filter((o) => normalizePhone(o.phone) === key) : [];
+    if (theirs.length === 0) { filledCustomerRef.current = null; return; }
+    const o = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    if (filledCustomerRef.current === o.id) return;
+    filledCustomerRef.current = o.id;
+    setName(o.name);
+    if (o.district && zoneOfDistrict(o.district) === myDsr?.zone) {
+      setDistrict(o.district);
+      if (o.sector) setSector(o.sector);
     }
   }
 
@@ -184,7 +187,7 @@ export default function DsrOrderPage() {
           )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Client name"><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-            <Field label="Phone" required><Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" /></Field>
+            <Field label="Phone" required><Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => onPhoneChange(e.target.value)} placeholder="07xxxxxxxx" /></Field>
             <Field label="District" hint={`Your zone (${myDsr.zone}) only`}><Select value={district} placeholder="Select district" options={myZoneDistricts.map((d) => ({ value: d, label: d }))} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} /></Field>
             <Field label="Sector"><Select value={sector} placeholder={district ? "Select sector" : "Choose district first"} options={sectorOptions} disabled={!district} onChange={(e) => setSector(e.target.value)} /></Field>
             <Field label="Chicks ordered"><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
