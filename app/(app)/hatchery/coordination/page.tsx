@@ -326,7 +326,7 @@ export default function CoordinationPage() {
   return (
     <div className="space-y-5">
       {/* Filters + search — compact row at the top of the page */}
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
         <div className="w-full sm:w-44"><Select value={dateF} onChange={(e) => setDateF(e.target.value)} options={[{ value: "", label: "All delivery dates" }, ...deliveryDates.map((d) => ({ value: d, label: formatDate(d) }))]} /></div>
         <div className="w-full sm:w-40"><Select value={productF} onChange={(e) => setProductF(e.target.value)} options={[{ value: "all", label: "All products" }, ...PRODUCTS.map((p) => ({ value: p, label: p }))]} /></div>
         <div className="w-full sm:w-36"><Select value={payF} onChange={(e) => setPayF(e.target.value)} options={[{ value: "all", label: "All payment" }, { value: "paid", label: "Paid" }, { value: "partial", label: "Partial" }, { value: "unpaid", label: "Unpaid" }, { value: "on debt", label: "On debt" }]} /></div>

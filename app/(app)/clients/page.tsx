@@ -79,16 +79,18 @@ export default function ClientsPage() {
 
   return (
     <div className="space-y-5">
-      <SearchTimeBar
-        q={q}
-        setQ={setQ}
-        placeholder="Search clients — name, phone, district…"
-        preset={preset}
-        setPreset={setPreset}
-        custom={custom}
-        setCustom={setCustom}
-        suggestions={searchSuggestions}
-      />
+      <div className="sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
+        <SearchTimeBar
+          q={q}
+          setQ={setQ}
+          placeholder="Search clients — name, phone, district…"
+          preset={preset}
+          setPreset={setPreset}
+          custom={custom}
+          setCustom={setCustom}
+          suggestions={searchSuggestions}
+        />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <StatTile label="Clients" value={String(clients.length)} />

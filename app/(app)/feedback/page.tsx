@@ -269,7 +269,7 @@ export default function FeedbackPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-end gap-3 rounded-2xl border border-line bg-paper p-4 shadow-card">
+      <div className="sticky top-16 z-20 flex flex-wrap items-end gap-3 rounded-2xl border border-line bg-paper p-4 shadow-card">
         <div className="w-40"><Field label="Delivery Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field></div>
         <div className="w-40">
           <Field label="Status">

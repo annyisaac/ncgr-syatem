@@ -529,7 +529,7 @@ export default function VerificationPage() {
       {/* Payments — awaiting + already checked */}
       <Card>
         <CardHeader title={`Payments (${shownPayRows.length} shown · ${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`} />
-        <div className="mb-3 flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3 sticky top-16 z-20 -mx-5 px-5 mb-3 border-b border-line bg-paper/95 py-3 backdrop-blur">
           <div className="min-w-0 flex-1">
             <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
           </div>

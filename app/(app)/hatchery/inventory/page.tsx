@@ -144,7 +144,7 @@ export default function InventoryPage() {
 
       {/* Stock */}
       <Card>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="sticky top-16 z-20 -mx-5 -mt-5 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-line bg-paper/95 px-5 pb-3 pt-5 backdrop-blur">
           <h2 className="text-[0.95rem] font-bold text-ink">Stock</h2>
           <div className="flex flex-wrap items-center gap-2">
             <span className="w-44">

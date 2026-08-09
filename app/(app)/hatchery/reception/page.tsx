@@ -233,7 +233,7 @@ export default function ReceptionPage() {
       </Card>
 
       {/* Filters */}
-      <div className="flex flex-wrap items-center gap-2.5">
+      <div className="flex flex-wrap items-center gap-2.5 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
         <div className="relative min-w-[200px] flex-1">
           <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
           <Input className="pl-9" placeholder="Search by farm, flock, batch or product…" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} />

@@ -522,7 +522,7 @@ function DashboardHeader({
   const [q, setQ] = useState("");
   const firstName = user.name.split(" ")[0] || user.name;
   return (
-    <div className="flex flex-wrap items-center gap-3">
+    <div className="flex flex-wrap items-center gap-3 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
       <h1 className="text-lg font-bold text-ink">
         Hey {firstName} — <span className="font-normal text-muted">{subtitle}</span>
       </h1>

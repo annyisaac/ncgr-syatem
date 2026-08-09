@@ -48,7 +48,7 @@ export default function DsrOrdersPage() {
       </div>
       <Card>
         <CardHeader title={`${shown.length} order(s) in your zone`} />
-        <div className="mb-3">
+        <div className="mb-3 sticky top-16 z-20 -mx-5 px-5 py-3 border-b border-line bg-paper/95 backdrop-blur">
           <input
             value={q}
             onChange={(e) => setQ(e.target.value)}

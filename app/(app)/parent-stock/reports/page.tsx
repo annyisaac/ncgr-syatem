@@ -145,7 +145,7 @@ export default function ParentStockReports() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      <div className="flex flex-wrap items-center justify-between gap-3 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
         <div className="min-w-0 flex-1"><SearchTimeBar q={q} setQ={setQ} placeholder="Search these reports…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} /></div>
         <Button variant="secondary" size="sm" onClick={() => window.print()}>Print</Button>
       </div>

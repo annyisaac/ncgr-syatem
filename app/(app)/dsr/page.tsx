@@ -53,12 +53,14 @@ export default function DsrHome() {
 
       {/* Search the zone's orders/customers */}
       <Card>
-        <input
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-          placeholder="Search a customer by name or phone…"
-          className="w-full rounded-full border border-line bg-field px-4 py-2.5 text-[0.95rem] text-ink focus:outline-none focus-visible:border-gold"
-        />
+        <div className="sticky top-16 z-20 -mx-5 -mt-5 mb-3 rounded-t-2xl border-b border-line bg-paper/95 px-5 pb-3 pt-5 backdrop-blur">
+          <input
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            placeholder="Search a customer by name or phone…"
+            className="w-full rounded-full border border-line bg-field px-4 py-2.5 text-[0.95rem] text-ink focus:outline-none focus-visible:border-gold"
+          />
+        </div>
         {s && (
           <div className="mt-3 space-y-1.5">
             {results.length === 0 ? (

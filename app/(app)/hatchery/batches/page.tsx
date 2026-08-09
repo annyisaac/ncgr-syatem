@@ -329,7 +329,7 @@ export default function BatchesPage() {
 
       {/* Batches table */}
       <Card>
-        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <div className="sticky top-16 z-20 -mx-5 -mt-5 mb-3 flex flex-wrap items-center justify-between gap-2 rounded-t-2xl border-b border-line bg-paper/95 px-5 pb-3 pt-5 backdrop-blur">
           <h2 className="text-[0.95rem] font-bold text-ink">Batches</h2>
           <div className="relative w-full max-w-xs">
             <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>

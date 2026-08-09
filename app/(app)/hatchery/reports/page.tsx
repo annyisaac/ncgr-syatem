@@ -143,7 +143,9 @@ export default function HatcheryReportsPage() {
 
       {/* Report config */}
       <Card>
-        <SearchTimeBar q={q} setQ={setQ} placeholder="Search these reports…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
+        <div className="sticky top-16 z-20 -mx-5 -mt-5 mb-3 rounded-t-2xl border-b border-line bg-paper/95 px-5 pb-3 pt-5 backdrop-blur">
+          <SearchTimeBar q={q} setQ={setQ} placeholder="Search these reports…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
+        </div>
       </Card>
 
       <div className="flex flex-wrap gap-1.5 border-b border-line">

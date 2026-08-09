@@ -248,7 +248,7 @@ export default function MachinesPage() {
       </div>
 
       {/* Search + filter */}
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
