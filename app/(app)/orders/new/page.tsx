@@ -215,6 +215,7 @@ export default function NewOrderPage() {
     if (nComp < 0) return setError("Compensated chicks cannot be negative.");
     if (nPrice <= 0) return setError("Enter a unit price.");
     if (!date) return setError("Choose a delivery date.");
+    if (!pickup.trim()) return setError("Enter the pickup location.");
     if (selAvail) {
       const left = availableFor(selAvail, product as Product, orders);
       if (nChicks > left) {
@@ -567,7 +568,7 @@ export default function NewOrderPage() {
                     />
                   )}
                 </Field>
-                <Field label="Pickup location" hint="Where the customer will collect / meet the delivery — used in delivery planning">
+                <Field label="Pickup location" required hint="Where the customer will collect / meet the delivery — used in delivery planning">
                   <Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. Nyabugogo taxi park" />
                 </Field>
               </div>
