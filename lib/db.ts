@@ -535,14 +535,42 @@ export interface DriverStop {
   failReason: string | null;
 }
 
+export interface DriverManifest {
+  ok: boolean;
+  driver?: string;
+  stops?: DriverStop[];
+  /** A per-route link asks the driver to sign for the chick load before delivering. */
+  pickupRequired?: boolean;
+  confirmed?: boolean; // the driver has already confirmed the load
+  error?: string;
+}
+
 /** Public: fetch a driver's outstanding stops for a token. */
-export async function getDriverManifest(
-  token: string
-): Promise<{ ok: boolean; driver?: string; stops?: DriverStop[]; error?: string }> {
+export async function getDriverManifest(token: string): Promise<DriverManifest> {
   if (!inBrowser()) return { ok: false, error: "Not in browser" };
   const { data, error } = await getSupabase().rpc("driver_manifest", { p_token: token });
   if (error) return { ok: false, error: error.message };
-  return data as { ok: boolean; driver?: string; stops?: DriverStop[]; error?: string };
+  return data as DriverManifest;
+}
+
+/** Public: the driver signs, at pickup, for the chick load on this route. */
+export async function driverConfirmPickup(
+  token: string,
+  chicks: number,
+  signature: string
+): Promise<{ ok: boolean; error?: string }> {
+  if (!inBrowser()) return { ok: false, error: "Not in browser" };
+  const { data, error } = await getSupabase().rpc("driver_confirm_pickup", { p_token: token, p_chicks: chicks, p_signature: signature });
+  if (error) return { ok: false, error: error.message };
+  return data as { ok: boolean; error?: string };
+}
+
+/** Staff: fetch a route's pickup-confirmation signature (stored in delivery_proofs). */
+export async function getPickupProof(routeId: string): Promise<DeliveryProof | null> {
+  if (!inBrowser()) return null;
+  const { data, error } = await getSupabase().from("delivery_proofs").select("data").eq("id", `pickup:${routeId}`).maybeSingle();
+  if (error || !data) return null;
+  return data.data as DeliveryProof;
 }
 
 /** Proof of delivery captured by the driver (stored in delivery_proofs). */

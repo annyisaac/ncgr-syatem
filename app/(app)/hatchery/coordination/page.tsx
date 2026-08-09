@@ -19,6 +19,7 @@ import { smartMatch } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
 import { nowISO, formatDate, formatDateTime } from "@/lib/format";
 import { withHistory, fulfillOrder, rejectOrder } from "@/lib/orders";
+import { manifestPDF } from "@/lib/reports";
 import type { Allocation } from "@/lib/hatchery/types";
 import {
   PRODUCTS, balance, paidAmount, orderTotal, toDeliver, isFullyPaid,
@@ -57,7 +58,7 @@ const mainPayment = (o: Order): Payment | undefined =>
 
 export default function CoordinationPage() {
   const { user, } = useAuth();
-  const { orders, users, upsertOrder } = useData();
+  const { orders, users, dsrs, routes, upsertOrder } = useData();
   const { batches, inventory, allocations, upsertAllocation, upsertInventory, upsertBatch, newId } = useHatchery();
   const { toast } = useToast();
 
@@ -126,6 +127,20 @@ export default function CoordinationPage() {
       .slice()
       .sort((a, b) => (a.date === b.date ? a.plan - b.plan : a.date < b.date ? -1 : 1));
   }, [orderList, tab, dateF, productF, payF, salesF, q]);
+
+  // Routes that carry orders — the trucks going out, with their manifest.
+  const routeRows = useMemo(() => {
+    const active = orders.filter((o) => o.status !== "refunded" && o.status !== "rejected");
+    return routes
+      .map((r) => {
+        const list = active.filter((o) => o.routeId === r.id && o.confirmedOk);
+        const chicks = list.reduce((s, o) => s + (o.deliveryChicks ?? toDeliver(o)), 0);
+        const delivered = list.filter((o) => o.deliverOk).length;
+        return { r, list, chicks, delivered, date: r.date ?? list[0]?.date ?? "" };
+      })
+      .filter((x) => x.list.length > 0)
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+  }, [routes, orders]);
 
   const deliveryDates = useMemo(
     () => Array.from(new Set(orderList.map((o) => o.date))).sort(),
@@ -213,6 +228,34 @@ export default function CoordinationPage() {
         <StatTile label="Orders awaiting delivery" value={String(kpis.awaiting)} />
         <StatTile label="Chicks in inventory" value={kpis.inStock.toLocaleString()} tone={kpis.inStock ? "green" : "default"} />
       </div>
+
+      {/* Delivery routes + manifests — prepare each truck's load, hand the manifest to the driver */}
+      <Card>
+        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[0.95rem] font-bold text-ink">Delivery routes &amp; manifests</h2>
+          <span className="text-xs text-muted">Prepare each truck&apos;s chick load, then hand the driver the manifest.</span>
+        </div>
+        <TableWrap>
+          <thead>
+            <tr><Th>Date</Th><Th>Route</Th><Th>Driver</Th><Th className="text-right">Stops</Th><Th className="text-right">Chicks</Th><Th>Driver confirmed</Th><Th>Manifest</Th></tr>
+          </thead>
+          <tbody>
+            {routeRows.length === 0 ? (
+              <EmptyRow colSpan={7} text="No routes with orders yet." />
+            ) : routeRows.map(({ r, list, chicks, delivered, date }) => (
+              <tr key={r.id}>
+                <Td className="whitespace-nowrap">{date ? formatDate(date) : "—"}</Td>
+                <Td className="font-medium">{r.name}</Td>
+                <Td className="whitespace-nowrap">{r.driver || "—"}</Td>
+                <Td className="text-right tabular-nums">{list.length}{delivered > 0 && <span className="text-xs text-muted"> · {delivered} done</span>}</Td>
+                <Td className="text-right tabular-nums">{chicks.toLocaleString()}</Td>
+                <Td>{r.pickupConfirmed ? <Pill tone="green">✓ {r.pickupConfirmed.chicks.toLocaleString()} · {r.pickupConfirmed.by}</Pill> : <Pill tone="neutral">Not yet</Pill>}</Td>
+                <Td><Button size="sm" variant="secondary" onClick={() => void manifestPDF(r, date ? formatDate(date) : "", list, dsrs)} disabled={list.length === 0}>Manifest (PDF)</Button></Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+      </Card>
 
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
         <div className="space-y-4">

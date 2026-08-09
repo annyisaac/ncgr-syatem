@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 
-import { getDriverManifest, driverDeliver, type DriverStop, type DeliveryProof } from "@/lib/db";
+import { getDriverManifest, driverDeliver, driverConfirmPickup, type DriverStop, type DeliveryProof } from "@/lib/db";
 import { formatDate } from "@/lib/format";
 import { cn } from "@/lib/cn";
 
@@ -21,6 +21,12 @@ export default function DriverDeliveryPage() {
   const [reasonFor, setReasonFor] = useState<string | null>(null);
   const [reason, setReason] = useState("");
   const [flash, setFlash] = useState<string | null>(null);
+
+  // Pickup confirmation — the driver signs for the whole chick load first.
+  const [pickupRequired, setPickupRequired] = useState(false);
+  const [confirmed, setConfirmed] = useState(false);
+  const [pickupSig, setPickupSig] = useState("");
+  const [confirming, setConfirming] = useState(false);
 
   // Proof-of-delivery capture (per stop).
   const [proofFor, setProofFor] = useState<string | null>(null);
@@ -60,6 +66,8 @@ export default function DriverDeliveryPage() {
     } else {
       setDriver(res.driver ?? "");
       setStops(res.stops ?? []);
+      setPickupRequired(!!res.pickupRequired);
+      setConfirmed(!!res.confirmed);
     }
     setLoading(false);
   }, [token]);
@@ -92,6 +100,19 @@ export default function DriverDeliveryPage() {
   const totalChicks = stops.reduce((s, o) => s + (o.chicks || 0), 0);
   const rossChicks = stops.filter((s) => s.product === "Ross 308").reduce((n, s) => n + (s.chicks || 0), 0);
   const tetraChicks = stops.filter((s) => s.product === "Tetra Super Harco").reduce((n, s) => n + (s.chicks || 0), 0);
+  const needsPickup = pickupRequired && !confirmed && stops.length > 0;
+
+  async function confirmPickup() {
+    if (!pickupSig) { setFlash("Please sign to confirm the load."); setTimeout(() => setFlash(null), 2500); return; }
+    setConfirming(true);
+    const res = await driverConfirmPickup(token, totalChicks, pickupSig);
+    setConfirming(false);
+    if (!res.ok) { setFlash("Could not save — try again."); setTimeout(() => setFlash(null), 3000); return; }
+    setPickupSig("");
+    setFlash("✓ Load confirmed");
+    setTimeout(() => setFlash(null), 2500);
+    await load();
+  }
 
   async function mark(stop: DriverStop, delivered: boolean, why = "", proof: DeliveryProof = {}) {
     setBusyId(stop.id);
@@ -177,6 +198,27 @@ export default function DriverDeliveryPage() {
         <div className="sticky top-14 z-10 mb-3 rounded-xl bg-ink px-4 py-2.5 text-center text-sm font-medium text-white shadow-lg">
           {flash}
         </div>
+      )}
+
+      {needsPickup && (
+        <div className="mb-4 rounded-2xl border-2 border-gold bg-gold-bg/40 p-4">
+          <p className="text-base font-bold text-ink">Confirm the chicks you&apos;re taking</p>
+          <p className="mt-0.5 text-sm text-muted">You&apos;re carrying <strong className="text-ink">{totalChicks.toLocaleString()} chicks</strong> across {stops.length} stop(s). Sign below to confirm you&apos;ve received them, then start your deliveries.</p>
+          <div className="mt-3">
+            <div className="mb-1 flex items-center justify-between">
+              <span className="text-xs font-semibold text-ink">Your signature</span>
+              {pickupSig && <button type="button" onClick={() => setPickupSig("")} className="text-xs text-gold-dark underline">Clear</button>}
+            </div>
+            <SignaturePad onChange={setPickupSig} cleared={!pickupSig} />
+          </div>
+          <button onClick={confirmPickup} disabled={confirming || !pickupSig} className="mt-3 w-full rounded-xl bg-green px-3 py-3 text-sm font-bold text-white disabled:opacity-60">
+            {confirming ? "Saving…" : "✓ Confirm & start deliveries"}
+          </button>
+        </div>
+      )}
+
+      {pickupRequired && confirmed && stops.length > 0 && (
+        <div className="mb-3 rounded-xl bg-green-bg px-3 py-2 text-center text-xs font-semibold text-green">✓ Load confirmed — you can deliver.</div>
       )}
 
       {groups.map(([date, list]) => (
@@ -314,6 +356,8 @@ export default function DriverDeliveryPage() {
                       <button onClick={closeProof} className="rounded-xl border border-line px-3 py-2.5 text-sm font-medium text-ink">Cancel</button>
                     </div>
                   </div>
+                ) : needsPickup ? (
+                  <p className="mt-3 rounded-lg bg-gold-bg px-2.5 py-1.5 text-xs font-medium text-gold-dark">Confirm your chick load at the top before delivering.</p>
                 ) : (
                   <div className="mt-3">
                     {!s.allocated && (

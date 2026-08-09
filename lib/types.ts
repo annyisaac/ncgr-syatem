@@ -305,6 +305,9 @@ export interface Route {
   /** Delivery date this route belongs to. Absent on older routes, which stay
    *  visible on every day for backward compatibility. */
   date?: string;
+  /** Driver's confirmation, at pickup, of the chick load they're taking out
+   *  (signed on the delivery link). The signature itself lives in delivery_proofs. */
+  pickupConfirmed?: { by: string; at: string; chicks: number };
   by: string; // salesperson who created it
   on: string; // ISO datetime
 }
