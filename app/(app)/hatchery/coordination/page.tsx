@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import QRCode from "qrcode";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
@@ -20,6 +21,7 @@ import { formatRWF } from "@/lib/config";
 import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
 import { withHistory, fulfillOrder, rejectOrder } from "@/lib/orders";
 import { manifestPDF } from "@/lib/reports";
+import { ensureRouteLink, listDeliveryLinks } from "@/lib/db";
 import type { Allocation } from "@/lib/hatchery/types";
 import {
   PRODUCTS, balance, paidAmount, orderTotal, toDeliver, extra2, isFullyPaid,
@@ -69,6 +71,24 @@ export default function CoordinationPage() {
   const [payFor, setPayFor] = useState<Order | null>(null);
   const [viewRoute, setViewRoute] = useState<{ r: Route; list: Order[]; date: string } | null>(null);
   const [showRoutes, setShowRoutes] = useState(false);
+  const [driverLinks, setDriverLinks] = useState<Record<string, string>>({});
+  const [qrFor, setQrFor] = useState<{ url: string; driver: string } | null>(null);
+
+  // Existing per-route driver links, so we can copy / show a QR without re-creating.
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const links = await listDeliveryLinks();
+        if (!active) return;
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        const map: Record<string, string> = {};
+        for (const l of links) if (l.active && l.routeId) map[l.routeId] = `${origin}/deliver/${l.token}`;
+        setDriverLinks(map);
+      } catch { /* links stay hidden until available */ }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const [dateF, setDateF] = useState("");
   const [productF, setProductF] = useState("all");
@@ -162,6 +182,27 @@ export default function CoordinationPage() {
   if (!user) return null;
 
   // ---- actions -------------------------------------------------------------
+  async function copyDriverLink(r: Route) {
+    if (!r.driver?.trim()) return toast("This route has no driver name.", "info");
+    try {
+      const token = await ensureRouteLink(r.id, r.driver.trim(), user!.email);
+      const url = `${window.location.origin}/deliver/${token}`;
+      setDriverLinks((m) => ({ ...m, [r.id]: url }));
+      try { await navigator.clipboard.writeText(url); toast(`Driver link copied — send it to ${r.driver}.`); }
+      catch { toast(`Driver link ready for ${r.driver}.`); }
+    } catch { toast("Could not create the driver link.", "info"); }
+  }
+
+  async function showQr(r: Route) {
+    if (!r.driver?.trim()) return toast("This route has no driver name.", "info");
+    let url = driverLinks[r.id];
+    if (!url) {
+      try { const token = await ensureRouteLink(r.id, r.driver.trim(), user!.email); url = `${window.location.origin}/deliver/${token}`; setDriverLinks((m) => ({ ...m, [r.id]: url! })); }
+      catch { return toast("Could not create the driver link.", "info"); }
+    }
+    setQrFor({ url, driver: r.driver });
+  }
+
   function allocate(order: Order, batchId: string, qty: number) {
     const inv = inventory.find((i) => i.batchId === batchId);
     if (!inv || inv.availableCount < qty) return toast("Not enough available chicks in that batch.", "error");
@@ -363,8 +404,10 @@ export default function CoordinationPage() {
                     </p>
 
                     {/* actions */}
-                    <div className="mt-2 flex items-center gap-2 border-t border-line pt-2">
+                    <div className="mt-2 flex flex-wrap items-center gap-1.5 border-t border-line pt-2">
                       <Button size="sm" variant="ghost" onClick={() => setViewRoute({ r, list, date })}>View</Button>
+                      <Button size="sm" variant="ghost" onClick={() => void copyDriverLink(r)} disabled={!r.driver}>Copy link</Button>
+                      <Button size="sm" variant="ghost" onClick={() => void showQr(r)} disabled={!r.driver}>QR</Button>
                       <Button size="sm" variant="secondary" onClick={() => void manifestPDF(r, date ? formatDate(date) : "", list, dsrs)} disabled={list.length === 0}>Manifest PDF</Button>
                     </div>
                   </div>
@@ -488,7 +531,32 @@ export default function CoordinationPage() {
           </TableWrap>
         </Modal>
       )}
+
+      {qrFor && <QRModal url={qrFor.url} driver={qrFor.driver} onClose={() => setQrFor(null)} />}
     </div>
+  );
+}
+
+function QRModal({ url, driver, onClose }: { url: string; driver: string; onClose: () => void }) {
+  const [img, setImg] = useState("");
+  useEffect(() => {
+    let active = true;
+    QRCode.toDataURL(url, { width: 256, margin: 1 }).then((d) => { if (active) setImg(d); }).catch(() => {});
+    return () => { active = false; };
+  }, [url]);
+  return (
+    <Modal open onClose={onClose} title={`Driver QR — ${driver}`} footer={<Button onClick={onClose}>Close</Button>}>
+      <div className="flex flex-col items-center gap-3 text-center">
+        {img ? (
+          // eslint-disable-next-line @next/next/no-img-element -- generated QR data URL
+          <img src={img} alt={`QR code for ${driver}'s route`} className="h-56 w-56 rounded-lg border border-line" />
+        ) : (
+          <p className="py-16 text-sm text-muted">Generating QR…</p>
+        )}
+        <p className="text-sm text-muted">Ask {driver} to scan this to open the route on their phone — no link needed.</p>
+        <code className="max-w-full truncate rounded bg-ink/5 px-2 py-1 text-xs text-muted">{url}</code>
+      </div>
+    </Modal>
   );
 }
 
