@@ -58,7 +58,7 @@ const mainPayment = (o: Order): Payment | undefined =>
 
 export default function CoordinationPage() {
   const { user, } = useAuth();
-  const { orders, users, dsrs, routes, upsertOrder, upsertRoute } = useData();
+  const { orders, users, dsrs, routes, upsertOrder } = useData();
   const { batches, inventory, allocations, upsertAllocation, upsertInventory, upsertBatch, newId } = useHatchery();
   const { toast } = useToast();
 
@@ -68,6 +68,7 @@ export default function CoordinationPage() {
   const [cancelFor, setCancelFor] = useState<Order | null>(null);
   const [payFor, setPayFor] = useState<Order | null>(null);
   const [viewRoute, setViewRoute] = useState<{ r: Route; list: Order[]; date: string } | null>(null);
+  const [showRoutes, setShowRoutes] = useState(false);
 
   const [dateF, setDateF] = useState("");
   const [productF, setProductF] = useState("all");
@@ -161,14 +162,6 @@ export default function CoordinationPage() {
   if (!user) return null;
 
   // ---- actions -------------------------------------------------------------
-  // Staff confirmation of a truck's chick load (the driver can also confirm by
-  // signing on their delivery link).
-  function confirmLoad(r: Route, total: number) {
-    if (!confirm(`Confirm the chick load for ${r.name} — ${total.toLocaleString()} chicks?`)) return;
-    void upsertRoute({ ...r, pickupConfirmed: { by: r.driver || user!.name, at: nowISO(), chicks: total } });
-    toast(`Load confirmed for ${r.name}.`);
-  }
-
   function allocate(order: Order, batchId: string, qty: number) {
     const inv = inventory.find((i) => i.batchId === batchId);
     if (!inv || inv.availableCount < qty) return toast("Not enough available chicks in that batch.", "error");
@@ -246,86 +239,74 @@ export default function CoordinationPage() {
         <StatTile label="Chicks in inventory" value={kpis.inStock.toLocaleString()} tone={kpis.inStock ? "green" : "default"} />
       </div>
 
-      {/* Delivery routes + manifests — prepare each truck's load, hand the manifest to the driver */}
+      {/* Delivery routes + manifests — shown on demand */}
       <div>
-        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[0.95rem] font-bold text-ink">Delivery routes &amp; manifests</h2>
-          <span className="text-xs text-muted">Prepare each truck&apos;s chick load, then hand the driver the manifest.</span>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-[0.95rem] font-bold text-ink">Delivery routes &amp; manifests <span className="text-muted">({routeRows.length})</span></h2>
+          <Button size="sm" variant="secondary" onClick={() => setShowRoutes((v) => !v)}>{showRoutes ? "Hide" : "Show routes & manifests"}</Button>
         </div>
-        {routeRows.length === 0 ? (
-          <Card><p className="text-sm text-muted">No routes with orders {dateF ? "on this date" : "yet"}.</p></Card>
-        ) : (
-          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-            {routeRows.map(({ r, list, chicks, delivered, byProduct, date }) => {
-              const confirmed = !!r.pickupConfirmed;
-              return (
-                <div key={r.id} className="flex flex-col rounded-2xl border border-line bg-paper p-4 shadow-card">
-                  {/* header */}
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="min-w-0">
-                      <span className="inline-flex items-center gap-1.5 text-xs text-muted"><IcoCal />{date ? formatDate(date) : "—"}</span>
-                      <h3 className="mt-0.5 truncate text-lg font-extrabold text-ink">{r.name}</h3>
-                      <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted">
-                        <span className="inline-flex items-center gap-1"><IcoPin />{list.length} stop(s){delivered > 0 ? ` · ${delivered} done` : ""}</span>
-                        <span className="inline-flex items-center gap-1"><IcoUser />Driver: <strong className="text-ink">{r.driver || "—"}</strong></span>
-                      </div>
-                    </div>
-                    {confirmed
-                      ? <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-green-bg px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-green">✓ Confirmed</span>
-                      : <span className="shrink-0 inline-flex items-center gap-1 rounded-full bg-gold-bg px-2.5 py-1 text-[0.62rem] font-bold uppercase tracking-wide text-gold-dark">⚠ Not confirmed</span>}
-                  </div>
-
-                  {/* chick load */}
-                  <p className="mb-2 mt-4 text-[0.58rem] font-bold uppercase tracking-[0.08em] text-muted">Chick load</p>
-                  <div className="space-y-2">
-                    {byProduct.map((p) => {
-                      const isRoss = p.product === "Ross 308";
-                      return (
-                        <div key={p.product} className={`flex items-center gap-3 rounded-xl border-l-4 px-3 py-2.5 ${isRoss ? "border-blue bg-blue-bg/40" : "border-gold bg-gold-bg/40"}`}>
-                          <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-full ${isRoss ? "bg-blue-bg text-blue" : "bg-gold-bg text-gold-dark"}`}>{isRoss ? <IcoHen /> : <IcoChick />}</span>
-                          <div className="min-w-0 flex-1">
-                            <p className="text-sm font-bold text-ink">{p.product}</p>
-                            <div className="mt-0.5 flex flex-wrap gap-x-4 text-[0.64rem]">
-                              <span className="text-muted">Ordered <strong className="text-ink">{p.ordered.toLocaleString()}</strong></span>
-                              <span className="text-muted">+2% <strong className="text-ink">{p.extra.toLocaleString()}</strong></span>
-                              <span className="text-muted">Comp <strong className="text-ink">{p.comp.toLocaleString()}</strong></span>
-                            </div>
-                          </div>
-                          <div className="shrink-0 text-right"><p className="text-lg font-extrabold tabular-nums text-ink">{p.total.toLocaleString()}</p><p className="text-[0.56rem] uppercase text-muted">chicks</p></div>
+        {showRoutes && (
+          routeRows.length === 0 ? (
+            <Card className="mt-2"><p className="text-sm text-muted">No routes with orders {dateF ? "on this date" : "yet"}.</p></Card>
+          ) : (
+            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {routeRows.map(({ r, list, chicks, delivered, byProduct, date }) => {
+                const confirmed = !!r.pickupConfirmed;
+                return (
+                  <div key={r.id} className="flex flex-col rounded-xl border border-line bg-paper p-3 shadow-card">
+                    {/* header */}
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <span className="inline-flex items-center gap-1 text-[0.68rem] text-muted"><IcoCal />{date ? formatDate(date) : "—"}</span>
+                        <h3 className="truncate text-sm font-bold text-ink">{r.name}</h3>
+                        <div className="mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[0.66rem] text-muted">
+                          <span className="inline-flex items-center gap-1"><IcoPin />{list.length} stop(s){delivered > 0 ? ` · ${delivered} done` : ""}</span>
+                          <span className="inline-flex items-center gap-1"><IcoUser /><strong className="text-ink">{r.driver || "—"}</strong></span>
                         </div>
-                      );
-                    })}
-                  </div>
-
-                  {/* total */}
-                  <div className="mt-2 flex items-center justify-between rounded-xl bg-cream/60 px-3 py-2.5">
-                    <span className="text-[0.6rem] font-bold uppercase tracking-[0.08em] text-muted">Total load</span>
-                    <span><strong className="text-lg font-extrabold tabular-nums text-green">{chicks.toLocaleString()}</strong> <span className="text-[0.56rem] uppercase text-muted">chicks</span></span>
-                  </div>
-
-                  {/* footer */}
-                  <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3">
-                    {confirmed ? (
-                      <div className="flex items-center gap-2 rounded-lg bg-green-bg px-2.5 py-1.5 text-xs text-green">
-                        <span aria-hidden>✓</span>
-                        <div><p className="font-semibold">Driver confirmed by {r.pickupConfirmed!.by}</p><p className="text-[0.62rem] text-green/80">{formatDateTime(r.pickupConfirmed!.at)}</p></div>
                       </div>
-                    ) : (
-                      <div className="flex items-center gap-2 rounded-lg bg-gold-bg px-2.5 py-1.5 text-xs text-gold-dark">
-                        <span aria-hidden>⏳</span>
-                        <div><p className="font-semibold">Driver confirmation pending</p><p className="text-[0.62rem]">Awaiting driver to confirm chick load</p></div>
-                      </div>
-                    )}
-                    <div className="flex items-center gap-2">
-                      {!confirmed && canManage && <Button size="sm" onClick={() => confirmLoad(r, chicks)}>Confirm Load</Button>}
-                      <Button size="sm" variant="secondary" onClick={() => setViewRoute({ r, list, date })}>View Route</Button>
+                      {confirmed
+                        ? <span className="shrink-0 rounded-full bg-green-bg px-2 py-0.5 text-[0.56rem] font-bold uppercase tracking-wide text-green">✓ Confirmed</span>
+                        : <span className="shrink-0 rounded-full bg-gold-bg px-2 py-0.5 text-[0.56rem] font-bold uppercase tracking-wide text-gold-dark">⚠ Pending</span>}
+                    </div>
+
+                    {/* chick load */}
+                    <div className="mt-2 space-y-1.5">
+                      {byProduct.map((p) => {
+                        const isRoss = p.product === "Ross 308";
+                        return (
+                          <div key={p.product} className={`flex items-center gap-2 rounded-lg border-l-4 px-2 py-1.5 ${isRoss ? "border-blue bg-blue-bg/40" : "border-gold bg-gold-bg/40"}`}>
+                            <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full ${isRoss ? "bg-blue-bg text-blue" : "bg-gold-bg text-gold-dark"}`}>{isRoss ? <IcoHen /> : <IcoChick />}</span>
+                            <div className="min-w-0 flex-1">
+                              <p className="text-[0.72rem] font-bold text-ink">{p.product === "Ross 308" ? "Ross 308" : "Tetra"}</p>
+                              <p className="text-[0.58rem] text-muted">{p.ordered.toLocaleString()} + {p.extra.toLocaleString()} (2%) + {p.comp.toLocaleString()} comp</p>
+                            </div>
+                            <p className="shrink-0 text-sm font-extrabold tabular-nums text-ink">{p.total.toLocaleString()}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* total + confirm status */}
+                    <div className="mt-2 flex items-center justify-between rounded-lg bg-cream/60 px-2 py-1.5">
+                      <span className="text-[0.56rem] font-bold uppercase tracking-wide text-muted">Total</span>
+                      <span><strong className="text-sm font-extrabold tabular-nums text-green">{chicks.toLocaleString()}</strong> <span className="text-[0.54rem] uppercase text-muted">chicks</span></span>
+                    </div>
+                    <p className="mt-1.5 text-[0.6rem]">
+                      {confirmed
+                        ? <span className="text-green">✓ Confirmed by {r.pickupConfirmed!.by} · {formatDate(r.pickupConfirmed!.at.slice(0, 10))}</span>
+                        : <span className="text-gold-dark">⏳ Awaiting driver confirmation</span>}
+                    </p>
+
+                    {/* actions */}
+                    <div className="mt-2 flex items-center gap-2 border-t border-line pt-2">
+                      <Button size="sm" variant="ghost" onClick={() => setViewRoute({ r, list, date })}>View</Button>
                       <Button size="sm" variant="secondary" onClick={() => void manifestPDF(r, date ? formatDate(date) : "", list, dsrs)} disabled={list.length === 0}>Manifest PDF</Button>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+          )
         )}
       </div>
 
