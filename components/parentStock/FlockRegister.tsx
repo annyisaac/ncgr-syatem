@@ -118,8 +118,6 @@ export function FlockRegister({ sex }: { sex: Sex }) {
             <Field label="Placement date"><Input type="date" value={editing.placementDate ?? ""} onChange={(e) => set({ placementDate: e.target.value || undefined })} /></Field>
             <Field label="Placed population" required><Input type="number" min={0} value={editing.initialPopulation || ""} onChange={(e) => { const n = Number(e.target.value) || 0; set({ initialPopulation: n, ...(editing!.currentPopulation === 0 ? { currentPopulation: n } : {}) }); }} /></Field>
             <Field label="Current population"><Input type="number" min={0} value={editing.currentPopulation || ""} onChange={(e) => set({ currentPopulation: Number(e.target.value) || 0 })} /></Field>
-            <Field label="Avg body weight (g)"><Input type="number" min={0} value={editing.bodyWeightG ?? ""} onChange={(e) => set({ bodyWeightG: Number(e.target.value) || undefined })} /></Field>
-            <Field label="Uniformity (%)"><Input type="number" min={0} max={100} value={editing.uniformityPct ?? ""} onChange={(e) => set({ uniformityPct: Number(e.target.value) || undefined })} /></Field>
             <Field label="Stage"><Select value={editing.stage} onChange={(e) => set({ stage: e.target.value as FlockStage })} options={PS_STAGES.map((s) => ({ value: s, label: s }))} /></Field>
             {sex === "Female" && (
               <div className="flex items-end">

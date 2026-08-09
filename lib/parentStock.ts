@@ -24,6 +24,7 @@ export interface BreederFlock {
   id: string;
   code: string;              // flock ID, e.g. PS-M-2026-01
   sex: Sex;
+  placementId?: string;      // links the male & female flocks placed together
   breed: string;
   supplier?: string;
   hatchDate?: string;        // ISO date
@@ -87,6 +88,8 @@ export async function upsertFlock(f: BreederFlock): Promise<void> {
 }
 
 export const newFlockId = () => `psf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+/** Shared id tying together the male & female flocks placed in one delivery. */
+export const newPlacementId = () => `psp_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
 
 export function stamp(actor: string, action: string): string {
   return `${new Date().toISOString()} · ${actor} · ${action}`;

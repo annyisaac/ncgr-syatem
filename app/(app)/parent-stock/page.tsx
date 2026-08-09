@@ -8,6 +8,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { StatTile } from "@/components/dashboard/DashKit";
+import { PlaceFlock } from "@/components/parentStock/PlaceFlock";
 import { formatDate, todayISO } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
 import {
@@ -64,7 +65,10 @@ export default function ParentStockDashboard() {
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-bold text-ink">Hey {firstName} — <span className="font-normal text-muted">breeder farm at a glance</span></h1>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-bold text-ink">Hey {firstName} — <span className="font-normal text-muted">breeder farm at a glance</span></h1>
+        <PlaceFlock flocks={flocks} onPlaced={() => void load()} />
+      </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatTile label="Male birds" value={males.birds.toLocaleString()} />
