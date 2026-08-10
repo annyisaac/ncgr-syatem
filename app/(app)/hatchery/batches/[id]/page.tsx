@@ -6,18 +6,27 @@ import { useState, type ReactNode } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
-import { setBatchNo } from "@/lib/hatchery/db";
+import { setBatchNo, commitBatchSet } from "@/lib/hatchery/db";
 import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
-import { Field, Input } from "@/components/ui/Select";
+import { Field, Input, Select } from "@/components/ui/Select";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
-import { LIFECYCLE_STEPS } from "@/lib/hatchery/types";
+import { LIFECYCLE_STEPS, type Batch, type BatchStatus } from "@/lib/hatchery/types";
+import { PRODUCTS, type Product } from "@/lib/types";
 import { removedInStage, fertilityPct, flockRemoved, flockFertileAfterC2, flockTransferred, settableEggs } from "@/lib/hatchery/lifecycle";
 
 const CAN_EDIT_CODE = ["Admin", "Hatchery Manager"];
+const BATCH_STATUSES: BatchStatus[] = ["active", "dispatched", "delivered", "inactive"];
+
+interface BatchEdit {
+  setDate: string; productType: Product; farm: string; flockId: string;
+  eggsSet: string; projectedChicks: string; hatchedCount: string; culls: string;
+  unhatchedCount: string; saleableCount: string; countedTotal: string;
+  vaccinated: boolean; status: BatchStatus; currentStep: string;
+}
 
 const STEP_DESC: Record<string, string> = {
   reception: "Eggs received from farms and recorded.",
@@ -46,7 +55,13 @@ export default function BatchDetailPage() {
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
+  const [allOpen, setAllOpen] = useState(false);
+  const [ed, setEd] = useState<BatchEdit | null>(null);
+  const [allErr, setAllErr] = useState<string | null>(null);
+  const [savingAll, setSavingAll] = useState(false);
+
   const canEditCode = !!user && CAN_EDIT_CODE.includes(user.role);
+  const canEditAll = user?.role === "Admin";
 
   if (!user) return null;
   if (!batch) {
@@ -86,6 +101,66 @@ export default function BatchDetailPage() {
     }
   }
 
+  function openAll() {
+    setAllErr(null);
+    setEd({
+      setDate: batch!.setDate ?? "",
+      productType: batch!.productType,
+      farm: batch!.farm,
+      flockId: batch!.flockId,
+      eggsSet: String(batch!.eggsSet ?? 0),
+      projectedChicks: batch!.projectedChicks != null ? String(batch!.projectedChicks) : "",
+      hatchedCount: String(batch!.hatchedCount ?? 0),
+      culls: String(batch!.culls ?? 0),
+      unhatchedCount: String(batch!.unhatchedCount ?? 0),
+      saleableCount: String(batch!.saleableCount ?? 0),
+      countedTotal: String(batch!.countedTotal ?? 0),
+      vaccinated: !!batch!.vaccinated,
+      status: batch!.status,
+      currentStep: batch!.currentStep,
+    });
+    setAllOpen(true);
+  }
+
+  async function saveAll() {
+    if (!ed) return;
+    setAllErr(null);
+    if (!ed.farm.trim()) return setAllErr("Farm can't be empty.");
+    if (!ed.flockId.trim()) return setAllErr("Flock can't be empty.");
+    const n = (s: string) => Math.max(0, Math.round(Number(s) || 0));
+    // batchNo is intentionally not editable here — it's locked at the DB level
+    // and changed only via "Edit code" (the set_batch_no RPC).
+    const edited: Batch = {
+      ...batch!,
+      setDate: ed.setDate || undefined,
+      productType: ed.productType,
+      farm: ed.farm.trim(),
+      flockId: ed.flockId.trim(),
+      eggsSet: n(ed.eggsSet),
+      projectedChicks: ed.projectedChicks.trim() === "" ? undefined : n(ed.projectedChicks),
+      hatchedCount: n(ed.hatchedCount),
+      culls: n(ed.culls),
+      unhatchedCount: n(ed.unhatchedCount),
+      saleableCount: n(ed.saleableCount),
+      countedTotal: n(ed.countedTotal),
+      vaccinated: ed.vaccinated,
+      status: ed.status,
+      currentStep: ed.currentStep,
+      history: [...(batch!.history ?? []), `${nowISO()} — Batch edited by ${user!.name} (Admin)`],
+    };
+    setSavingAll(true);
+    try {
+      await commitBatchSet(edited, [], []);
+      patchBatchLocal(edited);
+      toast("Batch updated.");
+      setAllOpen(false);
+    } catch (e) {
+      setAllErr(e instanceof Error ? e.message : "Could not update the batch.");
+    } finally {
+      setSavingAll(false);
+    }
+  }
+
   const statusTone = batch.status === "inactive" ? "neutral" : batch.status === "delivered" ? "fulfilled" : batch.status === "dispatched" ? "gold" : "green";
 
   return (
@@ -104,6 +179,7 @@ export default function BatchDetailPage() {
             <Pill tone={statusTone}>{batch.status}</Pill>
             <Link href="/hatchery/batches" className="rounded-lg border border-line px-3 py-1.5 text-xs font-semibold text-ink transition hover:border-gold">← Back to batches</Link>
             {canEditCode && <Button variant="ghost" size="sm" onClick={openEdit}>Edit code</Button>}
+            {canEditAll && <Button size="sm" onClick={openAll}>Edit batch</Button>}
           </div>
         </div>
         <div className="grid grid-cols-2 gap-x-4 gap-y-4 sm:grid-cols-3 lg:grid-cols-5">
@@ -279,6 +355,38 @@ export default function BatchDetailPage() {
           <p className="text-xs text-muted">Only the batch code changes — flocks, counts and history are kept.</p>
           {err && <p className="text-sm text-status-refunded">{err}</p>}
         </div>
+      </Modal>
+
+      {/* Edit whole batch (Admin only) */}
+      <Modal
+        open={allOpen && canEditAll}
+        onClose={() => setAllOpen(false)}
+        title={`Edit batch ${batch.batchNo}`}
+        className="max-w-3xl"
+        footer={<><Button variant="ghost" onClick={() => setAllOpen(false)}>Cancel</Button><Button onClick={saveAll} disabled={savingAll}>{savingAll ? "Saving…" : "Save batch"}</Button></>}
+      >
+        {ed && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <Field label="Set date"><Input type="date" value={ed.setDate} onChange={(e) => setEd({ ...ed, setDate: e.target.value })} /></Field>
+              <Field label="Product"><Select value={ed.productType} onChange={(e) => setEd({ ...ed, productType: e.target.value as Product })} options={PRODUCTS.map((p) => ({ value: p, label: p }))} /></Field>
+              <Field label="Farm"><Input value={ed.farm} onChange={(e) => setEd({ ...ed, farm: e.target.value })} /></Field>
+              <Field label="Flock"><Input value={ed.flockId} onChange={(e) => setEd({ ...ed, flockId: e.target.value })} /></Field>
+              <Field label="Eggs set"><Input type="number" min={0} value={ed.eggsSet} onChange={(e) => setEd({ ...ed, eggsSet: e.target.value })} /></Field>
+              <Field label="Projected chicks" hint="Blank = auto (80% of eggs set)"><Input type="number" min={0} value={ed.projectedChicks} onChange={(e) => setEd({ ...ed, projectedChicks: e.target.value })} /></Field>
+              <Field label="Hatched"><Input type="number" min={0} value={ed.hatchedCount} onChange={(e) => setEd({ ...ed, hatchedCount: e.target.value })} /></Field>
+              <Field label="Culls"><Input type="number" min={0} value={ed.culls} onChange={(e) => setEd({ ...ed, culls: e.target.value })} /></Field>
+              <Field label="Unhatched"><Input type="number" min={0} value={ed.unhatchedCount} onChange={(e) => setEd({ ...ed, unhatchedCount: e.target.value })} /></Field>
+              <Field label="Saleable"><Input type="number" min={0} value={ed.saleableCount} onChange={(e) => setEd({ ...ed, saleableCount: e.target.value })} /></Field>
+              <Field label="Counted total"><Input type="number" min={0} value={ed.countedTotal} onChange={(e) => setEd({ ...ed, countedTotal: e.target.value })} /></Field>
+              <Field label="Status"><Select value={ed.status} onChange={(e) => setEd({ ...ed, status: e.target.value as BatchStatus })} options={BATCH_STATUSES.map((s) => ({ value: s, label: s }))} /></Field>
+              <Field label="Current step"><Select value={ed.currentStep} onChange={(e) => setEd({ ...ed, currentStep: e.target.value })} options={LIFECYCLE_STEPS.map((s) => ({ value: s.key, label: s.label }))} /></Field>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-ink"><input type="checkbox" checked={ed.vaccinated} onChange={(e) => setEd({ ...ed, vaccinated: e.target.checked })} className="h-4 w-4 accent-gold" /> Vaccinated</label>
+            <p className="text-xs text-muted">Admin override — changes are saved to the batch and logged in its history. The batch code is changed via “Edit code”; per-flock candling and setter distribution stay as recorded in the workflow.</p>
+            {allErr && <p className="text-sm text-status-refunded">{allErr}</p>}
+          </div>
+        )}
       </Modal>
     </div>
   );
