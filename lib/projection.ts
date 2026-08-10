@@ -25,19 +25,27 @@ export function hatchRateFor(product: Product): number {
   return product === "Ross 308" ? ROSS_HATCH_RATE : TETRA_HATCH_RATE;
 }
 
+// Add whole days to a yyyy-mm-dd date, timezone-safe: builds the result from
+// LOCAL date parts, never toISOString() — which shifts a day in UTC+ zones like
+// Rwanda (UTC+2) and made hatch/delivery dates land a day early.
+function addLocalDays(dateISO: string, days: number): string {
+  const d = new Date(dateISO + "T00:00:00");
+  d.setDate(d.getDate() + days);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 /** The date a batch hatches: set date + 21 days (incubation). */
 export function hatchDateOf(setDate: string): string {
-  const d = new Date(setDate + "T00:00:00");
-  d.setDate(d.getDate() + INCUBATION_DAYS);
-  return d.toISOString().slice(0, 10);
+  return addLocalDays(setDate, INCUBATION_DAYS);
 }
 
 /** The date a batch's chicks are delivered / become orderable: hatch + 2 days
  *  (so set date + 23 days). This is the date sales place orders against. */
 export function deliveryDateOf(setDate: string): string {
-  const d = new Date(hatchDateOf(setDate) + "T00:00:00");
-  d.setDate(d.getDate() + DELIVERY_LAG_DAYS);
-  return d.toISOString().slice(0, 10);
+  return addLocalDays(setDate, INCUBATION_DAYS + DELIVERY_LAG_DAYS);
 }
 
 /** Whole days from `from` (default today) until `dateISO` — negative once past. */
