@@ -14,6 +14,7 @@ import type { Availability, Product } from "@/lib/types";
 import { todayISO } from "@/lib/format";
 
 export const INCUBATION_DAYS = 21;
+export const DELIVERY_LAG_DAYS = 2; // chicks are delivered 2 days after they hatch
 export const DEFAULT_HATCH_RATE = 0.8; // 80% of eggs set are expected to hatch
 // Per-product default hatch rates (Ross and Tetra don't hatch identically).
 // Edit here to change the projection default; a batch's own adjusted number wins.
@@ -24,10 +25,18 @@ export function hatchRateFor(product: Product): number {
   return product === "Ross 308" ? ROSS_HATCH_RATE : TETRA_HATCH_RATE;
 }
 
-/** The delivery date a batch's chicks become available: set date + 21 days. */
+/** The date a batch hatches: set date + 21 days (incubation). */
 export function hatchDateOf(setDate: string): string {
   const d = new Date(setDate + "T00:00:00");
   d.setDate(d.getDate() + INCUBATION_DAYS);
+  return d.toISOString().slice(0, 10);
+}
+
+/** The date a batch's chicks are delivered / become orderable: hatch + 2 days
+ *  (so set date + 23 days). This is the date sales place orders against. */
+export function deliveryDateOf(setDate: string): string {
+  const d = new Date(hatchDateOf(setDate) + "T00:00:00");
+  d.setDate(d.getDate() + DELIVERY_LAG_DAYS);
   return d.toISOString().slice(0, 10);
 }
 
@@ -75,15 +84,16 @@ export function hatchedBatches(batches: Batch[]): HatchAccuracy[] {
 
 export interface BatchProjection {
   batch: Batch;
-  hatchDate: string;
+  hatchDate: string;    // set + 21 (incubation)
+  deliveryDate: string; // hatch + 2 — the date sales order/deliver on
   product: Product;
   eggsSet: number;
   projected: number;
 }
 
 /**
- * Upcoming batch projections (hatch date on/after `from`, batch still open),
- * ordered by hatch date ascending.
+ * Upcoming batch projections (delivery date on/after `from`, batch still open),
+ * ordered by delivery date ascending.
  */
 export function batchProjections(batches: Batch[], from: string = todayISO()): BatchProjection[] {
   return batches
@@ -91,25 +101,26 @@ export function batchProjections(batches: Batch[], from: string = todayISO()): B
     .map((b) => ({
       batch: b,
       hatchDate: hatchDateOf(b.setDate!),
+      deliveryDate: deliveryDateOf(b.setDate!),
       product: b.productType,
       eggsSet: b.eggsSet || 0,
       projected: projectedChicksOf(b),
     }))
-    .filter((p) => p.hatchDate >= from && p.projected > 0)
-    .sort((a, b) => (a.hatchDate < b.hatchDate ? -1 : a.hatchDate > b.hatchDate ? 1 : 0));
+    .filter((p) => p.deliveryDate >= from && p.projected > 0)
+    .sort((a, b) => (a.deliveryDate < b.deliveryDate ? -1 : a.deliveryDate > b.deliveryDate ? 1 : 0));
 }
 
-/** Sum projections into per-hatch-date { ross, tetra } chick totals. */
+/** Sum projections into per-delivery-date { ross, tetra } chick totals. */
 export function availabilityFromBatches(
   batches: Batch[],
   from?: string
 ): Map<string, { ross: number; tetra: number }> {
   const map = new Map<string, { ross: number; tetra: number }>();
   for (const p of batchProjections(batches, from)) {
-    const cur = map.get(p.hatchDate) ?? { ross: 0, tetra: 0 };
+    const cur = map.get(p.deliveryDate) ?? { ross: 0, tetra: 0 };
     if (p.product === "Ross 308") cur.ross += p.projected;
     else cur.tetra += p.projected;
-    map.set(p.hatchDate, cur);
+    map.set(p.deliveryDate, cur);
   }
   return map;
 }

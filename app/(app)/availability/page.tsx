@@ -16,12 +16,13 @@ import { nowISO, todayISO, formatDate } from "@/lib/format";
 import { availableFor, type Availability, type Product } from "@/lib/types";
 import {
   INCUBATION_DAYS,
+  DELIVERY_LAG_DAYS,
   ROSS_HATCH_RATE,
   TETRA_HATCH_RATE,
   availabilityFromBatches,
   batchProjections,
   daysUntil,
-  hatchDateOf,
+  deliveryDateOf,
   hatchedBatches,
   projectedChicksOf,
   type BatchProjection,
@@ -78,14 +79,14 @@ export default function AvailabilityPage() {
         .reduce((s, o) => s + (o.chicks || 0), 0);
   }, [orders]);
 
-  // Group upcoming projections by hatch date, with per-date subtotals.
+  // Group upcoming projections by delivery date, with per-date subtotals.
   const grouped = useMemo(() => {
     const m = new Map<string, { date: string; items: BatchProjection[]; ross: number; tetra: number }>();
     for (const p of projections) {
-      const g = m.get(p.hatchDate) ?? { date: p.hatchDate, items: [], ross: 0, tetra: 0 };
+      const g = m.get(p.deliveryDate) ?? { date: p.deliveryDate, items: [], ross: 0, tetra: 0 };
       g.items.push(p);
       if (p.product === "Ross 308") g.ross += p.projected; else g.tetra += p.projected;
-      m.set(p.hatchDate, g);
+      m.set(p.deliveryDate, g);
     }
     return [...m.values()];
   }, [projections]);
@@ -95,7 +96,7 @@ export default function AvailabilityPage() {
     const upTetra = projections.filter((p) => p.product === "Tetra Super Harco").reduce((s, p) => s + p.projected, 0);
     const open = rows.filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0));
     const left = open.reduce((s, a) => s + availableFor(a, "Ross 308", orders) + availableFor(a, "Tetra Super Harco", orders), 0);
-    return { upRoss, upTetra, openCount: open.length, left, next: projections[0]?.hatchDate ?? null };
+    return { upRoss, upTetra, openCount: open.length, left, next: projections[0]?.deliveryDate ?? null };
   }, [projections, rows, orders]);
 
   if (!user) return null;
@@ -133,16 +134,16 @@ export default function AvailabilityPage() {
     toast(`${a.closed ? "Reopened" : "Closed"} ${formatDate(a.date)} for ordering.`);
   }
 
-  // Publish one hatch date's availability from the (possibly updated) batch list.
-  function publishDate(hatchDate: string, list = batches) {
-    const v = availabilityFromBatches(list).get(hatchDate);
-    const existing = availability.find((a) => a.id === hatchDate);
+  // Publish one delivery date's availability from the (possibly updated) batch list.
+  function publishDate(deliveryDate: string, list = batches) {
+    const v = availabilityFromBatches(list).get(deliveryDate);
+    const existing = availability.find((a) => a.id === deliveryDate);
     if (!v || (v.ross <= 0 && v.tetra <= 0)) {
-      if (existing?.fromBatch) void removeAvailability(hatchDate);
+      if (existing?.fromBatch) void removeAvailability(deliveryDate);
       return;
     }
     upsertAvailability({
-      id: hatchDate, date: hatchDate, ross: v.ross, tetra: v.tetra,
+      id: deliveryDate, date: deliveryDate, ross: v.ross, tetra: v.tetra,
       fromBatch: true, closed: existing?.closed, by: existing?.by ?? user!.email, on: nowISO(),
     });
   }
@@ -169,7 +170,7 @@ export default function AvailabilityPage() {
     const n = Math.max(0, Math.round(Number(draft[batchId]) || 0));
     const updated = { ...b, projectedChicks: n };
     const list = batches.map((x) => (x.id === batchId ? updated : x));
-    const hd = hatchDateOf(b.setDate);
+    const hd = deliveryDateOf(b.setDate);
     // Warn (but still save) if the new date total drops below what's already ordered.
     const total = availabilityFromBatches(list).get(hd);
     const already = orderedOn(hd, b.productType);
@@ -187,7 +188,9 @@ export default function AvailabilityPage() {
   return (
     <div className="space-y-5">
       <p className="-mt-2 text-sm text-muted">
-        Chicks are expected on the delivery calendar <strong>{INCUBATION_DAYS} days</strong> after a batch is set, at{" "}
+        Chicks hatch <strong>{INCUBATION_DAYS} days</strong> after a batch is set and are delivered{" "}
+        <strong>{DELIVERY_LAG_DAYS} days</strong> later — so they reach the delivery calendar{" "}
+        <strong>{INCUBATION_DAYS + DELIVERY_LAG_DAYS} days</strong> after setting, at{" "}
         {ROSS_HATCH_RATE === TETRA_HATCH_RATE
           ? <><strong>{Math.round(ROSS_HATCH_RATE * 100)}%</strong> of the eggs set</>
           : <>Ross <strong>{Math.round(ROSS_HATCH_RATE * 100)}%</strong> / Tetra <strong>{Math.round(TETRA_HATCH_RATE * 100)}%</strong> of eggs set</>}.
@@ -200,7 +203,7 @@ export default function AvailabilityPage() {
         <Kpi compact icon="chicks" tone="purple" label="Upcoming Tetra" value={kpi.upTetra.toLocaleString()} sub="projected, not yet hatched" />
         <Kpi compact icon="orders" tone="default" label="Open dates" value={String(kpi.openCount)} />
         <Kpi compact icon="check" tone="green" label="Chicks still available" value={kpi.left.toLocaleString()} />
-        <Kpi compact icon="pending" tone="amber" label="Next hatch" value={kpi.next ? formatDate(kpi.next) : "—"} sub={kpi.next ? daysLabel(daysUntil(kpi.next)) : undefined} />
+        <Kpi compact icon="pending" tone="amber" label="Next delivery" value={kpi.next ? formatDate(kpi.next) : "—"} sub={kpi.next ? daysLabel(daysUntil(kpi.next)) : undefined} />
       </div>
 
       {canProject && (
@@ -210,8 +213,8 @@ export default function AvailabilityPage() {
             <Button size="sm" onClick={syncAll}>Re-sync to calendar</Button>
           </div>
           <p className="-mt-1 mb-3 text-sm text-muted">
-            Each set batch opens its hatch date automatically. Adjust a batch&apos;s expected chicks below — the delivery
-            date&apos;s total updates. A batch&apos;s own number always wins over the default rate.
+            Each set batch opens its delivery date automatically (hatch + {DELIVERY_LAG_DAYS} days). Adjust a batch&apos;s
+            expected chicks below — the delivery date&apos;s total updates. A batch&apos;s own number always wins over the default rate.
           </p>
           <TableWrap>
             <thead>

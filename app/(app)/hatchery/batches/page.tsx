@@ -18,7 +18,7 @@ import type { Batch, BatchFlock, MachineAssignment, Reception, SetterMove } from
 import { Modal } from "@/components/ui/Modal";
 import { machineFreeCapacity, machinesToSync, markStep, stepLabel, settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
 import { commitBatchSet, commitBatchDelete } from "@/lib/hatchery/db";
-import { batchAvailabilityRow, hatchDateOf } from "@/lib/projection";
+import { batchAvailabilityRow, deliveryDateOf } from "@/lib/projection";
 
 const CAN_SET = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician"];
 const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
@@ -211,8 +211,8 @@ export default function BatchesPage() {
 
     // Availability is a derived sales projection — best-effort, recomputed on
     // later sets, so it never blocks or half-commits the batch.
-    const hatchDate = hatchDateOf(date);
-    const availRow = batchAvailabilityRow(hatchDate, [...batches, batch], availability.find((a) => a.id === hatchDate), user!.email, on);
+    const deliveryDate = deliveryDateOf(date);
+    const availRow = batchAvailabilityRow(deliveryDate, [...batches, batch], availability.find((a) => a.id === deliveryDate), user!.email, on);
     if (availRow) void upsertAvailability(availRow);
 
     toast(`Batch ${batch.batchNo} set — ${totalEggs.toLocaleString()} eggs, ${flocks.length} flock(s).`);
