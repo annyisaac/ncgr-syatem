@@ -14,7 +14,7 @@ import type { Availability, Product } from "@/lib/types";
 import { todayISO } from "@/lib/format";
 
 export const INCUBATION_DAYS = 21;
-export const DELIVERY_LAG_DAYS = 2; // chicks are delivered 2 days after they hatch
+export const DELIVERY_LAG_DAYS = 1; // delivery is 22 days after the set date (hatch + 1)
 export const DEFAULT_HATCH_RATE = 0.8; // 80% of eggs set are expected to hatch
 // Per-product default hatch rates (Ross and Tetra don't hatch identically).
 // Edit here to change the projection default; a batch's own adjusted number wins.

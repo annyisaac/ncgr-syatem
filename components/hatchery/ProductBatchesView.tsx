@@ -11,6 +11,7 @@ import { fetchTable } from "@/lib/hatchery/db";
 import { getSupabase } from "@/lib/supabase";
 import { LIFECYCLE_STEPS, type Batch, type ChickInventory } from "@/lib/hatchery/types";
 import { stepLabel } from "@/lib/hatchery/lifecycle";
+import { deliveryDateOf, projectedChicksOf } from "@/lib/projection";
 import { formatDate, formatDateTime } from "@/lib/format";
 import type { Product } from "@/lib/types";
 
@@ -114,20 +115,22 @@ export function ProductBatchesView({ product }: { product: Product }) {
         <TableWrap>
             <thead>
               <tr>
-                <Th>Batch</Th><Th>Set date</Th><Th>Stage</Th>
-                <Th className="text-right">Eggs set</Th><Th className="text-right">Hatched</Th>
+                <Th>Batch</Th><Th>Set date</Th><Th>Delivery date</Th><Th>Stage</Th>
+                <Th className="text-right">Eggs set</Th><Th className="text-right">Expected chicks</Th><Th className="text-right">Hatched</Th>
                 <Th className="text-right">Saleable</Th><Th className="text-right">Available</Th><Th>Status</Th><Th></Th>
               </tr>
             </thead>
             <tbody>
               {mine.length === 0 ? (
-                <EmptyRow colSpan={9} text={loading ? "" : `No ${product} batches yet.`} />
+                <EmptyRow colSpan={11} text={loading ? "" : `No ${product} batches yet.`} />
               ) : mine.map((b) => (
                 <tr key={b.id}>
                   <Td className="font-medium">{b.batchNo}</Td>
-                  <Td>{b.createdAt ? formatDate(b.createdAt.slice(0, 10)) : "—"}</Td>
+                  <Td className="whitespace-nowrap">{b.setDate ? formatDate(b.setDate) : "—"}</Td>
+                  <Td className="whitespace-nowrap font-medium text-gold-dark">{b.setDate ? formatDate(deliveryDateOf(b.setDate)) : "—"}</Td>
                   <Td>{stepLabel(b.currentStep)} <span className="text-xs text-muted">({progress(b)}/{LIFECYCLE_STEPS.length})</span></Td>
                   <Td className="text-right">{b.eggsSet.toLocaleString()}</Td>
+                  <Td className="text-right font-semibold">{projectedChicksOf(b).toLocaleString()}</Td>
                   <Td className="text-right">{b.hatchedCount.toLocaleString()}</Td>
                   <Td className="text-right">{b.saleableCount.toLocaleString()}</Td>
                   <Td className="text-right font-semibold text-green">{(availByBatch.get(b.id) ?? 0).toLocaleString()}</Td>
