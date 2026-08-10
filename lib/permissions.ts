@@ -177,6 +177,7 @@ const NAV: Record<Role, NavItem[]> = {
   "Ross Payment Checker": [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Clients", href: "/clients" },
+    { label: "Ross batches", href: "/ross-batches" },
     { label: "Verification", href: "/verification" },
     { label: "Customer feedback", href: "/feedback" },
     { label: "Delivery planning", href: "/planning" },
