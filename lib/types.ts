@@ -425,6 +425,8 @@ export interface CustomerFeedback {
   vetReason?: string;
   vetStatus?: VetFollowUpStatus; // set when needsVet is true
   vetName?: string; // the vet handling the case (set when a vet first acts)
+  vetAssignedTo?: string; // email of the vet this case is assigned to (chosen when needs-vet is flagged)
+  vetAssignedName?: string; // that vet's display name, for showing without a users lookup
   vetUpdates?: VetUpdate[];
   history: string[]; // audit log lines
 }

@@ -41,7 +41,6 @@ import {
   type Route,
   type User,
   type VetFollowUpStatus,
-  type VetUpdate,
 } from "@/lib/types";
 
 const CAN_RECORD: Role[] = ["Admin", "Tetra Payment Checker", "Ross Payment Checker"];
@@ -153,7 +152,13 @@ function timelineFor(o: Order, fb: CustomerFeedback | undefined): TLEvent[] {
 
 export default function FeedbackPage() {
   const { user } = useAuth();
-  const { orders, routes, customerFeedback, upsertCustomerFeedback } = useData();
+  const { orders, routes, users, customerFeedback, upsertCustomerFeedback } = useData();
+
+  // Active vets a needs-vet case can be assigned to.
+  const vets = useMemo(
+    () => users.filter((u) => u.role === "Hatchery Veterinary" && u.active !== false),
+    [users]
+  );
 
   const [q, setQ] = useState("");
   const [date, setDate] = useState("");
@@ -194,9 +199,17 @@ export default function FeedbackPage() {
       .filter((o) => !product || o.product === product)
       .filter((o) => !salesperson || o.dsr === salesperson)
       .filter((o) => !status || careStatus(fbByOrder.get(o.id)) === status)
+      // A vet only sees needs-vet cases assigned to them (or not yet assigned);
+      // Admin and recorders see everything.
+      .filter((o) => {
+        if (user?.role !== "Hatchery Veterinary") return true;
+        const fb = fbByOrder.get(o.id);
+        if (!fb?.needsVet) return false;
+        return !fb.vetAssignedTo || fb.vetAssignedTo === user.email;
+      })
       .filter((o) => !term || o.name.toLowerCase().includes(term) || o.phone.includes(term))
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : a.name.localeCompare(b.name)));
-  }, [delivered, date, product, salesperson, status, q, fbByOrder]);
+  }, [delivered, date, product, salesperson, status, q, fbByOrder, user]);
 
   const groups = useMemo(() => {
     const m = new Map<string, Order[]>();
@@ -353,10 +366,10 @@ export default function FeedbackPage() {
       </div>
 
       {edit && (
-        <RecordModal order={edit} existing={fbByOrder.get(edit.id)} user={user} onClose={() => setEdit(null)} save={upsertCustomerFeedback} />
+        <RecordModal order={edit} existing={fbByOrder.get(edit.id)} user={user} vets={vets} onClose={() => setEdit(null)} save={upsertCustomerFeedback} />
       )}
       {vetCase && (
-        <VetModal fb={vetCase} user={user} onClose={() => setVetCase(null)} save={upsertCustomerFeedback} />
+        <VetModal fb={vetCase} user={user} vets={vets} isAdmin={user.role === "Admin"} onClose={() => setVetCase(null)} save={upsertCustomerFeedback} />
       )}
       {history && (
         <HistoryModal order={history} fb={fbByOrder.get(history.id)} onClose={() => setHistory(null)} />
@@ -413,7 +426,7 @@ function CareRow({
         <span>{qtyOf(o).toLocaleString()}</span>
         <span className="min-w-0">
           <Pill tone={STATUS_TONE[st]}>{STATUS_LABEL[st]}</Pill>
-          {fb?.needsVet && <span className="mt-0.5 block truncate text-[0.68rem] text-muted">{fb.vetName ?? "Unassigned"}</span>}
+          {fb?.needsVet && <span className="mt-0.5 block truncate text-[0.68rem] text-muted">{fb.vetAssignedName ?? fb.vetName ?? "Unassigned"}</span>}
         </span>
         <span className="truncate text-xs text-muted">{lastActionOf(fb)}</span>
         <span className="flex items-center justify-end gap-1">
@@ -604,11 +617,12 @@ function Textarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
 }
 
 function RecordModal({
-  order, existing, user, onClose, save,
+  order, existing, user, vets, onClose, save,
 }: {
   order: Order;
   existing?: CustomerFeedback;
   user: User;
+  vets: User[];
   onClose: () => void;
   save: (f: CustomerFeedback) => Promise<void>;
 }) {
@@ -617,6 +631,7 @@ function RecordModal({
   const [note, setNote] = useState(existing?.note ?? "");
   const [needsVet, setNeedsVet] = useState(existing?.needsVet ?? false);
   const [vetReason, setVetReason] = useState(existing?.vetReason ?? "");
+  const [vetAssignedTo, setVetAssignedTo] = useState(existing?.vetAssignedTo ?? (vets.length === 1 ? vets[0].email : ""));
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -625,6 +640,8 @@ function RecordModal({
     const n = note.trim();
     if (!n) return setErr("Enter what the customer said on the call.");
     if (needsVet && !vetReason.trim()) return setErr("Say what the customer needs the vet for.");
+    if (needsVet && !vetAssignedTo) return setErr("Assign this case to a vet.");
+    const assignedName = vets.find((v) => v.email === vetAssignedTo)?.name;
     const fb: CustomerFeedback = {
       id: order.id,
       orderId: order.id,
@@ -645,10 +662,12 @@ function RecordModal({
       vetReason: needsVet ? vetReason.trim() : undefined,
       vetStatus: needsVet ? existing?.vetStatus ?? "pending" : undefined,
       vetName: existing?.vetName,
+      vetAssignedTo: needsVet ? vetAssignedTo : undefined,
+      vetAssignedName: needsVet ? assignedName : undefined,
       vetUpdates: existing?.vetUpdates ?? [],
       history: [
         ...(existing?.history ?? []),
-        `${nowISO()} — Feedback ${existing ? "updated" : "recorded"} by ${user.name}${needsVet ? " · flagged for vet" : ""}`,
+        `${nowISO()} — Feedback ${existing ? "updated" : "recorded"} by ${user.name}${needsVet ? ` · flagged for vet${assignedName ? ` → ${assignedName}` : ""}` : ""}`,
       ],
     };
     setSaving(true);
@@ -689,6 +708,13 @@ function RecordModal({
             <Textarea value={vetReason} onChange={(e) => setVetReason(e.target.value)} placeholder="Symptoms or issue the customer described…" />
           </Field>
         )}
+        {needsVet && (
+          <Field label="Assign to vet" required>
+            <Select value={vetAssignedTo} onChange={(e) => setVetAssignedTo(e.target.value)}
+              placeholder={vets.length ? "Choose a vet" : "No vets available"}
+              options={vets.map((v) => ({ value: v.email, label: v.name }))} />
+          </Field>
+        )}
         {err && <p className="text-sm text-red">{err}</p>}
       </div>
     </Modal>
@@ -696,41 +722,52 @@ function RecordModal({
 }
 
 function VetModal({
-  fb, user, onClose, save,
+  fb, user, vets, isAdmin, onClose, save,
 }: {
   fb: CustomerFeedback;
   user: User;
+  vets: User[];
+  isAdmin: boolean;
   onClose: () => void;
   save: (f: CustomerFeedback) => Promise<void>;
 }) {
   const { toast } = useToast();
   const [status, setStatus] = useState<VetFollowUpStatus>(fb.vetStatus === "resolved" ? "resolved" : "in_progress");
   const [note, setNote] = useState("");
+  const [assignedTo, setAssignedTo] = useState(fb.vetAssignedTo ?? "");
   const [err, setErr] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   async function submit() {
     setErr(null);
     const n = note.trim();
-    if (!n) return setErr("Add a note on what you found, advised, or did.");
-    const upd: VetUpdate = { note: n, by: user.email, byName: user.name, on: nowISO(), status };
+    const newAssignee = isAdmin ? assignedTo : fb.vetAssignedTo ?? "";
+    const reassigned = !!newAssignee && newAssignee !== fb.vetAssignedTo;
+    if (!n && !reassigned) return setErr("Add a note on what you found, advised, or did.");
+    const assignedName = vets.find((v) => v.email === newAssignee)?.name ?? fb.vetAssignedName;
+    const updates = [...(fb.vetUpdates ?? [])];
+    const hist = [...(fb.history ?? [])];
+    if (n) {
+      updates.push({ note: n, by: user.email, byName: user.name, on: nowISO(), status });
+      hist.push(`${nowISO()} — Vet ${status === "resolved" ? "resolved the follow-up" : "updated the follow-up"} (${user.name})`);
+    }
+    if (reassigned) hist.push(`${nowISO()} — Reassigned to ${assignedName ?? newAssignee} by ${user.name}`);
     setSaving(true);
     try {
       await save({
         ...fb,
-        vetStatus: status,
-        vetName: fb.vetName ?? user.name,
-        vetUpdates: [...(fb.vetUpdates ?? []), upd],
-        history: [
-          ...(fb.history ?? []),
-          `${nowISO()} — Vet ${status === "resolved" ? "resolved the follow-up" : "updated the follow-up"} (${user.name})`,
-        ],
+        vetStatus: n ? status : fb.vetStatus,
+        vetName: n ? fb.vetName ?? user.name : fb.vetName,
+        vetAssignedTo: newAssignee || fb.vetAssignedTo,
+        vetAssignedName: assignedName,
+        vetUpdates: updates,
+        history: hist,
       });
     } catch {
       setSaving(false);
       return setErr("Could not save — check your connection and try again.");
     }
-    toast(status === "resolved" ? "Follow-up resolved." : "Follow-up updated.");
+    toast(reassigned && !n ? "Case reassigned." : status === "resolved" ? "Follow-up resolved." : "Follow-up updated.");
     onClose();
   }
 
@@ -744,6 +781,13 @@ function VetModal({
           <Select value={status} onChange={(e) => setStatus(e.target.value as VetFollowUpStatus)}
             options={[{ value: "in_progress", label: "Following up" }, { value: "resolved", label: "Resolved" }]} />
         </Field>
+        {isAdmin && (
+          <Field label="Assigned vet" hint="Admin can hand this case to another vet">
+            <Select value={assignedTo} onChange={(e) => setAssignedTo(e.target.value)}
+              placeholder={vets.length ? "Choose a vet" : "No vets available"}
+              options={vets.map((v) => ({ value: v.email, label: v.name }))} />
+          </Field>
+        )}
         <Field label="Update note" required>
           <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="What you found, advised, or did for the customer…" />
         </Field>
