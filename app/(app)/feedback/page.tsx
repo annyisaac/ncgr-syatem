@@ -618,8 +618,9 @@ function RecordModal({
   const [needsVet, setNeedsVet] = useState(existing?.needsVet ?? false);
   const [vetReason, setVetReason] = useState(existing?.vetReason ?? "");
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function submit() {
+  async function submit() {
     setErr(null);
     const n = note.trim();
     if (!n) return setErr("Enter what the customer said on the call.");
@@ -650,14 +651,20 @@ function RecordModal({
         `${nowISO()} — Feedback ${existing ? "updated" : "recorded"} by ${user.name}${needsVet ? " · flagged for vet" : ""}`,
       ],
     };
-    save(fb).catch(() => toast("Could not save the feedback — check your connection.", "error"));
+    setSaving(true);
+    try {
+      await save(fb);
+    } catch {
+      setSaving(false);
+      return setErr("Could not save — check your connection and try again.");
+    }
     toast(needsVet ? "Feedback saved and flagged for the vet." : "Feedback saved.");
     onClose();
   }
 
   return (
     <Modal open onClose={onClose} title={`Feedback — ${order.name}`}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit}>Save feedback</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save feedback"}</Button></>}>
       <div className="space-y-3">
         <p className="text-xs text-muted">{order.product} · delivered {formatDate(order.date)} · {qtyOf(order).toLocaleString()} chicks · {order.phone}</p>
         <Field label="How was the customer?">
@@ -700,29 +707,36 @@ function VetModal({
   const [status, setStatus] = useState<VetFollowUpStatus>(fb.vetStatus === "resolved" ? "resolved" : "in_progress");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
 
-  function submit() {
+  async function submit() {
     setErr(null);
     const n = note.trim();
     if (!n) return setErr("Add a note on what you found, advised, or did.");
     const upd: VetUpdate = { note: n, by: user.email, byName: user.name, on: nowISO(), status };
-    save({
-      ...fb,
-      vetStatus: status,
-      vetName: fb.vetName ?? user.name,
-      vetUpdates: [...(fb.vetUpdates ?? []), upd],
-      history: [
-        ...(fb.history ?? []),
-        `${nowISO()} — Vet ${status === "resolved" ? "resolved the follow-up" : "updated the follow-up"} (${user.name})`,
-      ],
-    }).catch(() => toast("Could not save the update — check your connection.", "error"));
+    setSaving(true);
+    try {
+      await save({
+        ...fb,
+        vetStatus: status,
+        vetName: fb.vetName ?? user.name,
+        vetUpdates: [...(fb.vetUpdates ?? []), upd],
+        history: [
+          ...(fb.history ?? []),
+          `${nowISO()} — Vet ${status === "resolved" ? "resolved the follow-up" : "updated the follow-up"} (${user.name})`,
+        ],
+      });
+    } catch {
+      setSaving(false);
+      return setErr("Could not save — check your connection and try again.");
+    }
     toast(status === "resolved" ? "Follow-up resolved." : "Follow-up updated.");
     onClose();
   }
 
   return (
     <Modal open onClose={onClose} title={`Follow-up — ${fb.customerName}`}
-      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit}>Save update</Button></>}>
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={submit} disabled={saving}>{saving ? "Saving…" : "Save update"}</Button></>}>
       <div className="space-y-3">
         <p className="text-xs text-muted">{fb.product} · delivered {formatDate(fb.deliveryDate)} · {fb.phone}</p>
         {fb.vetReason && <p className="text-sm"><span className="text-muted">Needs vet for: </span>{fb.vetReason}</p>}
