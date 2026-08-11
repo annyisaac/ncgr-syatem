@@ -73,7 +73,7 @@ function payMatch(o: Order): { tone: "green" | "gold" | "blue"; label: string } 
 
 export default function VerificationPage() {
   const { user } = useAuth();
-  const { orders, statements, availability, upsertStatement, removeStatement, upsertOrder, newId } = useData();
+  const { orders, statements, availability, upsertStatement, removeStatement, upsertOrder, newId, reload } = useData();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -286,31 +286,44 @@ export default function VerificationPage() {
     else toast("Could not open the slip.", "error");
   }
 
-  function patchPayment(order: Order, payIndex: number, patch: Partial<Payment>, line: string) {
+  async function patchPayment(order: Order, payIndex: number, patch: Partial<Payment>, line: string): Promise<boolean> {
     const payments = order.payments.map((p, i) => (i === payIndex ? { ...p, ...patch } : p));
     // Single-row write: replacing the whole collection would delete any order
     // created since this tab loaded.
-    void upsertOrder(withHistory({ ...order, payments }, user!, line));
+    try {
+      await upsertOrder(withHistory({ ...order, payments }, user!, line));
+      return true;
+    } catch (err) {
+      const m = err instanceof Error ? err.message : "";
+      if (m.includes("DUPLICATE_PAYMENT_REF")) {
+        const ref = m.split("DUPLICATE_PAYMENT_REF:")[1]?.trim();
+        toast(`That transaction reference${ref ? ` (${ref})` : ""} has already been used on another order — it can't be used again.`, "error");
+      } else {
+        toast("Could not save — please try again.", "error");
+      }
+      void reload();
+      return false;
+    }
   }
 
   // `choice` is the checker's decision from the modal when an id isn't found:
   // "seller" hands it back to be corrected, "admin" escalates for approval.
   // "auto" is the normal statement-based outcome (verify / cash / duplicate).
-  function saveManual(order: Order, payIndex: number, input: string, comment: string, choice: "auto" | "admin" | "seller" = "auto") {
+  async function saveManual(order: Order, payIndex: number, input: string, comment: string, choice: "auto" | "admin" | "seller" = "auto") {
     const p0 = order.payments[payIndex];
     const refs = splitRefs(input);
     const on = nowISO();
     const base: Partial<Payment> = { verified: true, verifiedBy: user!.email, verifiedOn: on, comment, flag: undefined, pendingApproval: undefined, returnedForFix: undefined };
 
     if (choice === "seller") {
-      patchPayment(order, payIndex,
+      void patchPayment(order, payIndex,
         { verified: false, pendingApproval: undefined, returnedForFix: { by: user!.email, on, refs, note: comment }, flag: `Missing in statements: ${refs.join(", ")}` },
         `Payment (${refs.join(", ")}) returned to the seller to correct the transaction id — ${comment}`);
       toast("Returned to the seller to correct the transaction id.", "info");
       return setManual(null);
     }
     if (choice === "admin") {
-      patchPayment(order, payIndex,
+      void patchPayment(order, payIndex,
         { verified: false, returnedForFix: undefined, pendingApproval: { by: user!.email, on, refs, note: comment }, flag: `Missing in statements: ${refs.join(", ")}` },
         `Payment (${refs.join(", ")}) sent to the Admin / Accountant for approval — ${comment}`);
       toast("Sent to the Admin / Accountant for approval.", "info");
@@ -319,7 +332,7 @@ export default function VerificationPage() {
 
     // Cash / non-bank verifies at the recorded amount.
     if (refs.length === 1 && refs[0].toLowerCase() === "cash") {
-      patchPayment(order, payIndex, { ...base, checkedRef: "CASH" }, `Manually verified payment (CASH) — ${comment}`);
+      void patchPayment(order, payIndex, { ...base, checkedRef: "CASH" }, `Manually verified payment (CASH) — ${comment}`);
       toast("Payment verified (cash).");
       return setManual(null);
     }
@@ -332,11 +345,14 @@ export default function VerificationPage() {
       const amt = lookups.reduce((s, l) => s + l.matches[0].amt, 0);
       const corrected = amt !== p0.amt;
       const refLabel = refs.join(" + ");
-      patchPayment(order, payIndex,
+      // A used transaction id can't be reused — the DB rejects it; keep the
+      // modal open so the checker can enter the correct id.
+      const ok = await patchPayment(order, payIndex,
         { ...base, amt, checkedRef: refLabel, flag: corrected ? `Amount set to ${amt.toLocaleString()} from statement` : undefined },
         corrected
           ? `Verified payment (${refLabel}) — amount ${p0.amt.toLocaleString()} → ${amt.toLocaleString()} RWF from statement — ${comment}`
           : `Verified payment (${refLabel}) from statement — ${comment}`);
+      if (!ok) return;
       toast(corrected ? `Verified — amount set to ${formatRWF(amt)} from the statement.` : `Verified ${formatRWF(amt)} from the statement.`);
       return setManual(null);
     }
@@ -348,7 +364,7 @@ export default function VerificationPage() {
     // it goes straight to the Admin.
     if (dup.length) {
       const flag = `Duplicate ref: ${dup.join(", ")}`;
-      patchPayment(order, payIndex,
+      void patchPayment(order, payIndex,
         { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, returnedForFix: undefined, flag },
         `Payment (${refs.join(", ")}) sent to Admin — ${flag} — ${comment}`);
       toast(`Sent to Admin for approval — ${flag}.`, "info");
@@ -357,7 +373,7 @@ export default function VerificationPage() {
 
     // Fallback: a missing id with no explicit choice escalates to the Admin.
     const flag = `Missing in statements: ${missing.join(", ")}`;
-    patchPayment(order, payIndex,
+    void patchPayment(order, payIndex,
       { verified: false, pendingApproval: { by: user!.email, on, refs, note: comment }, returnedForFix: undefined, flag },
       `Payment (${refs.join(", ")}) sent to Admin — ${flag} — ${comment}`);
     toast(`Sent to Admin for approval — ${flag}.`, "info");
@@ -366,14 +382,14 @@ export default function VerificationPage() {
 
   // Admin's final say on payments a checker couldn't match to a statement.
   // A comment (why it's being approved) is required.
-  function adminApprove(order: Order, payIndex: number, note: string) {
+  async function adminApprove(order: Order, payIndex: number, note: string) {
     const p0 = order.payments[payIndex];
     const refs = p0.pendingApproval?.refs ?? [];
     // If it was never sent for approval, fall back to the payment's own ref and
     // note it — either way the payment is verified, and the trigger notifies the
     // verifier that it was verified.
     const ref = refs.join(" + ") || p0.checkedRef || p0.ref;
-    patchPayment(order, payIndex,
+    const ok = await patchPayment(order, payIndex,
       {
         verified: true,
         verifiedBy: user!.email,
@@ -384,12 +400,13 @@ export default function VerificationPage() {
         pendingApproval: undefined,
       },
       `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)} — ${note}`);
+    if (!ok) return;
     toast("Payment approved and verified.");
     setApproveFor(null);
   }
   function adminReject(order: Order, payIndex: number) {
     const p0 = order.payments[payIndex];
-    patchPayment(order, payIndex,
+    void patchPayment(order, payIndex,
       { verified: false, voided: true, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" },
       `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatRWF(p0.amt)} removed from paid`);
     toast("Payment rejected and voided — no longer counts as paid.", "info");
