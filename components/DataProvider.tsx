@@ -160,6 +160,50 @@ function roleNeedsStatements(role?: Role): boolean {
   );
 }
 
+/**
+ * Per-device cache of the light dataset (everything except the heavy statements
+ * table), so a repeat login on the same device paints the dashboard instantly
+ * while fresh data is fetched in the background. Held for the most recent user
+ * only, keyed by email, and never shown to a different account.
+ */
+const DATA_CACHE_KEY = "ncgr.data.v1";
+type LightDb = Omit<Database, "statements">;
+
+function readCachedData(email: string): LightDb | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(DATA_CACHE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { email: string; data: LightDb };
+    if (parsed.email !== email.trim().toLowerCase()) return null;
+    return parsed.data;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedData(email: string, db: Database): void {
+  if (typeof window === "undefined") return;
+  const data: LightDb = {
+    users: db.users,
+    dsrs: db.dsrs,
+    orders: db.orders,
+    commissions: db.commissions,
+    routes: db.routes ?? [],
+    availability: db.availability ?? [],
+    dsrVisits: db.dsrVisits ?? [],
+    customerFeedback: db.customerFeedback ?? [],
+  };
+  // Never overwrite a good cache with an empty pre-load snapshot.
+  if (Object.values(data).every((arr) => Array.isArray(arr) && arr.length === 0)) return;
+  try {
+    window.localStorage.setItem(DATA_CACHE_KEY, JSON.stringify({ email: email.trim().toLowerCase(), data }));
+  } catch {
+    // Quota exceeded (very large dataset) — drop any partial entry and skip.
+    try { window.localStorage.removeItem(DATA_CACHE_KEY); } catch { /* ignore */ }
+  }
+}
+
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [db, setDb] = useState<Database>(EMPTY);
@@ -231,7 +275,15 @@ export function DataProvider({ children }: { children: ReactNode }) {
       return;
     }
     (async () => {
-      setLoading(true);
+      // Instant: if this device cached this user's data, paint it at once and
+      // revalidate in the background instead of waiting on the network.
+      const cached = readCachedData(user.email);
+      if (cached) {
+        setDb((prev) => ({ ...prev, ...cached }));
+        if (active) setLoading(false);
+      } else {
+        setLoading(true);
+      }
       await loadPrimary();
       // The app is interactive as soon as the light tables are in.
       if (active) setLoading(false);
@@ -243,6 +295,14 @@ export function DataProvider({ children }: { children: ReactNode }) {
       active = false;
     };
   }, [user, loadPrimary, loadStatements, loadNotifications]);
+
+  // Persist the light dataset to the device (debounced) so the next login on
+  // this device paints instantly. Captures both loads and in-session edits.
+  useEffect(() => {
+    if (!user) return;
+    const t = setTimeout(() => writeCachedData(user.email, db), 500);
+    return () => clearTimeout(t);
+  }, [user, db]);
 
   // Live notifications: reload the (RLS-scoped) list whenever a row changes.
   useEffect(() => {
