@@ -179,11 +179,27 @@ function ApprovalRow({
 
 /**
  * Admin-only review panel: flags likely duplicate orders and reused payment
- * references so the Admin can have the sellers check them. Read-only — it
- * deletes nothing. Hidden when there's nothing to review.
+ * references. The Admin can delete a duplicate order straight from here (with a
+ * confirm). Hidden when there's nothing to review.
  */
 function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
+  const { removeOrder } = useData();
+  const { toast } = useToast();
   const issues = useMemo(() => findOrderIssues(orders), [orders]);
+
+  async function del(o: Order) {
+    const ok = typeof window === "undefined" || window.confirm(
+      `Delete this order?\n\n${o.name} · ${o.product} · ${o.date} · ${(o.delivered ?? o.chicks).toLocaleString()} chicks · paid ${formatRWF(paidAmount(o))}\n\nThis permanently removes the order and its payments. This cannot be undone.`
+    );
+    if (!ok) return;
+    try {
+      await removeOrder(o.id);
+      toast("Order deleted.");
+    } catch {
+      toast("Could not delete — please try again.", "error");
+    }
+  }
+
   if (issues.length === 0) return null;
   const moneyCount = issues.filter((i) => i.sharedRef).length;
 
@@ -222,7 +238,7 @@ function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
               <thead>
                 <tr>
                   <Th>Delivery</Th><Th>Customer</Th><Th className="text-right">Chicks</Th>
-                  <Th className="text-right">Paid</Th><Th>Status</Th><Th>Payment ref(s)</Th><Th>Seller</Th><Th>Order id</Th>
+                  <Th className="text-right">Paid</Th><Th>Status</Th><Th>Payment ref(s)</Th><Th>Seller</Th><Th>Order id</Th><Th></Th>
                 </tr>
               </thead>
               <tbody>
@@ -236,6 +252,7 @@ function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
                     <Td className="text-xs">{o.payments.filter((p) => !p.voided).map((p) => p.ref).join(", ") || "—"}</Td>
                     <Td className="text-xs text-muted">{o.by ?? "—"}</Td>
                     <Td className="text-xs text-muted">{o.id.slice(-6)}</Td>
+                    <Td><Button size="sm" variant="danger" onClick={() => void del(o)}>Delete</Button></Td>
                   </tr>
                 ))}
               </tbody>
