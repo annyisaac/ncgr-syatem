@@ -25,12 +25,14 @@ import type {
   DSR,
   DsrVisit,
   Order,
+  Role,
   Route,
   User,
 } from "@/lib/types";
 import {
   fetchCollection,
   getDatabase,
+  getPrimaryData,
   getNotifications,
   markNotificationsRead,
   newId,
@@ -146,12 +148,47 @@ const SALES_TABLE_TO_KEY: Record<string, keyof Database> = {
   customer_feedback: "customerFeedback",
 };
 
+/** Only these roles have a page that reads bank statements (the verification
+ *  page and the checker/admin dashboards), so no other role pays to load that
+ *  heavy table — on login or on a realtime change. */
+function roleNeedsStatements(role?: Role): boolean {
+  return (
+    role === "Admin" ||
+    role === "Accountant" ||
+    role === "Tetra Payment Checker" ||
+    role === "Ross Payment Checker"
+  );
+}
+
 export function DataProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth();
   const [db, setDb] = useState<Database>(EMPTY);
   const [loading, setLoading] = useState(true);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
 
+  // Load the light tables the landing dashboard needs — this is what `loading`
+  // waits on, so the app becomes interactive without waiting on statements.
+  const loadPrimary = useCallback(async () => {
+    try {
+      const next = await getPrimaryData();
+      setDb((prev) => ({ ...prev, ...next }));
+    } catch (err) {
+      console.error("Failed to load data from Supabase:", err);
+    }
+  }, []);
+
+  // The heavy statements table, loaded in the background after the app is
+  // interactive (and only for roles whose pages actually read it).
+  const loadStatements = useCallback(async () => {
+    try {
+      const statements = await fetchCollection<BankStatement>("statements");
+      setDb((prev) => ({ ...prev, statements }));
+    } catch (err) {
+      console.error("Failed to load statements:", err);
+    }
+  }, []);
+
+  // Full reload (backup/restore, explicit refresh) — everything, including statements.
   const load = useCallback(async () => {
     try {
       const next = await getDatabase();
@@ -195,14 +232,17 @@ export function DataProvider({ children }: { children: ReactNode }) {
     }
     (async () => {
       setLoading(true);
-      await load();
+      await loadPrimary();
+      // The app is interactive as soon as the light tables are in.
       if (active) setLoading(false);
+      // Stream the heavy statements table in afterwards, only where it's used.
+      if (active && roleNeedsStatements(user.role)) void loadStatements();
     })();
     void loadNotifications();
     return () => {
       active = false;
     };
-  }, [user, load, loadNotifications]);
+  }, [user, loadPrimary, loadStatements, loadNotifications]);
 
   // Live notifications: reload the (RLS-scoped) list whenever a row changes.
   useEffect(() => {
@@ -220,10 +260,12 @@ export function DataProvider({ children }: { children: ReactNode }) {
 
   // Auth writes (device sign-ins) happen outside this provider — stay in sync.
   useEffect(() => {
-    const onUpdate = () => void load();
+    // Device sign-ins only touch the users table, so a primary reload suffices
+    // (and never drags the heavy statements table along).
+    const onUpdate = () => void loadPrimary();
     window.addEventListener("ncgr:db-updated", onUpdate);
     return () => window.removeEventListener("ncgr:db-updated", onUpdate);
-  }, [load]);
+  }, [loadPrimary]);
 
   // Live data: when a sales table changes anywhere, refetch only that table
   // (RLS still scopes what each user receives). A burst of writes is debounced
@@ -246,6 +288,8 @@ export function DataProvider({ children }: { children: ReactNode }) {
       .channel("sales-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
         const table = payload.table ?? "";
+        // Skip statements for roles that never load them.
+        if (table === "statements" && !roleNeedsStatements(user.role)) return;
         if (SALES_TABLE_TO_KEY[table]) bump(table);
       })
       .subscribe();

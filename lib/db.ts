@@ -123,18 +123,32 @@ async function saveCollection<T>(
 // ---------------------------------------------------------------------------
 
 export async function getDatabase(): Promise<Database> {
-  const [users, dsrs, orders, commissions, statements, routes, availability, dsrVisits, customerFeedback] = await Promise.all([
+  const [primary, statements] = await Promise.all([
+    getPrimaryData(),
+    fetchCollection<BankStatement>("statements"),
+  ]);
+  return { ...primary, statements };
+}
+
+/**
+ * Everything EXCEPT the heavy `statements` table. Each statement row carries the
+ * full parsed bank statement (thousands of entries), so it's the slowest table
+ * and only finance/verification roles use it. Loading the rest first lets the
+ * app become interactive quickly; statements stream in afterwards, and only for
+ * the roles that need them (see DataProvider).
+ */
+export async function getPrimaryData(): Promise<Omit<Database, "statements">> {
+  const [users, dsrs, orders, commissions, routes, availability, dsrVisits, customerFeedback] = await Promise.all([
     fetchCollection<User>("users"),
     fetchCollection<DSR>("dsrs"),
     fetchCollection<Order>("orders"),
     fetchCollection<CommissionRequest>("commissions"),
-    fetchCollection<BankStatement>("statements"),
     fetchCollection<Route>("routes"),
     fetchCollection<Availability>("availability"),
     fetchCollection<DsrVisit>("dsr_visits"),
     fetchCollection<CustomerFeedback>("customer_feedback"),
   ]);
-  return { users, dsrs, orders, commissions, statements, routes, availability, dsrVisits, customerFeedback };
+  return { users, dsrs, orders, commissions, routes, availability, dsrVisits, customerFeedback };
 }
 
 /**
