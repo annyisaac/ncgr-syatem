@@ -151,6 +151,7 @@ export default function DsrOrderPage() {
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
       if (res.reason === "out_of_zone") return setError(`That client is outside your zone (${myDsr!.zone}). You can only take clients in your zone.`);
       if (res.reason === "duplicate") return setError(`${order.name} already has a ${order.product} order for ${formatDate(order.date)}. You can't create another for the same customer on the same day.`);
+      if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order. Check the reference and enter the correct one.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
     toast(`Order created for ${order.name}.`);

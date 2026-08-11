@@ -92,7 +92,7 @@ const BoxIcon = () => <svg {...ico} width={14} height={14}><path d="M4 6.5 10 4l
 
 function OrdersInner() {
   const { user } = useAuth();
-  const { orders, availability, upsertOrder, removeOrder, newId } = useData();
+  const { orders, availability, upsertOrder, removeOrder, newId, reload } = useData();
   const { toast } = useToast();
   const search = useSearchParams();
   const tile = search.get("tile") ?? "all";
@@ -271,8 +271,22 @@ function OrdersInner() {
 
   // ---- Action handlers -----------------------------------------------------
   function act(next: Order, message: string) {
-    upsertOrder(next);
-    toast(message);
+    // Optimistic save; on a server rejection (e.g. a payment reference already
+    // used on another order) tell the user and resync with the true DB state.
+    upsertOrder(next)
+      .then(() => toast(message))
+      .catch((err) => {
+        const m = err instanceof Error ? err.message : "";
+        if (m.includes("DUPLICATE_PAYMENT_REF")) {
+          const ref = m.split("DUPLICATE_PAYMENT_REF:")[1]?.trim();
+          toast(`That transaction reference${ref ? ` (${ref})` : ""} is already recorded on another order — it can't be used twice.`, "error");
+        } else if (m.includes("DUPLICATE_CUSTOMER")) {
+          toast("This customer already has an order for that product and delivery date.", "error");
+        } else {
+          toast("Could not save — please try again.", "error");
+        }
+        void reload();
+      });
   }
 
   function deletePayment(order: Order, payIndex: number) {
