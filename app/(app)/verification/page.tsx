@@ -16,7 +16,7 @@ import type { BankStatement, Order, Payment } from "@/lib/types";
 import { orderTotal } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
-import { visibleOrders } from "@/lib/permissions";
+import { visibleOrders, productForRole, dateHasProduct } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
 import { paymentSlipUrl } from "@/lib/db";
 import { SearchTimeBar } from "@/components/dashboard/DashKit";
@@ -141,9 +141,21 @@ export default function VerificationPage() {
 
   const searchSuggestions = useMemo(() => suggest(query, payRows, ({ o }) => o.name, 6), [query, payRows]);
 
+  // Scoped to the checker's product — a Ross checker sees only Ross delivery
+  // dates, a Tetra checker only Tetra (Admin / Accountant see all).
   const deliveryDateOptions = useMemo(
-    () => [{ value: "", label: "All delivery dates" }, ...availability.slice().sort((a, b) => (a.id < b.id ? -1 : 1)).map((a) => ({ value: a.id, label: formatDate(a.date) }))],
-    [availability]
+    () => {
+      const prod = user ? productForRole(user.role) : undefined;
+      return [
+        { value: "", label: "All delivery dates" },
+        ...availability
+          .slice()
+          .filter((a) => dateHasProduct(a, prod))
+          .sort((a, b) => (a.id < b.id ? -1 : 1))
+          .map((a) => ({ value: a.id, label: formatDate(a.date) })),
+      ];
+    },
+    [availability, user]
   );
 
   // Reconciliation report over exactly what the payments filter shows.

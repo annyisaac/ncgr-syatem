@@ -33,7 +33,7 @@ import {
 } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
-import { visibleOrders } from "@/lib/permissions";
+import { visibleOrders, productForRole, dateHasProduct } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
 import { clientKey } from "@/lib/clients";
 import { ordersPDF, dsrOrdersPDF, invoicePDF, paymentProofPDF } from "@/lib/reports";
@@ -111,6 +111,9 @@ function OrdersInner() {
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
   const range = presetToRange(preset, custom, todayISO());
   const [modal, setModal] = useState<ModalState>(null);
+  // Admin bulk reschedule: selected order ids + the target delivery date.
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDate, setBulkDate] = useState("");
   const [showFilters, setShowFilters] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
@@ -234,17 +237,19 @@ function OrdersInner() {
     [query, orders, user]
   );
 
-  // Delivery dates the Admin has opened, for the delivery-date filter.
-  const deliveryDateOptions = useMemo(
-    () => [
+  // Delivery dates the Admin has opened, for the delivery-date filter — scoped to
+  // the role's product (Ross roles see only Ross dates, Tetra roles only Tetra).
+  const deliveryDateOptions = useMemo(() => {
+    const prod = role ? productForRole(role) : undefined;
+    return [
       { value: "", label: "All delivery dates" },
       ...availability
         .slice()
+        .filter((a) => dateHasProduct(a, prod))
         .sort((a, b) => (a.id < b.id ? -1 : 1))
         .map((a) => ({ value: a.id, label: formatDate(a.date) })),
-    ],
-    [availability]
-  );
+    ];
+  }, [availability, role]);
 
   // KPI aggregates over every order this user can see (all time, unfiltered).
   const stats = useMemo(() => {
@@ -287,6 +292,38 @@ function OrdersInner() {
         }
         void reload();
       });
+  }
+
+  // --- Admin bulk reschedule ------------------------------------------------
+  function toggleSel(id: string) {
+    setSelected((prev) => {
+      const n = new Set(prev);
+      if (n.has(id)) n.delete(id);
+      else n.add(id);
+      return n;
+    });
+  }
+  const allRowsSelected = rows.length > 0 && rows.every((o) => selected.has(o.id));
+  function toggleSelAll() {
+    setSelected(allRowsSelected ? new Set() : new Set(rows.map((o) => o.id)));
+  }
+  function bulkReschedule() {
+    if (!user || !bulkDate) return toast("Pick a new delivery date.", "error");
+    const targets = [...selected]
+      .map((id) => orders.find((o) => o.id === id))
+      .filter((o): o is Order => !!o && o.status !== "refunded" && o.status !== "rejected");
+    if (targets.length === 0) return toast("Nothing to reschedule (rejected/refunded orders are skipped).", "info");
+    Promise.allSettled(targets.map((o) => upsertOrder(rescheduleOrder(o, bulkDate, user!, orders)))).then((res) => {
+      const ok = res.filter((r) => r.status === "fulfilled").length;
+      const failed = res.length - ok;
+      if (failed) void reload();
+      toast(
+        failed ? `Rescheduled ${ok} order(s); ${failed} could not be saved.` : `Rescheduled ${ok} order(s) to ${formatDate(bulkDate)}.`,
+        failed ? "error" : "success"
+      );
+    });
+    setSelected(new Set());
+    setBulkDate("");
   }
 
   function deletePayment(order: Order, payIndex: number) {
@@ -631,9 +668,24 @@ function OrdersInner() {
           <span className="flex h-6 w-6 items-center justify-center rounded-md bg-gold-bg text-gold-dark"><BoxIcon /></span>
           <h3 className="text-[0.8rem] font-bold uppercase tracking-wide text-ink">{rows.length.toLocaleString()} order(s)</h3>
         </div>
+
+        {isAdmin && selected.size > 0 && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-gold bg-gold-bg/30 p-3">
+            <span className="text-sm font-semibold text-ink">{selected.size} selected</span>
+            <label className="text-sm text-muted" htmlFor="bulk-reschedule-date">Reschedule to</label>
+            <Input id="bulk-reschedule-date" type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} className="w-auto" />
+            <Button size="sm" onClick={bulkReschedule} disabled={!bulkDate}>Reschedule {selected.size} order(s)</Button>
+            <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
+          </div>
+        )}
         <TableWrap>
           <thead>
             <tr>
+              {isAdmin && (
+                <Th className="w-8">
+                  <input type="checkbox" checked={allRowsSelected} onChange={toggleSelAll} aria-label="Select all orders" className="h-4 w-4 accent-gold" />
+                </Th>
+              )}
               <Th>Delivery</Th>
               <Th>Product</Th>
               <Th>Client</Th>
@@ -646,12 +698,17 @@ function OrdersInner() {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={8} text="No orders match." />
+              <EmptyRow colSpan={isAdmin ? 9 : 8} text="No orders match." />
             ) : (
               pageRows.map((o) => {
                 const cs = paymentCheckState(o);
                 return (
                   <tr key={o.id}>
+                    {isAdmin && (
+                      <Td>
+                        <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleSel(o.id)} aria-label={`Select ${o.name}`} className="h-4 w-4 accent-gold" />
+                      </Td>
+                    )}
                     <Td>
                       {formatDate(o.date)}
                       <div className="text-xs text-ink/50">Ordered {formatDateTime(o.createdAt)}</div>

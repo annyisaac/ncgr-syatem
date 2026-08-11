@@ -5,8 +5,33 @@
  * `navForRole` returns the ordered nav items for a role.
  */
 
-import type { Order, Role, User } from "./types";
+import type { Order, Product, Role, User } from "./types";
 import { HATCHERY_ORDER_ROLES } from "./types";
+
+/**
+ * The single product a role is scoped to for delivery-date filtering and order
+ * creation — Ross roles see only Ross, Tetra roles (incl. DSRs) only Tetra.
+ * Returns undefined for cross-product roles (Admin, Accountant, …) who see all.
+ */
+export function productForRole(role: Role): Product | undefined {
+  switch (role) {
+    case "Tetra Zone Manager":
+    case "Tetra Payment Checker":
+    case "DSR":
+      return "Tetra Super Harco";
+    case "Ross Order Receiver":
+    case "Ross Payment Checker":
+      return "Ross 308";
+    default:
+      return undefined;
+  }
+}
+
+/** Does an availability date carry chicks for the given product? */
+export function dateHasProduct(a: { ross: number; tetra: number }, product?: Product): boolean {
+  if (!product) return a.ross > 0 || a.tetra > 0;
+  return product === "Ross 308" ? a.ross > 0 : a.tetra > 0;
+}
 
 // ---------------------------------------------------------------------------
 // Order visibility gate
