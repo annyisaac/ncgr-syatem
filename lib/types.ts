@@ -211,6 +211,13 @@ export interface Payment {
    * puts it back in the checker's queue.
    */
   returnedForFix?: { by: string; on: string; refs: string[]; note?: string };
+  /**
+   * Admin sent this payment back as a reused-reference dispute. While set, any
+   * correction by the seller / zone manager / payment checker must come back to
+   * the Admin to verify & approve (it can't be finalized by anyone else). Cleared
+   * when the Admin approves.
+   */
+  reusedDispute?: boolean;
   /** The seller has corrected the reference at least once. If it is STILL not in
    *  a statement after that, the checker escalates to the Admin rather than
    *  bouncing it back to the seller again. */

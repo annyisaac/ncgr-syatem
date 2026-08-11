@@ -398,6 +398,7 @@ export default function VerificationPage() {
         comment: `Approved by Admin — ${note}`,
         flag: undefined,
         pendingApproval: undefined,
+        reusedDispute: undefined, // dispute resolved once the Admin approves
       },
       `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)} — ${note}`);
     if (!ok) return;

@@ -202,12 +202,17 @@ function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
     }
   }
 
-  // Route the disputed payment back to the seller / zone manager: un-verify it
-  // and put it in their "Correct payment ID" queue (which also notifies them).
+  // Route the disputed payment back to the user who CREATED the order (seller /
+  // zone manager): un-verify it and put it in their "Correct payment ID" queue
+  // (which also notifies them). Marked as a dispute so any correction they — or
+  // a payment checker — make must come back to the Admin to approve.
+  const isSentBack = (o: Order) => o.payments.some((p) => !p.voided && (p.reusedDispute || p.returnedForFix));
+
   async function sendBack(o: Order) {
     if (!user) return;
+    const creator = o.by ?? "the seller";
     const ok = typeof window === "undefined" || window.confirm(
-      `Send this order's payment back to the seller / zone manager?\n\n${o.name} · ${o.product} · ${o.date}\n\nThe payment is un-verified and they're asked to confirm the correct order and fix the transaction id or cancel this one.`
+      `Send this order's payment back to ${creator} (who created it)?\n\n${o.name} · ${o.product} · ${o.date}\n\nThe payment is un-verified and returned to them to fix or cancel. Any change they make will need your approval before it's final.`
     );
     if (!ok) return;
     const on = nowISO();
@@ -219,13 +224,14 @@ function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
             verified: false,
             verifiedBy: undefined,
             verifiedOn: undefined,
-            returnedForFix: { by: user.email, on, refs: p.ref ? [p.ref] : [], note: "Reused payment reference — this transaction id is on more than one order. Confirm which order is correct, then fix the id or cancel this order." },
-            flag: "Reused payment reference — sent back to seller",
+            reusedDispute: true,
+            returnedForFix: { by: user.email, on, refs: p.ref ? [p.ref] : [], note: `Reused payment reference — this id is on more than one order. Sent to ${creator} (who created it). Fix the id or cancel this order; the change needs Admin approval.` },
+            flag: "Reused payment — sent back (needs Admin approval)",
           }
     );
     try {
-      await upsertOrder(withHistory({ ...o, payments }, user, "Duplicate/reused payment sent back to the seller for correction"));
-      toast("Sent back to the seller / zone manager.");
+      await upsertOrder(withHistory({ ...o, payments }, user, `Reused payment sent back to ${creator} for correction — changes require Admin approval`));
+      toast("Sent back — marked as sent.");
     } catch {
       toast("Could not send back — please try again.", "error");
     }
@@ -284,8 +290,12 @@ function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
                     <Td className="text-xs text-muted">{o.by ?? "—"}</Td>
                     <Td className="text-xs text-muted">{o.id.slice(-6)}</Td>
                     <Td>
-                      <div className="flex justify-end gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => void sendBack(o)}>Send back</Button>
+                      <div className="flex items-center justify-end gap-2">
+                        {isSentBack(o) ? (
+                          <Pill tone="info">Sent back</Pill>
+                        ) : (
+                          <Button size="sm" variant="ghost" onClick={() => void sendBack(o)}>Send back</Button>
+                        )}
                         <Button size="sm" variant="danger" onClick={() => void del(o)}>Delete</Button>
                       </div>
                     </Td>

@@ -896,13 +896,25 @@ function OrdersInner() {
           onClose={() => setModal(null)}
           onSave={(fixes) => {
             const order = modal.order;
+            const on = nowISO();
+            // A reused-payment dispute (sent back by the Admin) must return to the
+            // Admin to approve — the seller/checker can't finalize it.
+            const dispute = fixes.some((f) => order.payments[f.index]?.reusedDispute);
             const payments = order.payments.map((p, i) => {
               const fx = fixes.find((f) => f.index === i);
-              return fx ? { ...p, ref: fx.ref, refFixed: true, returnedForFix: undefined, flag: undefined } : p;
+              if (!fx) return p;
+              if (p.reusedDispute) {
+                return {
+                  ...p, ref: fx.ref, refFixed: true, returnedForFix: undefined, verified: false,
+                  pendingApproval: { by: user.email, on, refs: [fx.ref], note: "Corrected reused-payment reference — awaiting Admin approval." },
+                  flag: "Reused payment corrected — awaiting Admin approval",
+                };
+              }
+              return { ...p, ref: fx.ref, refFixed: true, returnedForFix: undefined, flag: undefined };
             });
             act(
               withHistory({ ...order, payments }, user, `Corrected returned payment id(s): ${fixes.map((f) => f.ref).join(", ")}`),
-              "Payment reference corrected — sent back to the checker to verify."
+              dispute ? "Payment corrected — sent to the Admin to approve." : "Payment reference corrected — sent back to the checker to verify."
             );
             setModal(null);
           }}
