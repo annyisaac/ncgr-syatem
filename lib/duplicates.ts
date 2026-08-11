@@ -125,3 +125,24 @@ export function findOrderIssues(orders: Order[]): OrderIssue[] {
     return (b.orders[0]?.date ?? "").localeCompare(a.orders[0]?.date ?? "");
   });
 }
+
+/**
+ * How much money an issue double-counts: the shared reference's amount times the
+ * number of extra orders carrying it. 0 when there is no shared reference.
+ */
+export function doubleCountedAmount(issue: OrderIssue): number {
+  if (!issue.sharedRef) return 0;
+  const key = normRef(issue.sharedRef);
+  let amt = 0;
+  let count = 0;
+  for (const o of issue.orders) {
+    for (const p of o.payments) {
+      if (p.voided) continue;
+      if (normRef(p.ref) === key) {
+        amt = Number(p.amt) || amt;
+        count++;
+      }
+    }
+  }
+  return count > 1 ? amt * (count - 1) : 0;
+}

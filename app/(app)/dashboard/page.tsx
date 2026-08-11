@@ -25,6 +25,7 @@ import { formatDate, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { commissionByDSR } from "@/lib/commission";
 import { findOrderIssues } from "@/lib/duplicates";
+import { duplicatePaymentsPDF, duplicatePaymentsExcel } from "@/lib/reports";
 import {
   downloadBackup,
   exportOrdersExcel,
@@ -188,7 +189,15 @@ function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
 
   return (
     <Card className="border-gold bg-gold-bg/25">
-      <CardHeader title={`Orders to review — possible duplicates (${issues.length})`} />
+      <CardHeader
+        title={`Orders to review — possible duplicates (${issues.length})`}
+        action={moneyCount > 0 ? (
+          <div className="flex gap-2">
+            <Button size="sm" variant="secondary" onClick={() => void duplicatePaymentsPDF(issues)}>Reused-payments report (PDF)</Button>
+            <Button size="sm" variant="secondary" onClick={() => void duplicatePaymentsExcel(issues)}>Excel</Button>
+          </div>
+        ) : undefined}
+      />
       <p className="mb-3 text-sm text-ink/60">
         The same customer on more than one order for a product &amp; delivery date, or the same payment reference on two
         orders.{" "}

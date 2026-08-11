@@ -19,6 +19,7 @@ import {
   type Order,
   type Route,
 } from "./types";
+import { doubleCountedAmount, type OrderIssue } from "./duplicates";
 import type { DSRCommissionRow } from "./commission";
 import type { ClientRecord } from "./clients";
 import type { EventRegistration } from "./events";
@@ -833,6 +834,94 @@ export async function verificationExcel(
   XLSX.utils.book_append_sheet(wb, ws, "Reconciliation");
   const safe = filterLabel.replace(/[^0-9A-Za-z]+/g, "_").replace(/^_+|_+$/g, "");
   XLSX.writeFile(wb, `NCGR-Reconciliation-${safe || "all"}-${nowISO().slice(0, 10)}.xlsx`);
+}
+
+// ---------------------------------------------------------------------------
+// Reused payment references (double-counted money) report (PDF + Excel)
+// ---------------------------------------------------------------------------
+
+function reuseRows(issues: OrderIssue[]): { rows: (string | number)[][]; total: number } {
+  const reuse = issues.filter((i) => i.sharedRef);
+  const rows: (string | number)[][] = [];
+  let group = 0;
+  let total = 0;
+  for (const iss of reuse) {
+    group++;
+    total += doubleCountedAmount(iss);
+    for (const o of iss.orders) {
+      rows.push([
+        group,
+        iss.sharedRef ?? "",
+        formatDate(o.date),
+        o.name,
+        o.product === "Ross 308" ? "Ross" : o.product === "Tetra Super Harco" ? "Tetra" : o.product,
+        o.delivered ?? o.chicks,
+        formatRWF(paidAmount(o)),
+        o.payments.filter((p) => !p.voided).map((p) => p.ref).join(", "),
+        o.by ?? "—",
+        o.id.slice(-6),
+      ]);
+    }
+  }
+  return { rows, total };
+}
+
+export async function duplicatePaymentsPDF(issues: OrderIssue[]): Promise<void> {
+  const reuse = issues.filter((i) => i.sharedRef);
+  const { rows, total } = reuseRows(issues);
+  const { doc, autoTable, startY, logo } = await brandedDoc("Reused Payment References", [
+    `Cases (same reference on more than one order): ${reuse.length}`,
+    `Money double-counted: ${formatRWF(total)}`,
+    "Each group below is one transaction reference recorded on two or more orders.",
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [["#", "Shared reference", "Delivery", "Customer", "Prod", "Chicks", "Paid", "Payment ref(s)", "Seller", "Order id"]],
+    body: rows.length ? rows : [["", "No reused payment references found", "", "", "", "", "", "", "", ""]],
+    foot: [["", "", "", "", "", "", "", "", "Double-counted", formatRWF(total)]],
+    styles: { fontSize: 7.5, cellPadding: 2.5, overflow: "linebreak" },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    columnStyles: { 5: { halign: "right" }, 6: { halign: "right" } },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Reused-Payments-${nowISO().slice(0, 10)}.pdf`);
+}
+
+export async function duplicatePaymentsExcel(issues: OrderIssue[]): Promise<void> {
+  const XLSX = await import("xlsx");
+  const reuse = issues.filter((i) => i.sharedRef);
+  const data: Record<string, string | number>[] = [];
+  let group = 0;
+  for (const iss of reuse) {
+    group++;
+    const dbl = doubleCountedAmount(iss);
+    for (const o of iss.orders) {
+      data.push({
+        Group: group,
+        "Shared reference": iss.sharedRef ?? "",
+        "Double counted": dbl,
+        "Delivery date": o.date,
+        Customer: o.name,
+        Phone: o.phone,
+        Product: o.product,
+        Chicks: o.delivered ?? o.chicks,
+        Paid: paidAmount(o),
+        "Payment ref(s)": o.payments.filter((p) => !p.voided).map((p) => p.ref).join(", "),
+        Seller: o.by ?? "",
+        "Order id": o.id,
+      });
+    }
+  }
+  const ws = XLSX.utils.json_to_sheet(
+    data.length ? data : [{ Group: "", "Shared reference": "No reused payment references found" }]
+  );
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Reused payments");
+  XLSX.writeFile(wb, `NCGR-Reused-Payments-${nowISO().slice(0, 10)}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------
