@@ -11,6 +11,11 @@ import { normRef } from "./verification";
 import type { Order } from "./types";
 
 const isActive = (o: Order) => o.status !== "rejected" && o.status !== "refunded";
+/** Already actioned: a payment sent back to the seller or held for Admin
+ *  approval is being corrected, so it drops off the "to review" list until it's
+ *  resolved (otherwise it would keep re-appearing after you send it back). */
+const isBeingCorrected = (o: Order) =>
+  o.payments.some((p) => !p.voided && (p.returnedForFix || p.reusedDispute || p.pendingApproval));
 const normName = (s: string) => (s ?? "").trim().toLowerCase();
 const normPhone = (s: string): string => {
   const d = (s ?? "").replace(/\D/g, "");
@@ -64,7 +69,7 @@ export interface OrderIssue {
  * An exact-same order set is reported once (as the customer duplicate).
  */
 export function findOrderIssues(orders: Order[]): OrderIssue[] {
-  const active = orders.filter(isActive);
+  const active = orders.filter((o) => isActive(o) && !isBeingCorrected(o));
   const issues: OrderIssue[] = [];
   const seen = new Set<string>(); // order-id-set signatures already reported
   const sig = (os: Order[]) => os.map((o) => o.id).sort().join(",");
