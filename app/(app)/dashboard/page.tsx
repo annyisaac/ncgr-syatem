@@ -24,6 +24,7 @@ import { provinceOfDistrict } from "@/lib/config";
 import { formatDate, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
 import { commissionByDSR } from "@/lib/commission";
+import { findOrderIssues } from "@/lib/duplicates";
 import {
   downloadBackup,
   exportOrdersExcel,
@@ -172,6 +173,68 @@ function ApprovalRow({
         {action}
       </Link>
     </div>
+  );
+}
+
+/**
+ * Admin-only review panel: flags likely duplicate orders and reused payment
+ * references so the Admin can have the sellers check them. Read-only — it
+ * deletes nothing. Hidden when there's nothing to review.
+ */
+function DuplicatesReviewCard({ orders }: { orders: Order[] }) {
+  const issues = useMemo(() => findOrderIssues(orders), [orders]);
+  if (issues.length === 0) return null;
+  const moneyCount = issues.filter((i) => i.sharedRef).length;
+
+  return (
+    <Card className="border-gold bg-gold-bg/25">
+      <CardHeader title={`Orders to review — possible duplicates (${issues.length})`} />
+      <p className="mb-3 text-sm text-ink/60">
+        The same customer on more than one order for a product &amp; delivery date, or the same payment reference on two
+        orders.{" "}
+        {moneyCount > 0 && (
+          <strong className="text-red">{moneyCount} share a payment reference — that money is currently counted twice.</strong>
+        )}{" "}
+        New duplicates are now blocked automatically; these pre-date the guard. Ask the seller to confirm which order is correct.
+      </p>
+      <div className="space-y-3">
+        {issues.map((iss) => (
+          <div key={iss.id} className="rounded-xl border border-line bg-paper p-3">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="font-semibold text-ink">{iss.title}</span>
+              <span className="text-xs text-muted">{iss.subtitle}</span>
+              {iss.sharedRef ? (
+                <Pill tone="red">Payment ref reused · {iss.sharedRef}</Pill>
+              ) : (
+                <Pill tone="gold">Duplicate customer</Pill>
+              )}
+            </div>
+            <TableWrap>
+              <thead>
+                <tr>
+                  <Th>Delivery</Th><Th>Customer</Th><Th className="text-right">Chicks</Th>
+                  <Th className="text-right">Paid</Th><Th>Status</Th><Th>Payment ref(s)</Th><Th>Seller</Th><Th>Order id</Th>
+                </tr>
+              </thead>
+              <tbody>
+                {iss.orders.map((o) => (
+                  <tr key={o.id}>
+                    <Td>{formatDate(o.date)}</Td>
+                    <Td>{o.name}<div className="text-xs text-muted">{o.phone}</div></Td>
+                    <Td className="text-right">{(o.delivered ?? o.chicks).toLocaleString()}</Td>
+                    <Td className="text-right">{formatRWF(paidAmount(o))}</Td>
+                    <Td>{o.status}</Td>
+                    <Td className="text-xs">{o.payments.filter((p) => !p.voided).map((p) => p.ref).join(", ") || "—"}</Td>
+                    <Td className="text-xs text-muted">{o.by ?? "—"}</Td>
+                    <Td className="text-xs text-muted">{o.id.slice(-6)}</Td>
+                  </tr>
+                ))}
+              </tbody>
+            </TableWrap>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -401,6 +464,8 @@ function AdminDashboard({
       )}
 
       <ApprovalsCard users={db.users} orders={db.orders} commissions={db.commissions} />
+
+      <DuplicatesReviewCard orders={db.orders} />
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6">
         <StatTile label="Orders" value={String(scoped.length)} onClick={() => go("all")} />
