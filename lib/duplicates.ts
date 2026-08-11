@@ -17,10 +17,17 @@ const normPhone = (s: string): string => {
   return d.startsWith("250") ? d.slice(3) : d.replace(/^0/, "");
 };
 
-/** Is a payment reference a real transaction id (not cash / import / blank)? */
+/** Method/placeholder words that aren't real transaction ids (kept in step with
+ *  the DB's ncgr_is_txn_ref). "Bank", "MoMo", "Cash" etc. normalize to < 8 chars
+ *  and are dropped by the length check below; these are the 8+ char ones. */
+const PLACEHOLDER_REFS = new Set(["imported", "banktransfer", "mobilemoney", "notprovided", "onaccount"]);
+
+/** A payment reference counts only if it's a real transaction id — long enough
+ *  (≥ 8 chars) and not a method/placeholder word. Stops "Bank"/"MoMo"/date
+ *  fragments from reading as a reused reference. */
 function realRef(ref: string): string | null {
   const r = normRef(ref);
-  if (!r || r === "cash" || r === "imported") return null;
+  if (r.length < 8 || PLACEHOLDER_REFS.has(r)) return null;
   return r;
 }
 
