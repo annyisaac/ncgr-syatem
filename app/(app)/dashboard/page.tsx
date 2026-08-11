@@ -869,12 +869,16 @@ function AvailabilityPanel({
   focus?: "Ross 308" | "Tetra Super Harco" | "both";
 }) {
   const today = todayISO();
-  const rows = availability
-    .filter((a) => a.date >= today && (a.ross > 0 || a.tetra > 0))
-    .sort((a, b) => (a.date < b.date ? -1 : 1))
-    .slice(0, 6);
   const showRoss = focus === "both" || focus === "Ross 308";
   const showTetra = focus === "both" || focus === "Tetra Super Harco";
+  // Only surface dates that carry the focused product's chicks — a Ross seller
+  // sees Ross dates only, a Tetra role sees Tetra dates only — so the 6-date cap
+  // isn't spent on dates for the other product (which would render blank).
+  const hasFocus = (a: Availability) => (showRoss && a.ross > 0) || (showTetra && a.tetra > 0);
+  const rows = availability
+    .filter((a) => a.date >= today && hasFocus(a))
+    .sort((a, b) => (a.date < b.date ? -1 : 1))
+    .slice(0, 6);
 
   const daysUntil = (d: string) => {
     const diff = Math.round((new Date(d).getTime() - new Date(today).getTime()) / 86_400_000);

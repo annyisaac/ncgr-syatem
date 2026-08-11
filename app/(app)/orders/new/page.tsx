@@ -174,9 +174,16 @@ export default function NewOrderPage() {
   // Ordering availability: only Admin-opened dates are selectable; remaining
   // chicks are visible to Admin & Zone Managers only.
   const canSeeAvail = user?.role === "Admin" || user?.role === "Tetra Zone Manager";
+  // Only offer dates that carry the chosen product's chicks — a Ross seller
+  // never sees Tetra-only dates, a Tetra role never sees Ross-only dates.
   const openDates = useMemo(
-    () => availability.slice().filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0)).sort((a, b) => (a.date < b.date ? -1 : 1)),
-    [availability]
+    () =>
+      availability
+        .slice()
+        .filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0))
+        .filter((a) => !product || (product === "Ross 308" ? a.ross > 0 : a.tetra > 0))
+        .sort((a, b) => (a.date < b.date ? -1 : 1)),
+    [availability, product]
   );
   const selAvail = availability.find((a) => a.id === date);
   const remaining = selAvail && product ? availableFor(selAvail, product as Product, orders) : 0;

@@ -13,6 +13,7 @@ import {
   orderTotal,
   paidAmount,
   toDeliver,
+  type CustomerFeedback,
   type Database,
   type DSR,
   type Order,
@@ -632,6 +633,206 @@ export async function commissionPDF(
 
   addSignatures(doc);
   finalizeAndSave(doc, logo, `NCGR-Commission-${rangeLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// Customer Care & Feedback report (PDF + Excel)
+// ---------------------------------------------------------------------------
+
+/** One report row: a delivered order paired with its feedback (if recorded). */
+export interface FeedbackReportRow {
+  order: Order;
+  fb?: CustomerFeedback;
+}
+
+/** Headline counts shown at the top of the report (mirrors the page KPIs). */
+export interface FeedbackReportSummary {
+  customers: number;
+  pending: number;
+  called: number;
+  vet: number;
+  complaints: number;
+  satisfaction: string; // "4.2" or "—"
+}
+
+const FB_STATUS: Record<string, string> = {
+  pending: "Pending call",
+  called: "Called",
+  vet: "Vet case",
+  resolved: "Vet · resolved",
+};
+const FB_RATING: Record<string, string> = {
+  satisfied: "Satisfied",
+  neutral: "Neutral",
+  unsatisfied: "Unsatisfied",
+};
+
+function fbStatusKey(fb?: CustomerFeedback): "pending" | "called" | "vet" | "resolved" {
+  if (!fb) return "pending";
+  if (fb.needsVet) return (fb.vetStatus ?? "pending") === "resolved" ? "resolved" : "vet";
+  return "called";
+}
+
+export async function feedbackPDF(
+  rows: FeedbackReportRow[],
+  summary: FeedbackReportSummary,
+  filterLabel: string
+): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc("Customer Care & Feedback Report", [
+    `Filter: ${filterLabel}`,
+    `Customers: ${summary.customers}`,
+    `Pending: ${summary.pending}  ·  Called: ${summary.called}  ·  Vet cases: ${summary.vet}  ·  Complaints: ${summary.complaints}`,
+    `Average satisfaction: ${summary.satisfaction}${summary.satisfaction !== "—" ? " / 5" : ""}`,
+  ]);
+
+  const body = rows.map(({ order: o, fb }) => [
+    formatDate(o.date),
+    o.name,
+    o.phone,
+    o.product,
+    (o.delivered ?? o.chicks).toLocaleString(),
+    o.dsr ?? "—",
+    FB_STATUS[fbStatusKey(fb)],
+    fb?.rating ? FB_RATING[fb.rating] : "—",
+    fb?.needsVet ? (fb.vetAssignedName ?? fb.vetName ?? "Unassigned") : "—",
+    fb?.note ?? "",
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [[
+      "Delivery", "Customer", "Phone", "Product", "Chicks", "DSR",
+      "Status", "Rating", "Vet handler", "Feedback note",
+    ]],
+    body,
+    styles: { fontSize: 7.5, cellPadding: 2.5, overflow: "linebreak" },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    columnStyles: { 4: { halign: "right" }, 9: { cellWidth: 150 } },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Feedback-${filterLabel.replace(/[^\w]+/g, "_")}.pdf`);
+}
+
+export async function feedbackExcel(
+  rows: FeedbackReportRow[],
+  filterLabel: string
+): Promise<void> {
+  const XLSX = await import("xlsx");
+  const data = rows.map(({ order: o, fb }) => ({
+    "Delivery date": o.date,
+    Customer: o.name,
+    Phone: o.phone,
+    Product: o.product,
+    Chicks: o.delivered ?? o.chicks,
+    District: o.clientDistrict ?? o.district ?? "",
+    Sector: o.clientSector ?? o.sector ?? "",
+    DSR: o.dsr ?? "",
+    Status: FB_STATUS[fbStatusKey(fb)],
+    Rating: fb?.rating ? FB_RATING[fb.rating] : "",
+    "Needs vet": fb?.needsVet ? "Yes" : "No",
+    "Vet reason": fb?.vetReason ?? "",
+    "Vet handler": fb?.needsVet ? (fb.vetAssignedName ?? fb.vetName ?? "Unassigned") : "",
+    "Feedback note": fb?.note ?? "",
+    "Recorded by": fb?.byName ?? "",
+    "Recorded on": fb?.on ?? "",
+  }));
+  const ws = XLSX.utils.json_to_sheet(
+    data.length ? data : [{ "Delivery date": "", Customer: "", Phone: "" }]
+  );
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Feedback");
+  const safe = filterLabel.replace(/[^0-9A-Za-z]+/g, "_").replace(/^_+|_+$/g, "");
+  XLSX.writeFile(wb, `NCGR-Feedback-${safe || "all"}-${nowISO().slice(0, 10)}.xlsx`);
+}
+
+// ---------------------------------------------------------------------------
+// Payment reconciliation report (PDF + Excel)
+// ---------------------------------------------------------------------------
+
+/** One reconciliation row: a payment with its human-readable status. */
+export interface ReconReportRow {
+  date: string; // delivery date ISO
+  client: string;
+  product: string;
+  amount: number;
+  ref: string;
+  status: string;
+  verifiedBy?: string;
+  flag?: string;
+}
+
+export interface ReconSummary {
+  total: number;
+  verified: number;
+  awaiting: number;
+  returned: number;
+  rejected: number;
+  unverified: number;
+  verifiedAmount: number;
+}
+
+export async function verificationPDF(
+  rows: ReconReportRow[],
+  summary: ReconSummary,
+  filterLabel: string
+): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc("Payment Reconciliation Report", [
+    `Filter: ${filterLabel}`,
+    `Payments: ${summary.total}  ·  Verified: ${summary.verified}  ·  Awaiting: ${summary.awaiting}  ·  Returned: ${summary.returned}  ·  Rejected: ${summary.rejected}  ·  Unverified: ${summary.unverified}`,
+    `Verified amount: ${formatRWF(summary.verifiedAmount)}`,
+  ]);
+
+  const body = rows.map((r) => [
+    formatDate(r.date),
+    r.client,
+    r.product,
+    formatRWF(r.amount),
+    r.ref,
+    r.status,
+    r.verifiedBy ?? "—",
+    r.flag ?? "",
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [["Delivery", "Client", "Product", "Amount", "Reference", "Status", "Verified by", "Note"]],
+    body,
+    foot: [["", "", "Verified total", formatRWF(summary.verifiedAmount), "", "", "", ""]],
+    styles: { fontSize: 7.5, cellPadding: 2.5, overflow: "linebreak" },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    columnStyles: { 3: { halign: "right" }, 7: { cellWidth: 120 } },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  finalizeAndSave(doc, logo, `NCGR-Reconciliation-${filterLabel.replace(/[^\w]+/g, "_")}.pdf`);
+}
+
+export async function verificationExcel(
+  rows: ReconReportRow[],
+  filterLabel: string
+): Promise<void> {
+  const XLSX = await import("xlsx");
+  const data = rows.map((r) => ({
+    "Delivery date": r.date,
+    Client: r.client,
+    Product: r.product,
+    Amount: r.amount,
+    Reference: r.ref,
+    Status: r.status,
+    "Verified by": r.verifiedBy ?? "",
+    Note: r.flag ?? "",
+  }));
+  const ws = XLSX.utils.json_to_sheet(
+    data.length ? data : [{ "Delivery date": "", Client: "", Amount: "" }]
+  );
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, ws, "Reconciliation");
+  const safe = filterLabel.replace(/[^0-9A-Za-z]+/g, "_").replace(/^_+|_+$/g, "");
+  XLSX.writeFile(wb, `NCGR-Reconciliation-${safe || "all"}-${nowISO().slice(0, 10)}.xlsx`);
 }
 
 // ---------------------------------------------------------------------------

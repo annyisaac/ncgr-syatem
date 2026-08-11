@@ -2,18 +2,24 @@
  * Automatic payment verification against uploaded bank statements (pure).
  *
  * Rules:
- *  - Each unverified payment's transaction id is searched across ALL statements.
- *  - Exact ref match with equal amount    -> auto-verified.
- *  - Exact ref match with different amount -> adopt the bank amount, verify,
- *    and log the correction.
- *  - No match                             -> "Not in any statement".
- *  - Ref found more than once             -> "Duplicate ref" (needs manual).
+ *  - Transaction ids are compared after normalization (see `normRef`) so bank
+ *    exports that space, punctuate or zero-pad an id still match.
+ *  - Each unverified payment's id is searched across ALL statements.
+ *  - Exact ref match with equal amount        -> auto-verified.
+ *  - Exact ref match, amount within tolerance  -> adopt bank amount, verify,
+ *    log the correction.
+ *  - Exact ref match, amount off beyond tolerance -> held for manual review
+ *    (never silently reduce/inflate what a customer is credited).
+ *  - No match                                  -> "Not in any statement".
+ *  - Ref found with several amounts             -> "Duplicate ref" (manual).
+ *  - Ref already matched to an earlier payment  -> "collision": a single bank
+ *    credit is never counted against two payments.
  */
 
 import { nowISO } from "./format";
-import type { BankStatement, Order, User } from "./types";
+import type { BankStatement, Order, StatementRow, User } from "./types";
 
-export type AutoResult = "verified" | "corrected" | "missing" | "duplicate";
+export type AutoResult = "verified" | "corrected" | "review" | "missing" | "duplicate" | "collision";
 
 export interface AutoOutcome {
   orderId: string;
@@ -23,8 +29,33 @@ export interface AutoOutcome {
   detail: string;
 }
 
+/**
+ * A statement amount within this tolerance of the recorded amount is adopted
+ * automatically; a larger gap (either direction) is held for a human, so an
+ * auto-check never quietly rewrites a materially different figure.
+ */
+export const AMOUNT_REVIEW_FLAT = 1000; // RWF
+export const AMOUNT_REVIEW_PCT = 0.02; // 2% of the recorded amount
+
+function amountNeedsReview(recorded: number, bank: number): boolean {
+  return Math.abs(bank - recorded) > Math.max(AMOUNT_REVIEW_FLAT, recorded * AMOUNT_REVIEW_PCT);
+}
+
+/**
+ * Normalize a transaction id for comparison: keep only letters and digits,
+ * lowercase, and strip leading zeros from long all-digit ids (bank exports
+ * sometimes zero-pad them). This makes "2915 1640 4175", "291516404175" and
+ * "0291516404175" compare equal while staying strict enough that genuinely
+ * different — or short — ids never collide.
+ */
+export function normRef(s: string): string {
+  const cleaned = s.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (/^\d+$/.test(cleaned) && cleaned.length > 8) return cleaned.replace(/^0+/, "");
+  return cleaned;
+}
+
 function norm(s: string): string {
-  return s.trim().toLowerCase();
+  return normRef(s);
 }
 
 /**
@@ -53,6 +84,21 @@ export function runAutoCheck(
   const allRows = statements.flatMap((s) => s.rows);
   const outcomes: AutoOutcome[] = [];
 
+  // Index the statements once: normalized ref -> the distinct amounts seen for
+  // that ref (identical repeats collapsed). A ref is *claimed* by the first
+  // payment that matches it and then removed, so a single bank credit can only
+  // ever verify one payment — the rest report a "collision".
+  const byRef = new Map<string, number[]>();
+  for (const row of allRows) {
+    const key = norm(row.ref);
+    const amts = byRef.get(key);
+    if (!amts) byRef.set(key, [row.amt]);
+    else if (!amts.includes(row.amt)) amts.push(row.amt);
+  }
+  // Every ref the statements ever held — used to tell "never in any statement"
+  // apart from "already matched to an earlier payment".
+  const everSeen = new Set(byRef.keys());
+
   const updated = orders.map((order) => {
     if (!visibleIds.has(order.id)) return order;
     if (!order.confirmedOk) return order;
@@ -65,10 +111,22 @@ export function runAutoCheck(
       if (p.voided) return p; // Admin-rejected — never auto-re-verify.
       if (p.returnedForFix) return p; // with the seller to correct the id
 
-      const matches = allRows.filter((r) => norm(r.ref) === norm(p.ref));
-      // Identical repeats (same ref + amount) are one transaction listed twice.
-      const distinct = distinctByAmount(matches);
-      if (matches.length === 0) {
+      const key = norm(p.ref);
+      const avail = byRef.get(key);
+
+      if (!avail) {
+        // Ref not (or no longer) available.
+        if (everSeen.has(key)) {
+          outcomes.push({
+            orderId: order.id,
+            client: order.name,
+            ref: p.ref,
+            result: "collision",
+            detail: "Ref already matched to an earlier payment",
+          });
+          changed = true;
+          return { ...p, flag: "Ref already matched to another payment" };
+        }
         outcomes.push({
           orderId: order.id,
           client: order.name,
@@ -79,27 +137,32 @@ export function runAutoCheck(
         changed = true;
         return { ...p, flag: "Not in any statement" };
       }
-      if (distinct.length > 1) {
+
+      // Claim the ref so no later payment can reuse the same bank credit.
+      byRef.delete(key);
+
+      if (avail.length > 1) {
         outcomes.push({
           orderId: order.id,
           client: order.name,
           ref: p.ref,
           result: "duplicate",
-          detail: `Ref appears with ${distinct.length} different amounts`,
+          detail: `Ref appears with ${avail.length} different amounts`,
         });
         changed = true;
         return { ...p, flag: "Duplicate ref" };
       }
 
-      const bank = distinct[0];
+      const bankAmt = avail[0];
       const base = {
         ...p,
-        verified: true,
+        verified: true as const,
         verifiedBy: actor.email,
         verifiedOn: nowISO(),
         checkedRef: p.ref,
       };
-      if (bank.amt === p.amt) {
+
+      if (bankAmt === p.amt) {
         outcomes.push({
           orderId: order.id,
           client: order.name,
@@ -110,22 +173,40 @@ export function runAutoCheck(
         changed = true;
         return { ...base, comment: "Auto-verified from bank statement", flag: undefined, pendingApproval: undefined };
       }
-      // Adopt the bank amount.
+
+      // Amounts differ. A small gap is adopted automatically; a material one is
+      // held so a person confirms it (the manual check shows the bank figure for
+      // one-click confirmation).
+      if (amountNeedsReview(p.amt, bankAmt)) {
+        outcomes.push({
+          orderId: order.id,
+          client: order.name,
+          ref: p.ref,
+          result: "review",
+          detail: `Recorded ${p.amt.toLocaleString()} vs statement ${bankAmt.toLocaleString()} — verify manually`,
+        });
+        changed = true;
+        return {
+          ...p,
+          flag: `Amount review: statement RWF ${bankAmt.toLocaleString()} vs recorded RWF ${p.amt.toLocaleString()}`,
+        };
+      }
+
       const was = p.amt;
       outcomes.push({
         orderId: order.id,
         client: order.name,
         ref: p.ref,
         result: "corrected",
-        detail: `Amount corrected ${was.toLocaleString()} -> ${bank.amt.toLocaleString()}`,
+        detail: `Amount corrected ${was.toLocaleString()} -> ${bankAmt.toLocaleString()}`,
       });
       extraHistory.push(
-        `${nowISO()} — Payment ${p.ref} amount corrected from ${was.toLocaleString()} to ${bank.amt.toLocaleString()} RWF (auto, by ${actor.name})`
+        `${nowISO()} — Payment ${p.ref} amount corrected from ${was.toLocaleString()} to ${bankAmt.toLocaleString()} RWF (auto, by ${actor.name})`
       );
       changed = true;
       return {
         ...base,
-        amt: bank.amt,
+        amt: bankAmt,
         comment: "Auto-verified; amount adopted from bank statement",
         flag: `Amount corrected from ${was.toLocaleString()}`,
         pendingApproval: undefined,
@@ -138,3 +219,24 @@ export function runAutoCheck(
 
   return { orders: updated, outcomes };
 }
+
+/**
+ * Statement rows whose amount equals `amt` (deduped by normalized ref) across
+ * all statements — used to suggest a match when the recorded transaction id
+ * can't be found but a credit of the right size exists.
+ */
+export function amountCandidates(statements: BankStatement[], amt: number): StatementRow[] {
+  const seen = new Set<string>();
+  const out: StatementRow[] = [];
+  for (const s of statements) {
+    for (const r of s.rows) {
+      if (r.amt !== amt) continue;
+      const key = normRef(r.ref);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push(r);
+    }
+  }
+  return out;
+}
+

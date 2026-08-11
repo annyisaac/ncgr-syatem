@@ -29,7 +29,14 @@ import {
   parseWorkbook,
   type ParsedSheet,
 } from "@/lib/excel";
-import { runAutoCheck, distinctByAmount, type AutoOutcome } from "@/lib/verification";
+import {
+  runAutoCheck,
+  distinctByAmount,
+  normRef,
+  amountCandidates,
+  type AutoOutcome,
+} from "@/lib/verification";
+import { verificationPDF, verificationExcel, type ReconReportRow } from "@/lib/reports";
 import { withHistory } from "@/lib/orders";
 
 interface Staged {
@@ -45,12 +52,12 @@ function splitRefs(input: string): string[] {
 }
 function lookupRefs(refs: string[], statements: BankStatement[]) {
   const all = statements.flatMap((s) => s.rows);
-  const norm = (s: string) => s.trim().toLowerCase();
   // Collapse identical repeats (same ref + amount) so a re-uploaded or
-  // overlapping statement doesn't read as a duplicate.
+  // overlapping statement doesn't read as a duplicate. `normRef` keeps this in
+  // step with the automatic check (spacing / padding tolerated).
   return refs.map((ref) => ({
     ref,
-    matches: distinctByAmount(all.filter((r) => norm(r.ref) === norm(ref))),
+    matches: distinctByAmount(all.filter((r) => normRef(r.ref) === normRef(ref))),
   }));
 }
 
@@ -77,6 +84,10 @@ export default function VerificationPage() {
   const [outcomes, setOutcomes] = useState<AutoOutcome[]>([]);
   const [manual, setManual] = useState<{ order: Order; payIndex: number } | null>(null);
   const [approveFor, setApproveFor] = useState<{ order: Order; payIndex: number } | null>(null);
+
+  // Bulk admin approval — selected pending payments + a shared comment.
+  const [sel, setSel] = useState<Set<string>>(new Set());
+  const [bulkNote, setBulkNote] = useState("");
 
   // Filters for the payments table.
   const [query, setQuery] = useState("");
@@ -134,6 +145,47 @@ export default function VerificationPage() {
     () => [{ value: "", label: "All delivery dates" }, ...availability.slice().sort((a, b) => (a.id < b.id ? -1 : 1)).map((a) => ({ value: a.id, label: formatDate(a.date) }))],
     [availability]
   );
+
+  // Reconciliation report over exactly what the payments filter shows.
+  const recon = useMemo(() => {
+    const label: Record<string, string> = {
+      checked: "Verified",
+      awaiting: "Awaiting admin",
+      returned: "Returned to seller",
+      rejected: "Rejected (voided)",
+      unverified: "Unverified",
+    };
+    const rows: ReconReportRow[] = shownPayRows.map(({ o, p }) => ({
+      date: o.date,
+      client: o.name,
+      product: o.product,
+      amount: p.amt,
+      ref: p.checkedRef || p.ref,
+      status: label[payStatus(p)] ?? payStatus(p),
+      verifiedBy: p.verifiedBy,
+      flag: p.flag,
+    }));
+    let verified = 0, awaiting = 0, returned = 0, rejected = 0, unverified = 0, verifiedAmount = 0;
+    for (const { p } of shownPayRows) {
+      const s = payStatus(p);
+      if (s === "checked") { verified++; verifiedAmount += p.amt; }
+      else if (s === "awaiting") awaiting++;
+      else if (s === "returned") returned++;
+      else if (s === "rejected") rejected++;
+      else unverified++;
+    }
+    const parts: string[] = [];
+    if (productFilter !== "all") parts.push(productFilter);
+    if (statusFilter !== "all") parts.push(label[statusFilter] ?? statusFilter);
+    if (dateFilter) parts.push(deliveryDateOptions.find((o) => o.value === dateFilter)?.label ?? dateFilter);
+    else if (preset !== "all") parts.push(preset);
+    if (query.trim()) parts.push(`“${query.trim()}”`);
+    return {
+      rows,
+      summary: { total: rows.length, verified, awaiting, returned, rejected, unverified, verifiedAmount },
+      filterLabel: parts.length ? parts.join(" · ") : "All payments",
+    };
+  }, [shownPayRows, productFilter, statusFilter, dateFilter, preset, query, deliveryDateOptions]);
 
   if (!user) return null;
 
@@ -331,6 +383,83 @@ export default function VerificationPage() {
     toast("Payment rejected and voided — no longer counts as paid.", "info");
   }
 
+  // --- Bulk admin actions -------------------------------------------------
+  const selKey = (oid: string, i: number) => `${oid}::${i}`;
+  const toggleSel = (oid: string, i: number) =>
+    setSel((prev) => {
+      const n = new Set(prev);
+      const k = selKey(oid, i);
+      if (n.has(k)) n.delete(k); else n.add(k);
+      return n;
+    });
+  const allSelected = approvalRows.length > 0 && approvalRows.every((x) => sel.has(selKey(x.o.id, x.i)));
+  const toggleSelAll = () =>
+    setSel(allSelected ? new Set() : new Set(approvalRows.map((x) => selKey(x.o.id, x.i))));
+
+  /** Group the selection by order so multiple payments on one order are written
+   *  in a single update (never overwrite one patch with the next). */
+  function groupSelection(): Map<string, number[]> {
+    const groups = new Map<string, number[]>();
+    for (const k of sel) {
+      const [oid, iStr] = k.split("::");
+      const arr = groups.get(oid) ?? [];
+      arr.push(Number(iStr));
+      groups.set(oid, arr);
+    }
+    return groups;
+  }
+
+  function bulkApprove() {
+    const note = bulkNote.trim();
+    if (!note) return toast("Add an approval comment for the selected payments.", "error");
+    let count = 0;
+    for (const [oid, idxs] of groupSelection()) {
+      const order = myOrders.find((o) => o.id === oid);
+      if (!order) continue;
+      let updated = order;
+      for (const i of idxs) {
+        const p0 = order.payments[i];
+        if (!p0 || p0.verified || p0.voided) continue;
+        const refs = p0.pendingApproval?.refs ?? [];
+        const ref = refs.join(" + ") || p0.checkedRef || p0.ref;
+        const payments = updated.payments.map((p, idx) =>
+          idx === i
+            ? { ...p, verified: true, verifiedBy: user!.email, verifiedOn: nowISO(), checkedRef: ref, comment: `Approved by Admin — ${note}`, flag: undefined, pendingApproval: undefined }
+            : p
+        );
+        updated = withHistory({ ...updated, payments }, user!, `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)} — ${note}`);
+        count++;
+      }
+      if (updated !== order) void upsertOrder(updated);
+    }
+    setSel(new Set());
+    setBulkNote("");
+    toast(count ? `${count} payment(s) approved.` : "Nothing to approve.", count ? "success" : "info");
+  }
+
+  function bulkReject() {
+    let count = 0;
+    for (const [oid, idxs] of groupSelection()) {
+      const order = myOrders.find((o) => o.id === oid);
+      if (!order) continue;
+      let updated = order;
+      for (const i of idxs) {
+        const p0 = order.payments[i];
+        if (!p0 || p0.verified || p0.voided) continue;
+        const payments = updated.payments.map((p, idx) =>
+          idx === i
+            ? { ...p, verified: false, voided: true, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" }
+            : p
+        );
+        updated = withHistory({ ...updated, payments }, user!, `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatRWF(p0.amt)} removed from paid`);
+        count++;
+      }
+      if (updated !== order) void upsertOrder(updated);
+    }
+    setSel(new Set());
+    toast(count ? `${count} payment(s) rejected and voided.` : "Nothing to reject.", "info");
+  }
+
   return (
     <div className="space-y-6">
 
@@ -465,7 +594,7 @@ export default function VerificationPage() {
                       tone={
                         o.result === "verified"
                           ? "fulfilled"
-                          : o.result === "corrected"
+                          : o.result === "corrected" || o.result === "review"
                             ? "gold"
                             : o.result === "duplicate"
                               ? "info"
@@ -492,18 +621,30 @@ export default function VerificationPage() {
             verify it, or <strong>reject</strong> if you also can&apos;t find it. Rejecting voids the <em>payment only</em> (it
             stops counting toward paid/balance); the order itself stays open.
           </p>
+          {approvalRows.length > 0 && (
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-line bg-cream/40 p-2.5">
+              <span className="text-sm text-ink/70">{sel.size} selected</span>
+              <div className="min-w-[220px] flex-1">
+                <Input value={bulkNote} onChange={(e) => setBulkNote(e.target.value)} placeholder="Approval comment (applies to all selected)…" />
+              </div>
+              <Button size="sm" disabled={sel.size === 0} onClick={bulkApprove}>Approve selected</Button>
+              <Button size="sm" variant="ghost" disabled={sel.size === 0} onClick={bulkReject}>Reject selected</Button>
+            </div>
+          )}
           <TableWrap>
             <thead>
               <tr>
+                <Th><input type="checkbox" checked={allSelected} onChange={toggleSelAll} className="h-4 w-4 accent-gold" aria-label="Select all" /></Th>
                 <Th>Client</Th><Th>Product</Th><Th className="text-right">Amount</Th>
                 <Th>Transaction id(s)</Th><Th>From checker</Th><Th>Action</Th>
               </tr>
             </thead>
             <tbody>
               {approvalRows.length === 0 ? (
-                <EmptyRow colSpan={6} text="Nothing awaiting your approval." />
+                <EmptyRow colSpan={7} text="Nothing awaiting your approval." />
               ) : approvalRows.map(({ o, p, i }) => (
                 <tr key={`${o.id}-${i}`}>
+                  <Td><input type="checkbox" checked={sel.has(selKey(o.id, i))} onChange={() => toggleSel(o.id, i)} className="h-4 w-4 accent-gold" aria-label={`Select ${o.name}`} /></Td>
                   <Td>{o.name}</Td>
                   <Td>{o.product}</Td>
                   <Td className="text-right">{formatRWF(p.amt)}</Td>
@@ -528,7 +669,15 @@ export default function VerificationPage() {
 
       {/* Payments — awaiting + already checked */}
       <Card>
-        <CardHeader title={`Payments (${shownPayRows.length} shown · ${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`} />
+        <CardHeader
+          title={`Payments (${shownPayRows.length} shown · ${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`}
+          action={isAdmin ? (
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" disabled={recon.rows.length === 0} onClick={() => void verificationPDF(recon.rows, recon.summary, recon.filterLabel)}>Report (PDF)</Button>
+              <Button size="sm" variant="secondary" disabled={recon.rows.length === 0} onClick={() => void verificationExcel(recon.rows, recon.filterLabel)}>Excel</Button>
+            </div>
+          ) : undefined}
+        />
         <div className="flex flex-wrap items-center gap-3 sticky top-16 z-20 -mx-5 px-5 mb-3 border-b border-line bg-paper/95 py-3 backdrop-blur">
           <div className="min-w-0 flex-1">
             <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
@@ -738,6 +887,12 @@ function ManualModal({
 
   const action: "cash" | "verify" | "missing" | "dup" =
     cash ? "cash" : allClean ? "verify" : anyMissing ? "missing" : "dup";
+  // When the id can't be found, offer bank credits of the same amount — often
+  // the payment recorded with a mistyped id. Uses the same normalization.
+  const candidates =
+    action === "missing"
+      ? amountCandidates(statements, payment.amt).filter((c) => normRef(c.ref) !== normRef(ref))
+      : [];
   const verifyLabel =
     action === "cash" ? "Confirm (cash)"
     : bankTotal !== payment.amt ? `Verify at ${formatRWF(bankTotal!)}` : "Confirm verification";
@@ -802,6 +957,20 @@ function ManualModal({
             One or more transaction ids aren’t in any statement. Choose <strong>Return to seller to fix</strong> — they correct
             the id and it comes back here to verify — or <strong>Send to Admin</strong> for approval.
             {payment.refFixed && <div className="mt-1 text-xs">The seller has already corrected this once.</div>}
+          </div>
+        )}
+        {action === "missing" && candidates.length > 0 && (
+          <div className="rounded-lg border border-line bg-cream/40 p-2.5 text-sm">
+            <p className="mb-1 font-medium text-ink">Bank credits of {formatRWF(payment.amt)} in the statements:</p>
+            <ul className="space-y-1">
+              {candidates.map((c, idx) => (
+                <li key={idx} className="flex items-center justify-between gap-2">
+                  <span className="truncate font-mono text-xs">{c.ref}</span>
+                  <Button size="sm" variant="ghost" onClick={() => setRef(c.ref)}>Use this id</Button>
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1 text-xs text-muted">If one is this customer’s payment, use its id to verify at {formatRWF(payment.amt)}.</p>
           </div>
         )}
         {action === "dup" && (

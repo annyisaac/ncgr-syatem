@@ -29,6 +29,7 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { cn } from "@/lib/cn";
 import { formatDate, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders } from "@/lib/permissions";
+import { feedbackPDF, feedbackExcel, type FeedbackReportRow } from "@/lib/reports";
 import {
   balance,
   orderTotal,
@@ -241,6 +242,36 @@ export default function FeedbackPage() {
     };
   }, [delivered, fbByOrder, now]);
 
+  // Report over exactly what the filters currently show, so a downloaded
+  // report matches the board on screen. Admin-only (owner oversight).
+  const report = useMemo(() => {
+    const reportRows: FeedbackReportRow[] = rows.map((o) => ({ order: o, fb: fbByOrder.get(o.id) }));
+    let pending = 0, called = 0, vet = 0, complaints = 0, rated = 0, ratingSum = 0;
+    for (const { fb } of reportRows) {
+      const k = careStatus(fb);
+      if (k === "pending") pending++;
+      else if (k === "called") called++;
+      else vet++; // vet + resolved cases both needed the vet
+      if (fb?.rating === "unsatisfied") complaints++;
+      if (fb?.rating) { rated++; ratingSum += RATING_SCORE[fb.rating]; }
+    }
+    const parts: string[] = [];
+    if (date) parts.push(`Delivery ${formatDate(date)}`);
+    if (product) parts.push(product);
+    if (salesperson) parts.push(salesperson);
+    if (status) parts.push(STATUS_LABEL[status]);
+    if (q.trim()) parts.push(`“${q.trim()}”`);
+    return {
+      rows: reportRows,
+      summary: {
+        customers: reportRows.length,
+        pending, called, vet, complaints,
+        satisfaction: rated ? (ratingSum / rated).toFixed(1) : "—",
+      },
+      filterLabel: parts.length ? parts.join(" · ") : "All delivered customers",
+    };
+  }, [rows, fbByOrder, date, product, salesperson, status, q]);
+
   // The profile panel only appears once a customer is explicitly clicked.
   const selectedOrder = useMemo(
     () => (selectedId ? orders.find((o) => o.id === selectedId) : undefined),
@@ -266,9 +297,21 @@ export default function FeedbackPage() {
           <h1 className="text-2xl font-extrabold text-ink">Customer Care &amp; Feedback</h1>
           <p className="text-sm text-muted">Manage customer follow-ups and feedback after delivery</p>
         </div>
-        <span className="inline-flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-1.5 text-sm text-muted">
-          <Ico name="calendar" className="h-4 w-4" /> Today: {formatDate(todayISO())}
-        </span>
+        <div className="flex items-center gap-2">
+          {user.role === "Admin" && (
+            <>
+              <Button variant="secondary" size="sm" onClick={() => void feedbackPDF(report.rows, report.summary, report.filterLabel)}>
+                Report (PDF)
+              </Button>
+              <Button variant="secondary" size="sm" onClick={() => void feedbackExcel(report.rows, report.filterLabel)}>
+                Excel
+              </Button>
+            </>
+          )}
+          <span className="inline-flex items-center gap-2 rounded-full border border-line bg-paper px-3 py-1.5 text-sm text-muted">
+            <Ico name="calendar" className="h-4 w-4" /> Today: {formatDate(todayISO())}
+          </span>
+        </div>
       </div>
 
       {/* KPI cards */}
