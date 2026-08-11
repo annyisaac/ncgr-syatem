@@ -206,6 +206,7 @@ export default function NewOrderPage() {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
+    if (saving) return; // guard against a double-submit while one is in flight
     setError(null);
 
     if (!product) return setError("Choose a product.");
