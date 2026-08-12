@@ -1094,6 +1094,65 @@ export async function exportClientsExcel(
   XLSX.writeFile(wb, `NCGR-Clients-${safe || "all"}.xlsx`);
 }
 
+// ---------------------------------------------------------------------------
+// PDF: Client statement (one customer — orders + payments)
+// ---------------------------------------------------------------------------
+
+export async function clientStatementPDF(client: ClientRecord): Promise<void> {
+  const orders = client.orders.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+  const totalOrdered = orders.reduce((s, o) => s + orderTotal(o), 0);
+  const outstanding = Math.max(0, client.balance);
+  const overpaid = Math.max(0, -client.balance);
+  const location = [client.districts.join(", "), client.sectors.join(", ")].filter(Boolean).join("  ·  ");
+  const balanceLine =
+    outstanding > 0 ? `Balance due: ${formatRWF(outstanding)}`
+    : overpaid > 0 ? `Credit (overpaid): ${formatRWF(overpaid)}`
+    : "Fully paid";
+
+  const { doc, autoTable, startY, logo } = await brandedDoc(
+    "Client Statement",
+    [
+      `Client: ${client.name}`,
+      `Phone: ${client.phone || "—"}${location ? `   ·   ${location}` : ""}`,
+      `Orders: ${client.ordersCount}   ·   Chicks ordered: ${client.chicks.toLocaleString()}   ·   To deliver: ${client.toDeliver.toLocaleString()}`,
+      `Order value: ${formatRWF(totalOrdered)}   ·   Paid: ${formatRWF(client.paid)}   ·   ${balanceLine}`,
+    ],
+    "portrait"
+  );
+
+  autoTable(doc, {
+    startY,
+    head: [["Delivery date", "Product", "Chicks", "To deliver", "Total", "Paid", "Balance", "Status"]],
+    body: orders.length
+      ? orders.map((o) => [formatDate(o.date), o.product, o.chicks, toDeliver(o), orderTotal(o), paidAmount(o), balance(o), o.status])
+      : [["—", "No orders", "", "", "", "", "", ""]],
+    foot: orders.length
+      ? [["Totals", "", orders.reduce((s, o) => s + o.chicks, 0), orders.reduce((s, o) => s + toDeliver(o), 0), totalOrdered, client.paid, client.balance, ""]]
+      : undefined,
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  const payments = orders
+    .flatMap((o) => o.payments.map((p) => ({ ...p, product: o.product })))
+    .sort((a, b) => (a.on < b.on ? 1 : -1));
+
+  autoTable(doc, {
+    startY: (doc.lastAutoTable?.finalY ?? startY) + 18,
+    head: [["Payment date", "Product", "Amount", "Reference", "Status"]],
+    body: payments.length
+      ? payments.map((p) => [formatDateTime(p.on), p.product, p.amt, p.ref || "—", p.voided ? "Voided" : p.verified ? "Verified" : "Pending"])
+      : [["—", "No payments recorded", "", "", ""]],
+    styles: { fontSize: 8, cellPadding: 3 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  finalizeAndSave(doc, logo, `NCGR-Statement-${client.name.replace(/[^\w]+/g, "_") || "client"}.pdf`);
+}
+
 /**
  * Best-effort import of an orders Excel file previously exported by this app.
  * Unknown columns are ignored; new orders get fresh audit history.

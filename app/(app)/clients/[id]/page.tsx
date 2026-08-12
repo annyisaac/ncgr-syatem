@@ -18,7 +18,7 @@ import { visibleOrders, productForRole, canWriteClients } from "@/lib/permission
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
 import { clientById, clientPayments } from "@/lib/clients";
-import { exportClientsExcel } from "@/lib/reports";
+import { clientStatementPDF } from "@/lib/reports";
 import { balance, paidAmount, orderTotal, toDeliver, type Client, type Order } from "@/lib/types";
 
 function deliveryStatus(o: Order, routeName?: string): { label: string; tone: "green" | "gold" | "info" | "neutral" | "red" } {
@@ -107,7 +107,7 @@ export default function ClientDetailPage() {
   async function downloadStatement() {
     if (!client) return;
     try {
-      await exportClientsExcel([client], client.name);
+      await clientStatementPDF(client);
       toast("Statement downloaded.");
     } catch {
       toast("Could not build the statement.", "error");
