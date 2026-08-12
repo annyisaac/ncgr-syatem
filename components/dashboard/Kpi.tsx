@@ -26,6 +26,7 @@ const ICONS: Record<string, React.ReactNode> = {
   chart: <path d="M4 15V9 M9 15V5 M14 15v-4" />,
   cross: <><circle cx="10" cy="10" r="6.5" /><path d="M7.5 7.5l5 5M12.5 7.5l-5 5" /></>,
   users: <><circle cx="8" cy="7" r="2.5" /><path d="M3.5 15c0-2.2 2-3.6 4.5-3.6s4.5 1.4 4.5 3.6" /><path d="M13.4 5.2a2.1 2.1 0 0 1 .2 4M14 11.5c1.7.2 2.9 1.3 2.9 3.1" /></>,
+  truck: <><path d="M2.5 6.5h8v7h-8z" /><path d="M10.5 8.5h3.5l2 2.5v2.5h-5.5z" /><circle cx="6" cy="15" r="1.3" /><circle cx="13.5" cy="15" r="1.3" /></>,
 };
 
 /**

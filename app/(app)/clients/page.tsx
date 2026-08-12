@@ -9,23 +9,21 @@ import { useData } from "@/components/DataProvider";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { Modal } from "@/components/ui/Modal";
-import { Field, Input, Select } from "@/components/ui/Select";
 import { Pagination } from "@/components/ui/Pagination";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { SearchTimeBar } from "@/components/dashboard/DashKit";
 import { Kpi } from "@/components/dashboard/Kpi";
+import { ClientFormModal } from "@/components/clients/ClientFormModal";
 import { useToast } from "@/components/ui/Toast";
 import { visibleOrders, productForRole, clientVisible, canWriteClients } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
 import { formatDate, todayISO, nowISO } from "@/lib/format";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
-import { buildClients, clientRecordKey, type ClientRecord } from "@/lib/clients";
+import { buildClients, type ClientRecord } from "@/lib/clients";
 import { exportClientsExcel } from "@/lib/reports";
-import type { Client, Product } from "@/lib/types";
+import type { Client } from "@/lib/types";
 
 /** Human label for the selected date range, used in the file name + heading. */
 function rangeLabel(r: DateRangeValue): string {
@@ -39,7 +37,7 @@ type TabKey = "all" | "active" | "owing" | "prepaid" | "inactive";
 
 export default function ClientsPage() {
   const { user } = useAuth();
-  const { orders, clients, upsertClient, removeClient } = useData();
+  const { orders, clients, removeClient } = useData();
   const { toast } = useToast();
   const [q, setQ] = useState("");
   const [preset, setPreset] = useState<PeriodPreset>("all");
@@ -88,7 +86,6 @@ export default function ClientsPage() {
 
   const isAdmin = user.role === "Admin";
   const canWrite = canWriteClients(user.role);
-  const crossProduct = !productForRole(user.role); // Admin / Accountant → both products
 
   const totalChicks = all.reduce((s, c) => s + c.chicks, 0);
   const outstanding = all.reduce((s, c) => s + Math.max(0, c.balance), 0);
@@ -150,23 +147,6 @@ export default function ClientsPage() {
     });
   }
 
-  const set = (patch: Partial<Client>) => setEditing((e) => (e ? { ...e, ...patch } : e));
-
-  async function save() {
-    if (!editing) return;
-    const name = editing.name.trim();
-    if (!name) { toast("Enter the client's name.", "info"); return; }
-    const id = editing.id || clientRecordKey({ phone: editing.phone, name });
-    const clean: Client = { ...editing, id, name, phone: (editing.phone ?? "").trim(), on: editing.on || nowISO(), by: user!.email };
-    try {
-      await upsertClient(clean);
-      toast("Client saved.");
-      setEditing(null);
-    } catch {
-      toast("Could not save the client.", "error");
-    }
-  }
-
   async function remove(c: ClientRecord) {
     if (!c.record) return;
     if (!window.confirm(`Remove ${c.name} from the client list? Their orders are not affected.`)) return;
@@ -179,12 +159,9 @@ export default function ClientsPage() {
   }
 
   const iconBtn = "inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition hover:border-ink hover:text-ink";
-  const editingExists = !!editing?.id;
 
   return (
     <div className="space-y-5">
-      <PageHeader title="Clients" subtitle="Manage your customers, orders and outstanding balances." />
-
       <div className="sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
         <div className="flex flex-wrap items-center gap-2">
           <div className="min-w-0 flex-1">
@@ -338,39 +315,7 @@ export default function ClientsPage() {
         )}
       </Card>
 
-      <Modal
-        open={!!editing}
-        onClose={() => setEditing(null)}
-        title={editingExists ? "Edit client" : "Add new client"}
-        footer={<><Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button><Button onClick={save}>Save client</Button></>}
-      >
-        {editing && (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Full name" required><Input value={editing.name} onChange={(e) => set({ name: e.target.value })} placeholder="Client name" /></Field>
-            <Field label="Phone"><Input value={editing.phone ?? ""} onChange={(e) => set({ phone: e.target.value })} placeholder="07…" /></Field>
-            <Field label="District"><Input value={editing.district ?? ""} onChange={(e) => set({ district: e.target.value })} /></Field>
-            <Field label="Sector"><Input value={editing.sector ?? ""} onChange={(e) => set({ sector: e.target.value })} /></Field>
-            <Field label="Product scope" hint={crossProduct ? "Which product's team can see this client." : "Set by your role."}>
-              <Select
-                value={editing.product ?? ""}
-                disabled={!crossProduct}
-                onChange={(e) => set({ product: (e.target.value || undefined) as Product | undefined })}
-                options={[{ value: "", label: "Both / any" }, { value: "Ross 308", label: "Ross 308" }, { value: "Tetra Super Harco", label: "Tetra Super Harco" }]}
-              />
-            </Field>
-            <Field label="Status">
-              <Select
-                value={(editing.active ?? true) ? "active" : "inactive"}
-                onChange={(e) => set({ active: e.target.value === "active" })}
-                options={[{ value: "active", label: "Active" }, { value: "inactive", label: "Inactive" }]}
-              />
-            </Field>
-            <div className="sm:col-span-2">
-              <Field label="Note"><Input value={editing.note ?? ""} onChange={(e) => set({ note: e.target.value })} placeholder="Optional — anything worth remembering about this client" /></Field>
-            </div>
-          </div>
-        )}
-      </Modal>
+      {editing && <ClientFormModal key={editing.id || "new"} initial={editing} onClose={() => setEditing(null)} />}
     </div>
   );
 }
