@@ -101,6 +101,8 @@ function OrdersInner() {
   const orderParam = search.get("order") ?? "";
   // Deep-link from the "Payments to correct" card: open the correction modal.
   const fixParam = search.get("fix") ?? "";
+  // Deep-link from a client's "Record payment": open the Add-payment modal.
+  const payParam = search.get("pay") ?? "";
 
   // ?q= prefills the search (the dashboard's search bar hands off to here).
   const [query, setQuery] = useState(search.get("q") ?? "");
@@ -134,6 +136,17 @@ function OrdersInner() {
     if (o) {
       setPrevFix(orderParam);
       setModal({ type: "fixPayment", order: o });
+    }
+  }
+
+  // Arriving with ?order=…&pay=1 (from a client's "Record payment") → open the
+  // Add-payment modal for that order once it's loaded.
+  const [prevPay, setPrevPay] = useState("");
+  if (payParam && orderParam && prevPay !== orderParam) {
+    const o = orders.find((x) => x.id === orderParam);
+    if (o && o.status !== "rejected" && o.status !== "refunded") {
+      setPrevPay(orderParam);
+      setModal({ type: "pay", order: o });
     }
   }
 

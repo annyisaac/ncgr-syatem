@@ -81,8 +81,8 @@ export default function ClientDetailPage() {
   const firstOrderDate = ordersSorted.length ? ordersSorted[ordersSorted.length - 1].date : "";
   const since = firstOrderDate || client.record?.on || "";
   const customerType = client.ordersCount >= 5 ? "VIP" : "Regular";
-  const latestOrder = ordersSorted[0];
-  const recordHref = latestOrder ? `/orders/${encodeURIComponent(latestOrder.id)}` : "/orders/new";
+  const payOrder = ordersSorted.find((o) => balance(o) > 0) ?? ordersSorted[0];
+  const recordHref = payOrder ? `/orders?order=${encodeURIComponent(payOrder.id)}&pay=1` : "/orders";
 
   const preferredProduct = (() => {
     const count = new Map<string, number>();
