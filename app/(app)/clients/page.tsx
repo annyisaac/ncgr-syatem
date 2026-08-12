@@ -7,9 +7,11 @@ import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Pill } from "@/components/ui/Pill";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { StatTile, SearchTimeBar } from "@/components/dashboard/DashKit";
+import { SearchTimeBar } from "@/components/dashboard/DashKit";
+import { Kpi } from "@/components/dashboard/Kpi";
 import { useToast } from "@/components/ui/Toast";
 import { visibleOrders } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
@@ -58,6 +60,8 @@ export default function ClientsPage() {
   const isAdmin = user.role === "Admin";
   const totalChicks = clients.reduce((s, c) => s + c.chicks, 0);
   const totalBalance = clients.reduce((s, c) => s + c.balance, 0);
+  const totalOrders = clients.reduce((s, c) => s + c.ordersCount, 0);
+  const owingCount = clients.filter((c) => c.balance > 0).length;
 
   async function downloadClients() {
     if (user?.role !== "Admin") return; // download is Admin-only
@@ -93,10 +97,16 @@ export default function ClientsPage() {
       </div>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label="Clients" value={String(clients.length)} />
-        <StatTile label="Chicks ordered" value={totalChicks.toLocaleString()} />
-        <StatTile label="Outstanding balance" value={formatRWF(totalBalance)} tone={totalBalance > 0 ? "red" : undefined} />
-        <StatTile label="Orders" value={String(clients.reduce((s, c) => s + c.ordersCount, 0))} />
+        <Kpi icon="users" tone="gold" label="Clients" value={String(clients.length)} sub="Total clients" />
+        <Kpi icon="chicks" tone="amber" label="Chicks ordered" value={totalChicks.toLocaleString()} sub="Total chicks ordered" />
+        <Kpi
+          icon="money"
+          tone={totalBalance > 0 ? "red" : "green"}
+          label="Outstanding balance"
+          value={formatRWF(totalBalance)}
+          sub={`${owingCount} client${owingCount === 1 ? "" : "s"} with outstanding balance`}
+        />
+        <Kpi icon="orders" tone="purple" label="Orders" value={String(totalOrders)} sub="Total orders" />
       </div>
 
       <Card>
@@ -108,7 +118,7 @@ export default function ClientsPage() {
                 <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5">
                   <path d="M10 3v9m0 0 3.5-3.5M10 12 6.5 8.5M4 15h12" />
                 </svg>
-                {downloading ? "Preparing…" : "Download"}
+                {downloading ? "Preparing…" : "Export Excel"}
               </Button>
             ) : undefined
           }
@@ -120,11 +130,12 @@ export default function ClientsPage() {
                 <Th>Client</Th><Th>Phone</Th><Th>District(s)</Th>
                 <Th className="text-right">Orders</Th><Th className="text-right">Chicks</Th>
                 <Th className="text-right">Paid</Th><Th className="text-right">Balance</Th><Th>Last order</Th>
+                <Th>Status</Th><Th className="text-right">Actions</Th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 ? (
-                <EmptyRow colSpan={8} text={q || range.from || range.to ? "No clients match this selection." : "No clients yet."} />
+                <EmptyRow colSpan={10} text={q || range.from || range.to ? "No clients match this selection." : "No clients yet."} />
               ) : filtered.map((c) => (
                 <tr key={c.id}>
                   <Td>
@@ -137,6 +148,22 @@ export default function ClientsPage() {
                   <Td className="text-right">{formatRWF(c.paid)}</Td>
                   <Td className={`text-right ${c.balance > 0 ? "font-semibold text-red" : ""}`}>{formatRWF(c.balance)}</Td>
                   <Td>{c.lastOrder ? formatDate(c.lastOrder) : "—"}</Td>
+                  <Td>
+                    {c.balance > 0 ? <Pill tone="red">Owing</Pill> : c.balance < 0 ? <Pill tone="info">Prepaid</Pill> : <Pill tone="green">Paid</Pill>}
+                  </Td>
+                  <Td>
+                    <div className="flex justify-end">
+                      <Link
+                        href={`/clients/${encodeURIComponent(c.id)}`}
+                        title="View client"
+                        className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-line text-muted transition hover:border-ink hover:text-ink"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M2.5 10S5 4.5 10 4.5 17.5 10 17.5 10 15 15.5 10 15.5 2.5 10 2.5 10Z" /><circle cx="10" cy="10" r="2.2" />
+                        </svg>
+                      </Link>
+                    </div>
+                  </Td>
                 </tr>
               ))}
             </tbody>
