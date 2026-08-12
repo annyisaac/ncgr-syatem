@@ -17,9 +17,9 @@
  */
 
 import { nowISO } from "./format";
-import type { BankStatement, Order, StatementRow, User } from "./types";
+import type { BankStatement, Order, User } from "./types";
 
-export type AutoResult = "verified" | "corrected" | "review" | "missing" | "duplicate" | "collision" | "skipped";
+export type AutoResult = "verified" | "corrected" | "review" | "missing" | "duplicate" | "collision";
 
 export interface AutoOutcome {
   orderId: string;
@@ -99,10 +99,6 @@ export function runAutoCheck(
   // apart from "already matched to an earlier payment".
   const everSeen = new Set(byRef.keys());
 
-  // Recorder ≠ verifier: a checker can't verify a payment they recorded — only
-  // the Admin / Accountant may self-verify (they are the oversight backstop).
-  const canSelfVerify = actor.role === "Admin" || actor.role === "Accountant";
-
   const updated = orders.map((order) => {
     if (!visibleIds.has(order.id)) return order;
     if (!order.confirmedOk) return order;
@@ -114,19 +110,6 @@ export function runAutoCheck(
       if (p.verified) return p;
       if (p.voided) return p; // Admin-rejected — never auto-re-verify.
       if (p.returnedForFix) return p; // with the seller to correct the id
-
-      // Recorder ≠ verifier: leave a checker's own recorded payment for someone
-      // else to verify (Admin / Accountant are exempt).
-      if (!canSelfVerify && p.by === actor.email) {
-        outcomes.push({
-          orderId: order.id,
-          client: order.name,
-          ref: p.ref,
-          result: "skipped",
-          detail: "You recorded this payment — another checker or the Admin must verify it",
-        });
-        return p;
-      }
 
       const key = norm(p.ref);
       const avail = byRef.get(key);
@@ -235,25 +218,5 @@ export function runAutoCheck(
   });
 
   return { orders: updated, outcomes };
-}
-
-/**
- * Statement rows whose amount equals `amt` (deduped by normalized ref) across
- * all statements — used to suggest a match when the recorded transaction id
- * can't be found but a credit of the right size exists.
- */
-export function amountCandidates(statements: BankStatement[], amt: number): StatementRow[] {
-  const seen = new Set<string>();
-  const out: StatementRow[] = [];
-  for (const s of statements) {
-    for (const r of s.rows) {
-      if (r.amt !== amt) continue;
-      const key = normRef(r.ref);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      out.push(r);
-    }
-  }
-  return out;
 }
 

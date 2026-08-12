@@ -33,7 +33,6 @@ import {
   runAutoCheck,
   distinctByAmount,
   normRef,
-  amountCandidates,
   type AutoOutcome,
 } from "@/lib/verification";
 import { verificationPDF, verificationExcel, type ReconReportRow } from "@/lib/reports";
@@ -628,9 +627,7 @@ export default function VerificationPage() {
                             ? "gold"
                             : o.result === "duplicate"
                               ? "info"
-                              : o.result === "skipped"
-                                ? "neutral"
-                                : "refunded"
+                              : "refunded"
                       }
                     >
                       {o.result}
@@ -809,9 +806,6 @@ export default function VerificationPage() {
                       )
                     ) : p.returnedForFix ? (
                       <span className="text-xs text-muted">with seller</span>
-                    ) : !isAdmin && p.by === user.email ? (
-                      // Recorder ≠ verifier: you can't verify a payment you recorded.
-                      <span className="text-xs text-muted">recorded by you</span>
                     ) : (
                       <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
                         Verify manually
@@ -922,12 +916,6 @@ function ManualModal({
 
   const action: "cash" | "verify" | "missing" | "dup" =
     cash ? "cash" : allClean ? "verify" : anyMissing ? "missing" : "dup";
-  // When the id can't be found, offer bank credits of the same amount — often
-  // the payment recorded with a mistyped id. Uses the same normalization.
-  const candidates =
-    action === "missing"
-      ? amountCandidates(statements, payment.amt).filter((c) => normRef(c.ref) !== normRef(ref))
-      : [];
   const verifyLabel =
     action === "cash" ? "Confirm (cash)"
     : bankTotal !== payment.amt ? `Verify at ${formatRWF(bankTotal!)}` : "Confirm verification";
@@ -992,20 +980,6 @@ function ManualModal({
             One or more transaction ids aren’t in any statement. Choose <strong>Return to seller to fix</strong> — they correct
             the id and it comes back here to verify — or <strong>Send to Admin</strong> for approval.
             {payment.refFixed && <div className="mt-1 text-xs">The seller has already corrected this once.</div>}
-          </div>
-        )}
-        {action === "missing" && candidates.length > 0 && (
-          <div className="rounded-lg border border-line bg-cream/40 p-2.5 text-sm">
-            <p className="mb-1 font-medium text-ink">Bank credits of {formatRWF(payment.amt)} in the statements:</p>
-            <ul className="space-y-1">
-              {candidates.map((c, idx) => (
-                <li key={idx} className="flex items-center justify-between gap-2">
-                  <span className="truncate font-mono text-xs">{c.ref}</span>
-                  <Button size="sm" variant="ghost" onClick={() => setRef(c.ref)}>Use this id</Button>
-                </li>
-              ))}
-            </ul>
-            <p className="mt-1 text-xs text-muted">If one is this customer’s payment, use its id to verify at {formatRWF(payment.amt)}.</p>
           </div>
         )}
         {action === "dup" && (
