@@ -628,7 +628,9 @@ export default function VerificationPage() {
                             ? "gold"
                             : o.result === "duplicate"
                               ? "info"
-                              : "refunded"
+                              : o.result === "skipped"
+                                ? "neutral"
+                                : "refunded"
                       }
                     >
                       {o.result}
@@ -807,6 +809,9 @@ export default function VerificationPage() {
                       )
                     ) : p.returnedForFix ? (
                       <span className="text-xs text-muted">with seller</span>
+                    ) : !isAdmin && p.by === user.email ? (
+                      // Recorder ≠ verifier: you can't verify a payment you recorded.
+                      <span className="text-xs text-muted">recorded by you</span>
                     ) : (
                       <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
                         Verify manually

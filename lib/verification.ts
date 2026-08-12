@@ -19,7 +19,7 @@
 import { nowISO } from "./format";
 import type { BankStatement, Order, StatementRow, User } from "./types";
 
-export type AutoResult = "verified" | "corrected" | "review" | "missing" | "duplicate" | "collision";
+export type AutoResult = "verified" | "corrected" | "review" | "missing" | "duplicate" | "collision" | "skipped";
 
 export interface AutoOutcome {
   orderId: string;
@@ -99,6 +99,10 @@ export function runAutoCheck(
   // apart from "already matched to an earlier payment".
   const everSeen = new Set(byRef.keys());
 
+  // Recorder ≠ verifier: a checker can't verify a payment they recorded — only
+  // the Admin / Accountant may self-verify (they are the oversight backstop).
+  const canSelfVerify = actor.role === "Admin" || actor.role === "Accountant";
+
   const updated = orders.map((order) => {
     if (!visibleIds.has(order.id)) return order;
     if (!order.confirmedOk) return order;
@@ -110,6 +114,19 @@ export function runAutoCheck(
       if (p.verified) return p;
       if (p.voided) return p; // Admin-rejected — never auto-re-verify.
       if (p.returnedForFix) return p; // with the seller to correct the id
+
+      // Recorder ≠ verifier: leave a checker's own recorded payment for someone
+      // else to verify (Admin / Accountant are exempt).
+      if (!canSelfVerify && p.by === actor.email) {
+        outcomes.push({
+          orderId: order.id,
+          client: order.name,
+          ref: p.ref,
+          result: "skipped",
+          detail: "You recorded this payment — another checker or the Admin must verify it",
+        });
+        return p;
+      }
 
       const key = norm(p.ref);
       const avail = byRef.get(key);
