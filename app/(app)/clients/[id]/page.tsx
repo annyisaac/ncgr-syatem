@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -48,6 +48,7 @@ function SectionCard({ title, action, children }: { title: string; action?: Reac
 
 export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
+  const router = useRouter();
   const id = decodeURIComponent(params.id);
   const { user } = useAuth();
   const { orders, routes, clients } = useData();
@@ -64,7 +65,7 @@ export default function ClientDetailPage() {
   if (!client) {
     return (
       <div className="space-y-4">
-        <Link href="/clients" className="inline-flex items-center gap-1.5 text-sm font-medium text-gold-dark">← Back to clients</Link>
+        <button type="button" onClick={() => router.back()} className="inline-flex items-center gap-1.5 text-sm font-medium text-gold-dark">← Back</button>
         <Card><p className="text-sm text-muted">Client not found.</p></Card>
       </div>
     );
@@ -126,7 +127,7 @@ export default function ClientDetailPage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Link href="/clients" className="inline-flex items-center gap-1.5 text-sm font-medium text-gold-dark">← Back to clients</Link>
+        <button type="button" onClick={() => router.back()} className="inline-flex items-center gap-1.5 text-sm font-medium text-gold-dark">← Back</button>
         {canWrite && (
           <Link href="/orders/new">
             <Button size="sm">

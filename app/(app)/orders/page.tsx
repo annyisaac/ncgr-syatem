@@ -721,7 +721,7 @@ function OrdersInner() {
                     <Td>
                       <Link
                         href={`/clients/${encodeURIComponent(clientKey(o))}`}
-                        className="font-medium text-gold-dark underline underline-offset-2 hover:text-gold"
+                        className="font-medium text-gold-dark hover:text-gold"
                       >
                         {o.name}
                       </Link>
