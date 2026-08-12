@@ -18,6 +18,7 @@ import type {
   AppNotification,
   Availability,
   BankStatement,
+  Client,
   CommissionRequest,
   CustomerFeedback,
   Database,
@@ -138,7 +139,7 @@ export async function getDatabase(): Promise<Database> {
  * the roles that need them (see DataProvider).
  */
 export async function getPrimaryData(): Promise<Omit<Database, "statements">> {
-  const [users, dsrs, orders, commissions, routes, availability, dsrVisits, customerFeedback] = await Promise.all([
+  const [users, dsrs, orders, commissions, routes, availability, dsrVisits, customerFeedback, clients] = await Promise.all([
     fetchCollection<User>("users"),
     fetchCollection<DSR>("dsrs"),
     fetchCollection<Order>("orders"),
@@ -147,8 +148,9 @@ export async function getPrimaryData(): Promise<Omit<Database, "statements">> {
     fetchCollection<Availability>("availability"),
     fetchCollection<DsrVisit>("dsr_visits"),
     fetchCollection<CustomerFeedback>("customer_feedback"),
+    fetchCollection<Client>("clients"),
   ]);
-  return { users, dsrs, orders, commissions, routes, availability, dsrVisits, customerFeedback };
+  return { users, dsrs, orders, commissions, routes, availability, dsrVisits, customerFeedback, clients };
 }
 
 /**
@@ -167,6 +169,7 @@ export async function replaceDatabase(db: Database): Promise<void> {
     saveCollection("availability", "id", db.availability ?? [], (a) => a.id, true),
     saveCollection("dsr_visits", "id", db.dsrVisits ?? [], (v) => v.id, true),
     saveCollection("customer_feedback", "id", db.customerFeedback ?? [], (f) => f.id, true),
+    saveCollection("clients", "id", db.clients ?? [], (c) => c.id, true),
   ]);
 }
 
@@ -346,6 +349,10 @@ async function deleteOne(table: string, pk: string, key: string): Promise<void> 
 
 export const saveOrderOne = (o: Order) => upsertOne("orders", "id", o.id, o);
 export const saveStatementOne = (s: BankStatement) => upsertOne("statements", "id", s.id, s);
+/** Client (customer) master records — see lib/clients.ts for the merge. */
+export const saveClients = (c: Client[]) => saveCollection("clients", "id", c, (x) => x.id);
+export const saveClientOne = (c: Client) => upsertOne("clients", "id", c.id, c);
+export const deleteClientOne = (id: string) => deleteOne("clients", "id", id);
 /** Explicit single-row deletes — the only way the app removes a row. */
 export const deleteStatementOne = (id: string) => deleteOne("statements", "id", id);
 export const deleteRouteOne = (id: string) => deleteOne("routes", "id", id);

@@ -480,6 +480,36 @@ export interface BankStatement {
 }
 
 // ---------------------------------------------------------------------------
+// Client (customer) master record
+// ---------------------------------------------------------------------------
+
+/**
+ * A standalone customer record. Clients are still primarily DERIVED from orders
+ * (see lib/clients.ts), but this optional table lets staff add or correct a
+ * client's contact details independently of any order, and hold a client who
+ * hasn't ordered yet. A record is merged onto the order-derived client by
+ * matching key (normalized phone, else name slug), so it never creates a
+ * duplicate — financials always come from the orders, contact info from here.
+ */
+export interface Client {
+  id: string; // client key: normalized phone, else `name:<slug>` (see clientRecordKey)
+  name: string;
+  phone: string;
+  district?: string;
+  sector?: string;
+  /** Visibility scope. Undefined = both products (Admin/Accountant-created). */
+  product?: Product;
+  /** Zone, for zone-scoped roles (Tetra Zone Manager). */
+  zone?: Zone;
+  note?: string;
+  /** Manual active flag — used for the Active/Inactive tabs when the client has
+   *  no live orders. Defaults to true. */
+  active?: boolean;
+  by?: string; // creator email
+  on?: string; // ISO created timestamp
+}
+
+// ---------------------------------------------------------------------------
 // Full database shape (used for backup / restore)
 // ---------------------------------------------------------------------------
 
@@ -494,6 +524,8 @@ export interface Database {
   dsrVisits: DsrVisit[];
   /** Optional so older backups (without it) still restore cleanly. */
   customerFeedback?: CustomerFeedback[];
+  /** Optional so older backups (without it) still restore cleanly. */
+  clients?: Client[];
 }
 
 // ---------------------------------------------------------------------------

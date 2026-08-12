@@ -19,6 +19,7 @@ import type {
   AppNotification,
   Availability,
   BankStatement,
+  Client,
   CommissionRequest,
   CustomerFeedback,
   Database,
@@ -46,6 +47,9 @@ import {
   saveCustomerFeedbackOne,
   saveDSRs,
   saveDSROne,
+  saveClients,
+  saveClientOne,
+  deleteClientOne,
   saveOrders,
   saveOrderOne,
   saveStatementOne,
@@ -72,6 +76,7 @@ interface DataContextValue {
   statements: BankStatement[];
   routes: Route[];
   availability: Availability[];
+  clients: Client[];
 
   /** In-app notifications for the signed-in user (live via Realtime). */
   notifications: AppNotification[];
@@ -114,6 +119,11 @@ interface DataContextValue {
   customerFeedback: CustomerFeedback[];
   upsertCustomerFeedback: (f: CustomerFeedback) => Promise<void>;
 
+  setClients: (c: Client[]) => Promise<void>;
+  upsertClient: (c: Client) => Promise<void>;
+  /** Remove a standalone client record (the order-derived client remains). */
+  removeClient: (id: string) => Promise<void>;
+
   /** Full replace (backup restore). */
   replaceAll: (db: Database) => Promise<void>;
 
@@ -132,6 +142,7 @@ const EMPTY: Database = {
   availability: [],
   dsrVisits: [],
   customerFeedback: [],
+  clients: [],
 };
 
 // Realtime table name → the key it maps to in the in-memory mirror. Only these
@@ -146,6 +157,7 @@ const SALES_TABLE_TO_KEY: Record<string, keyof Database> = {
   availability: "availability",
   dsr_visits: "dsrVisits",
   customer_feedback: "customerFeedback",
+  clients: "clients",
 };
 
 /** Only these roles have a page that reads bank statements (the verification
@@ -193,6 +205,7 @@ function writeCachedData(email: string, db: Database): void {
     availability: db.availability ?? [],
     dsrVisits: db.dsrVisits ?? [],
     customerFeedback: db.customerFeedback ?? [],
+    clients: db.clients ?? [],
   };
   // Never overwrite a good cache with an empty pre-load snapshot.
   if (Object.values(data).every((arr) => Array.isArray(arr) && arr.length === 0)) return;
@@ -471,6 +484,21 @@ export function DataProvider({ children }: { children: ReactNode }) {
     customerFeedback: db.customerFeedback ?? [],
     upsertCustomerFeedback: (f) =>
       applyOne("customerFeedback", f, (x) => x.id === f.id, () => saveCustomerFeedbackOne(f)),
+
+    clients: db.clients ?? [],
+    setClients: (c) => {
+      setDb((prev) => ({ ...prev, clients: c }));
+      return saveClients(c).catch((err) => {
+        console.error("Failed to save clients:", err);
+        throw err;
+      });
+    },
+    upsertClient: (c) =>
+      applyOne("clients", c, (x) => x.id === c.id, () => saveClientOne(c)),
+    removeClient: async (id) => {
+      setDb((prev) => ({ ...prev, clients: (prev.clients ?? []).filter((c) => c.id !== id) }));
+      await deleteClientOne(id);
+    },
 
     replaceAll: async (next) => {
       setDb(next);

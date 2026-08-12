@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Kpi } from "@/components/dashboard/Kpi";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
@@ -30,9 +29,12 @@ export default function ClientDetailPage() {
   const params = useParams<{ id: string }>();
   const id = decodeURIComponent(params.id);
   const { user } = useAuth();
-  const { orders, routes } = useData();
+  const { orders, routes, clients } = useData();
 
-  const client = useMemo(() => (user ? clientById(visibleOrders(orders, user), id) : undefined), [orders, user, id]);
+  const client = useMemo(
+    () => (user ? clientById(visibleOrders(orders, user), id, clients) : undefined),
+    [orders, user, id, clients]
+  );
   const routeName = (routeId?: string) => routes.find((r) => r.id === routeId)?.name;
 
   if (!user) return null;

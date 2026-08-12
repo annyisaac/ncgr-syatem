@@ -1,11 +1,15 @@
 /**
  * Client records derived from orders, keyed by normalized phone number.
- * There is no separate "clients" table — a client is the sum of their orders,
- * so records rebuild from the orders collection and stay automatically in sync.
+ * A client is primarily the sum of their orders, so records rebuild from the
+ * orders collection and stay automatically in sync. A standalone `Client` row
+ * (the optional clients table) is merged on top by matching key, so staff can
+ * hold a client who hasn't ordered yet or correct contact details — without
+ * ever creating a duplicate. Financials always come from the orders; contact
+ * info prefers the standalone record when present.
  */
 
 import { normalizePhone } from "./format";
-import { balance, paidAmount, toDeliver, type Order, type Payment } from "./types";
+import { balance, paidAmount, toDeliver, type Client, type Order, type Payment, type Product, type Zone } from "./types";
 
 export interface ClientRecord {
   id: string; // url-safe key (normalized phone, else name slug)
@@ -16,10 +20,17 @@ export interface ClientRecord {
   chicks: number; // total chicks ordered
   toDeliver: number; // total chicks to deliver (incl. free + comp)
   paid: number; // total paid across all orders
-  balance: number; // total outstanding
+  balance: number; // net outstanding — positive = owing, negative = credit (prepaid)
   districts: string[];
   sectors: string[];
   lastOrder: string; // most recent delivery date
+  /** Has at least one live (non-closed) order, or a standalone record marked active. */
+  active: boolean;
+  /** The backing clients-table row, when this client has one (drives edit/delete). */
+  record?: Client;
+  /** Visibility scope carried from the backing record (for cross-product roles). */
+  product?: Product;
+  zone?: Zone;
 }
 
 /** The url-safe client key for an order (normalized phone, else a name slug). */
@@ -29,17 +40,26 @@ export function clientKey(o: Order): string {
 }
 const keyOf = clientKey;
 
+/** The same key computed from a standalone client record's current fields. */
+export function clientRecordKey(c: { phone?: string; name: string }): string {
+  const p = normalizePhone(c.phone ?? "");
+  return p || `name:${c.name.trim().toLowerCase()}`;
+}
+
 const isClosed = (o: Order) => o.status === "refunded" || o.status === "rejected";
 
-export function buildClients(orders: Order[]): ClientRecord[] {
+export function buildClients(orders: Order[], clients: Client[] = []): ClientRecord[] {
   const map = new Map<string, ClientRecord>();
+  const blank = (id: string, name: string, phone: string): ClientRecord => ({
+    id, name, phone, orders: [], ordersCount: 0,
+    chicks: 0, toDeliver: 0, paid: 0, balance: 0, districts: [], sectors: [], lastOrder: "",
+    active: false,
+  });
+
   for (const o of orders) {
     const id = keyOf(o);
     if (!id) continue;
-    const c = map.get(id) ?? {
-      id, name: o.name, phone: o.phone, orders: [], ordersCount: 0,
-      chicks: 0, toDeliver: 0, paid: 0, balance: 0, districts: [], sectors: [], lastOrder: "",
-    };
+    const c = map.get(id) ?? blank(id, o.name, o.phone);
     c.orders.push(o);
     c.ordersCount += 1;
     c.name = o.name; // keep latest spelling
@@ -47,7 +67,8 @@ export function buildClients(orders: Order[]): ClientRecord[] {
     if (!isClosed(o)) {
       c.chicks += o.chicks;
       c.toDeliver += toDeliver(o);
-      c.balance += Math.max(0, balance(o));
+      c.balance += balance(o); // net: a prepaid order (negative) reduces what's owed
+      c.active = true; // a live order makes the client active
     }
     c.paid += paidAmount(o);
     if (o.district && !c.districts.includes(o.district)) c.districts.push(o.district);
@@ -56,11 +77,30 @@ export function buildClients(orders: Order[]): ClientRecord[] {
     if (o.date > c.lastOrder) c.lastOrder = o.date;
     map.set(id, c);
   }
+
+  // Overlay standalone client records: attach to the matching derived client, or
+  // add a record-only client (zero financials) when there's no order for them.
+  for (const rec of clients) {
+    const id = clientRecordKey(rec);
+    if (!id) continue;
+    const c = map.get(id) ?? blank(id, rec.name, rec.phone);
+    c.record = rec;
+    if (rec.name.trim()) c.name = rec.name; // edited master name wins
+    if (rec.phone?.trim()) c.phone = rec.phone;
+    if (rec.district && !c.districts.includes(rec.district)) c.districts.unshift(rec.district);
+    if (rec.sector && !c.sectors.includes(rec.sector)) c.sectors.unshift(rec.sector);
+    c.product = rec.product;
+    c.zone = rec.zone;
+    // Active if a live order exists OR the record is flagged active (default true).
+    c.active = c.active || (rec.active ?? true);
+    map.set(id, c);
+  }
+
   return [...map.values()].sort((a, b) => (a.lastOrder < b.lastOrder ? 1 : -1));
 }
 
-export function clientById(orders: Order[], id: string): ClientRecord | undefined {
-  return buildClients(orders).find((c) => c.id === id);
+export function clientById(orders: Order[], id: string, clients: Client[] = []): ClientRecord | undefined {
+  return buildClients(orders, clients).find((c) => c.id === id);
 }
 
 /** All payments across a client's orders, newest first, tagged with the order. */

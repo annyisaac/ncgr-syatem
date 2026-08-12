@@ -5,7 +5,7 @@
  * `navForRole` returns the ordered nav items for a role.
  */
 
-import type { Order, Product, Role, User } from "./types";
+import type { Order, Product, Role, User, Zone } from "./types";
 import { HATCHERY_ORDER_ROLES } from "./types";
 
 /**
@@ -66,6 +66,26 @@ export function canSee(order: Order, user: User): boolean {
 
 export function visibleOrders(orders: Order[], user: User): Order[] {
   return orders.filter((o) => canSee(o, user));
+}
+
+/**
+ * Whether a standalone client record (a client with no visible orders) may be
+ * seen by this user. Mirrors `canSee`: cross-product roles see all; a
+ * product-scoped role sees only its product, and a Tetra Zone Manager only its
+ * own zone. Clients derived from orders are already gated by `visibleOrders`.
+ */
+export function clientVisible(client: { product?: Product; zone?: Zone }, user: User): boolean {
+  const p = productForRole(user.role);
+  if (!p) return true; // Admin, Accountant, cross-product roles → all clients
+  if (client.product && client.product !== p) return false;
+  if (user.role === "Tetra Zone Manager" && client.zone && client.zone !== user.zone) return false;
+  return true;
+}
+
+/** Roles allowed to add or edit a client record — the same roles that can open
+ *  the Clients page. */
+export function canWriteClients(role: Role): boolean {
+  return canAccess(role, "/clients");
 }
 
 // ---------------------------------------------------------------------------
