@@ -126,6 +126,29 @@ export default function VerificationPage() {
     [myOrders]
   );
 
+  // Transaction references that appear on more than one visible order — a
+  // "doubled" payment. A checker can reject these on the spot (no Admin needed);
+  // voiding notifies the Admin automatically.
+  const doubledRefs = useMemo(() => {
+    const all = user ? visibleOrders(orders, user) : [];
+    const byRef = new Map<string, Set<string>>();
+    for (const o of all) {
+      if (o.status === "rejected" || o.status === "refunded") continue;
+      for (const p of o.payments) {
+        if (p.voided) continue;
+        const r = normRef(p.ref);
+        if (!r || r.length < 8 || r === "imported") continue;
+        let s = byRef.get(r);
+        if (!s) { s = new Set(); byRef.set(r, s); }
+        s.add(o.id);
+      }
+    }
+    const out = new Set<string>();
+    for (const [r, s] of byRef) if (s.size > 1) out.add(r);
+    return out;
+  }, [orders, user]);
+  const isDoubled = (p: Payment) => !p.voided && doubledRefs.has(normRef(p.ref));
+
   const payStatus = (p: Payment) => p.voided ? "rejected" : p.verified ? "checked" : p.pendingApproval ? "awaiting" : p.returnedForFix ? "returned" : "unverified";
   const shownPayRows = useMemo(() => {
     return payRows.filter(({ o, p }) => {
@@ -410,6 +433,20 @@ export default function VerificationPage() {
       { verified: false, voided: true, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" },
       `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatRWF(p0.amt)} removed from paid`);
     toast("Payment rejected and voided — no longer counts as paid.", "info");
+  }
+
+  // Any checker (or the Admin) can reject a DOUBLED payment on the spot — no
+  // Admin approval needed. Voiding it fires the "Payment rejected" notification,
+  // which reaches every Admin (they're always in the order audience).
+  async function rejectDuplicate(order: Order, payIndex: number) {
+    const p0 = order.payments[payIndex];
+    if (typeof window !== "undefined" && !window.confirm(
+      `Reject this DUPLICATE payment?\n\n${order.name} · ${formatRWF(p0.amt)} · ref ${p0.ref}\n\nThe payment is voided (stops counting as paid) and the Admin is notified.`
+    )) return;
+    const ok = await patchPayment(order, payIndex,
+      { verified: false, voided: true, verifiedBy: undefined, verifiedOn: undefined, pendingApproval: undefined, returnedForFix: undefined, flag: `Rejected as duplicate by ${user!.name}` },
+      `Payment (${p0.ref}) rejected as a DUPLICATE reference by ${user!.name} — ${formatRWF(p0.amt)} voided`);
+    if (ok) toast("Duplicate payment rejected — the Admin has been notified.");
   }
 
   // --- Bulk admin actions -------------------------------------------------
@@ -791,26 +828,31 @@ export default function VerificationPage() {
                     {(() => { const m = payMatch(o); return <Pill tone={m.tone === "green" ? "fulfilled" : m.tone === "blue" ? "info" : "gold"}>{m.label}</Pill>; })()}
                   </Td>
                   <Td>
-                    {p.voided ? (
-                      <span className="text-xs text-muted">—</span>
-                    ) : p.verified ? (
-                      <span className="text-xs text-muted">—</span>
-                    ) : p.pendingApproval ? (
-                      isAdmin ? (
-                        <div className="flex gap-2">
-                          <Button size="sm" onClick={() => setApproveFor({ order: o, payIndex: i })}>Approve</Button>
-                          <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button>
-                        </div>
+                    <div className="flex items-center gap-2">
+                      {isDoubled(p) && (
+                        <Button size="sm" variant="danger" onClick={() => void rejectDuplicate(o, i)}>Reject dup</Button>
+                      )}
+                      {p.voided ? (
+                        <span className="text-xs text-muted">—</span>
+                      ) : p.verified ? (
+                        isDoubled(p) ? null : <span className="text-xs text-muted">—</span>
+                      ) : p.pendingApproval ? (
+                        isAdmin ? (
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => setApproveFor({ order: o, payIndex: i })}>Approve</Button>
+                            <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button>
+                          </div>
+                        ) : (
+                          <span className="text-xs text-muted">with admin</span>
+                        )
+                      ) : p.returnedForFix ? (
+                        <span className="text-xs text-muted">with seller</span>
                       ) : (
-                        <span className="text-xs text-muted">with admin</span>
-                      )
-                    ) : p.returnedForFix ? (
-                      <span className="text-xs text-muted">with seller</span>
-                    ) : (
-                      <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
-                        Verify manually
-                      </Button>
-                    )}
+                        <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
+                          Verify manually
+                        </Button>
+                      )}
+                    </div>
                   </Td>
                 </tr>
               ))
