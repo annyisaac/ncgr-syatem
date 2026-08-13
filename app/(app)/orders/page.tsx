@@ -29,6 +29,7 @@ import {
   isFullyPaid,
   orderTotal,
   paidAmount,
+  settledAmount,
   toDeliver,
 } from "@/lib/types";
 import { formatRWF } from "@/lib/config";
@@ -824,13 +825,13 @@ function OrdersInner() {
                         {formatRWF(orderTotal(o))}
                       </div>
                       <div className="text-xs text-ink/50">
-                        Paid {paidAmount(o).toLocaleString()} · Bal{" "}
+                        Paid {settledAmount(o).toLocaleString()} · Bal{" "}
                         <span className={balance(o) > 0 ? "font-semibold text-red" : ""}>
                           {balance(o).toLocaleString()}
                         </span>
                       </div>
                       {!!o.creditApplied && (
-                        <div className="text-xs text-green">Credit applied {o.creditApplied.toLocaleString()}</div>
+                        <div className="text-xs text-green">incl. {o.creditApplied.toLocaleString()} credit</div>
                       )}
                     </Td>
                     <Td>

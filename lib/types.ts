@@ -199,6 +199,9 @@ export interface Payment {
   comment?: string; // required for manual verification
   checkedRef?: string; // the reference the checker actually verified
   flag?: string; // e.g. "Amount corrected from statement", "Duplicate ref"
+  /** A display-only line representing applied customer credit (already-verified
+   *  money). Never persisted on the order — synthesised for payment lists. */
+  fromCredit?: boolean;
   /**
    * A checker tried to verify but one or more transaction ids were not in any
    * bank statement — the payment is held for the Admin's final decision.
@@ -576,6 +579,14 @@ export function orderTotal(
 export function paidAmount(order: Pick<Order, "payments">): number {
   // Voided (Admin-rejected) payments don't count toward what's been paid.
   return order.payments.reduce((sum, p) => (p.voided ? sum : sum + p.amt), 0);
+}
+
+/** Total settled against an order — cash paid PLUS applied customer credit. Used
+ *  for "Paid" displays so credit shows as paid; the balance already counts it. */
+export function settledAmount(
+  order: Pick<Order, "payments"> & { creditApplied?: number }
+): number {
+  return paidAmount(order) + (order.creditApplied ?? 0);
 }
 
 /** Outstanding cash on this order. Applied customer credit counts toward it,

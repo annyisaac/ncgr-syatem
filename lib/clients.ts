@@ -125,9 +125,28 @@ export function nextClientCode(clients: Client[]): string {
   return `C-${String(max + 1).padStart(6, "0")}`;
 }
 
-/** All payments across a client's orders, newest first, tagged with the order. */
+/** All payments across a client's orders, newest first, tagged with the order.
+ *  Applied customer credit is shown as a verified "Customer credit" line so it
+ *  reads as paid (it's already-verified money). */
 export function clientPayments(client: ClientRecord): Array<Payment & { orderName: string; product: string }> {
   return client.orders
-    .flatMap((o) => o.payments.map((p) => ({ ...p, orderName: o.name, product: o.product })))
+    .flatMap((o) => {
+      const rows: Array<Payment & { orderName: string; product: string }> = o.payments.map((p) => ({
+        ...p, orderName: o.name, product: o.product,
+      }));
+      if ((o.creditApplied ?? 0) > 0) {
+        rows.push({
+          amt: o.creditApplied as number,
+          ref: "Customer credit",
+          on: o.createdAt,
+          by: "",
+          verified: true,
+          fromCredit: true,
+          orderName: o.name,
+          product: o.product,
+        });
+      }
+      return rows;
+    })
     .sort((a, b) => (a.on < b.on ? 1 : -1));
 }

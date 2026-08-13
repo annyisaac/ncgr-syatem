@@ -21,7 +21,7 @@ import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
 import { clientById, clientPayments, nextClientCode } from "@/lib/clients";
 import { clientStatementPDF } from "@/lib/reports";
-import { balance, paidAmount, orderTotal, toDeliver, type Client, type CreditRefund, type Order } from "@/lib/types";
+import { balance, settledAmount, orderTotal, toDeliver, type Client, type CreditRefund, type Order } from "@/lib/types";
 
 function deliveryStatus(o: Order, routeName?: string): { label: string; tone: "green" | "gold" | "info" | "neutral" | "red" } {
   if (o.status === "refunded") return { label: "Refunded", tone: "red" };
@@ -80,6 +80,7 @@ export default function ClientDetailPage() {
   const payments = clientPayments(client);
   const ordersSorted = client.orders.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const totalOrdered = client.orders.reduce((s, o) => s + orderTotal(o), 0);
+  const settledPaid = client.orders.reduce((s, o) => s + settledAmount(o), 0); // cash + applied credit
   const outstanding = Math.max(0, client.balance);
   const overpaid = Math.max(0, -client.balance);
   const refundedTotal = (client.record?.creditRefunds ?? []).reduce((s, r) => s + (r.amt || 0), 0);
@@ -198,7 +199,7 @@ export default function ClientDetailPage() {
         <Kpi icon="chicks" tone="blue" label="Chicks ordered" value={client.chicks.toLocaleString()} sub="Total chicks ordered" />
         <Kpi icon="truck" tone="purple" label="To deliver" value={client.toDeliver.toLocaleString()} sub="Chicks to be delivered" />
         <Kpi icon="money" tone="amber" label="Order value" value={formatRWF(totalOrdered)} sub="Total order value" />
-        <Kpi icon="money" tone="green" label="Paid" value={formatRWF(client.paid)} sub="Total paid" />
+        <Kpi icon="money" tone="green" label="Paid" value={formatRWF(settledPaid)} sub="Cash + credit" />
         <Kpi icon="alert" tone={outstanding > 0 ? "red" : "green"} label="Balance" value={formatRWF(outstanding)} sub="Outstanding balance" />
       </div>
 
@@ -224,7 +225,7 @@ export default function ClientDetailPage() {
                       <Td className="text-right">{o.chicks.toLocaleString()}</Td>
                       <Td className="text-right">{toDeliver(o).toLocaleString()}</Td>
                       <Td className="text-right">{formatRWF(orderTotal(o))}</Td>
-                      <Td className="text-right">{formatRWF(paidAmount(o))}</Td>
+                      <Td className="text-right">{formatRWF(settledAmount(o))}</Td>
                       <Td className={`text-right ${balance(o) > 0 ? "font-semibold text-red" : ""}`}>{formatRWF(balance(o))}</Td>
                       <Td><Pill tone={st.tone}>{st.label}</Pill></Td>
                     </tr>
@@ -256,7 +257,7 @@ export default function ClientDetailPage() {
             </TableWrap>
             <div className="mt-4 grid grid-cols-2 gap-3 rounded-xl bg-cream px-4 py-3 md:grid-cols-4">
               <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Total order value</p><p className="mt-0.5 font-bold text-ink">{formatRWF(totalOrdered)}</p></div>
-              <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Total paid</p><p className="mt-0.5 font-bold text-green">{formatRWF(client.paid)}</p></div>
+              <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Total paid</p><p className="mt-0.5 font-bold text-green">{formatRWF(settledPaid)}</p></div>
               <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Balance</p><p className={`mt-0.5 font-bold ${outstanding > 0 ? "text-red" : "text-ink"}`}>{formatRWF(outstanding)}</p></div>
               <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Credit available</p><p className="mt-0.5 font-bold text-green">{formatRWF(availableCredit)}</p></div>
             </div>

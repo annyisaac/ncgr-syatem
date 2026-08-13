@@ -12,6 +12,7 @@ import {
   extra2,
   orderTotal,
   paidAmount,
+  settledAmount,
   toDeliver,
   type CustomerFeedback,
   type Database,
@@ -1101,6 +1102,7 @@ export async function exportClientsExcel(
 export async function clientStatementPDF(client: ClientRecord): Promise<void> {
   const orders = client.orders.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
   const totalOrdered = orders.reduce((s, o) => s + orderTotal(o), 0);
+  const settledPaid = orders.reduce((s, o) => s + settledAmount(o), 0); // cash + applied credit
   const outstanding = Math.max(0, client.balance);
   const overpaid = Math.max(0, -client.balance);
   const location = [client.districts.join(", "), client.sectors.join(", ")].filter(Boolean).join("  ·  ");
@@ -1115,7 +1117,7 @@ export async function clientStatementPDF(client: ClientRecord): Promise<void> {
       `Client: ${client.name}`,
       `Phone: ${client.phone || "—"}${location ? `   ·   ${location}` : ""}`,
       `Orders: ${client.ordersCount}   ·   Chicks ordered: ${client.chicks.toLocaleString()}   ·   To deliver: ${client.toDeliver.toLocaleString()}`,
-      `Order value: ${formatRWF(totalOrdered)}   ·   Paid: ${formatRWF(client.paid)}   ·   ${balanceLine}`,
+      `Order value: ${formatRWF(totalOrdered)}   ·   Paid: ${formatRWF(settledPaid)}   ·   ${balanceLine}`,
     ],
     "portrait"
   );
@@ -1124,10 +1126,10 @@ export async function clientStatementPDF(client: ClientRecord): Promise<void> {
     startY,
     head: [["Delivery date", "Product", "Chicks", "To deliver", "Total", "Paid", "Balance", "Status"]],
     body: orders.length
-      ? orders.map((o) => [formatDate(o.date), o.product, o.chicks, toDeliver(o), orderTotal(o), paidAmount(o), balance(o), o.status])
+      ? orders.map((o) => [formatDate(o.date), o.product, o.chicks, toDeliver(o), orderTotal(o), settledAmount(o), balance(o), o.status])
       : [["—", "No orders", "", "", "", "", "", ""]],
     foot: orders.length
-      ? [["Totals", "", orders.reduce((s, o) => s + o.chicks, 0), orders.reduce((s, o) => s + toDeliver(o), 0), totalOrdered, client.paid, client.balance, ""]]
+      ? [["Totals", "", orders.reduce((s, o) => s + o.chicks, 0), orders.reduce((s, o) => s + toDeliver(o), 0), totalOrdered, settledPaid, client.balance, ""]]
       : undefined,
     styles: { fontSize: 8, cellPadding: 3 },
     headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
@@ -1136,7 +1138,13 @@ export async function clientStatementPDF(client: ClientRecord): Promise<void> {
   });
 
   const payments = orders
-    .flatMap((o) => o.payments.map((p) => ({ ...p, product: o.product })))
+    .flatMap((o) => {
+      const rows = o.payments.map((p) => ({ ...p, product: o.product }));
+      if ((o.creditApplied ?? 0) > 0) {
+        rows.push({ amt: o.creditApplied as number, ref: "Customer credit", on: o.createdAt, by: "", verified: true, fromCredit: true, product: o.product });
+      }
+      return rows;
+    })
     .sort((a, b) => (a.on < b.on ? 1 : -1));
 
   autoTable(doc, {
