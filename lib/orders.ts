@@ -11,7 +11,7 @@
  *  6. Never deleted — only rescheduled / edited / refunded
  */
 
-import { nowISO } from "./format";
+import { nowISO, todayISO } from "./format";
 import {
   allVerified,
   balance,
@@ -122,6 +122,12 @@ export function isClosed(order: Order): boolean {
   return order.status === "refunded" || order.status === "rejected";
 }
 
+/** True once an order's delivery date has arrived (today or earlier). A delivery
+ *  can't be recorded before its scheduled date. */
+export function deliveryDateReached(order: Pick<Order, "date">): boolean {
+  return !!order.date && order.date <= todayISO();
+}
+
 export type Stage = { label: string; tone: "green" | "gold" | "info" | "neutral" | "red" };
 
 /**
@@ -154,6 +160,7 @@ export function canAddPayment(order: Order): string | null {
 export function canFulfill(order: Order): string | null {
   if (order.deliverOk) return "Already delivered.";
   if (isClosed(order)) return `Order was ${order.status}.`;
+  if (!deliveryDateReached(order)) return `Can't deliver before the delivery date (${order.date}).`;
   if (!order.confirmedOk) return "Confirm the order first.";
   if (!allVerified(order)) return "Payments are not all checker-verified.";
   if (!isFullyPaid(order)) return "Order is not fully paid.";

@@ -124,6 +124,7 @@ export default function DriverDeliveryPage() {
       setFlash(
         res.error === "ALREADY_DELIVERED" ? "That stop was already delivered."
           : res.error === "NOT_ALLOCATED" ? "Not ready — the hatchery hasn't allocated this order yet."
+          : res.error === "DATE_NOT_REACHED" ? "Too early — this order's delivery date hasn't arrived yet."
           : "Could not save — try again."
       );
       setTimeout(() => setFlash(null), 3500);

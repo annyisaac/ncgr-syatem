@@ -20,7 +20,7 @@ import { smartMatch } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
 import { ensureRouteLink, getDeliveryProof, listDeliveryLinks, type DeliveryProof } from "@/lib/db";
 import { nowISO, formatDate } from "@/lib/format";
-import { canAllocate, fulfillOrder, rescheduleOrder, splitOrder, withHistory } from "@/lib/orders";
+import { canAllocate, deliveryDateReached, fulfillOrder, rescheduleOrder, splitOrder, withHistory } from "@/lib/orders";
 import { deliveryPaymentPDF, manifestPDF } from "@/lib/reports";
 import { listDrivers, listVehicles, type Driver, type Vehicle } from "@/lib/logistics";
 import { allVerified, balance, paidAmount, toDeliver, type Order, type Product, type Route } from "@/lib/types";
@@ -273,6 +273,7 @@ export default function DayPlanPage() {
 
   function markDelivered(o: Order) {
     if (!o.allocatedOk) return toast("Waiting for hatchery chick allocation — can't mark delivered.", "info");
+    if (!deliveryDateReached(o)) return toast(`Can't mark delivered before the delivery date (${o.date}).`, "info");
     const routeName = routes.find((r) => r.id === o.routeId)?.name ?? "route";
     upsertOrder(fulfillOrder(o, user!, `Delivered on ${routeName}`));
     toast(`${o.name} marked delivered.`);

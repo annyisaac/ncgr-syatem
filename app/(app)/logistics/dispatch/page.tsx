@@ -13,7 +13,7 @@ import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { StatTile } from "@/components/dashboard/DashKit";
-import { fulfillOrder, shortDeliver } from "@/lib/orders";
+import { deliveryDateReached, fulfillOrder, shortDeliver } from "@/lib/orders";
 import { toDeliver, type Order } from "@/lib/types";
 import { formatDate, nowISO, todayISO } from "@/lib/format";
 import { getSupabase } from "@/lib/supabase";
@@ -87,8 +87,10 @@ export default function DispatchPage() {
       if (!o || isDelivered(o) || isClosed(o)) continue;
       const accepted = Number(st.delivered) || 0;
       if (st.outcome === "delivered" && accepted > 0) {
-        // Never record a delivery before the hatchery has allocated the chicks.
+        // Never record a delivery before the hatchery has allocated the chicks,
+        // nor before the order's scheduled delivery date.
         if (!o.allocatedOk) { toast(`${o.name}: not allocated at the hatchery yet — delivery not recorded.`, "info"); continue; }
+        if (!deliveryDateReached(o)) { toast(`${o.name}: delivery date (${o.date}) not reached — delivery not recorded.`, "info"); continue; }
         if (accepted >= o.chicks) { upsertOrder(fulfillOrder(o, user!, `Delivered on ${d.ref}`)); }
         else { const { order, backorder } = shortDeliver(o, accepted, addDays(d.date, 7), user!, orders, newId); upsertOrder(order); upsertOrder(backorder); }
       } else if (st.outcome === "failed") {

@@ -19,7 +19,7 @@ import { visibleOrders } from "@/lib/permissions";
 import { smartMatch } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
 import { nowISO, todayISO, formatDate, formatDateTime } from "@/lib/format";
-import { withHistory, fulfillOrder, rejectOrder } from "@/lib/orders";
+import { withHistory, deliveryDateReached, fulfillOrder, rejectOrder } from "@/lib/orders";
 import { manifestPDF } from "@/lib/reports";
 import { shareRouteLink, listDeliveryLinks } from "@/lib/db";
 import type { Allocation } from "@/lib/hatchery/types";
@@ -293,6 +293,7 @@ export default function CoordinationPage() {
 
   function markDelivered(o: Order) {
     if (!o.allocatedOk) return toast("Mark it ready (fully allocated) first.", "info");
+    if (!deliveryDateReached(o)) return toast(`Can't mark delivered before the delivery date (${o.date}).`, "info");
     // Approve the order's allocations and fulfil the order.
     allocations.filter((a) => a.orderId === o.id && a.status !== "cancelled" && a.status !== "approved")
       .forEach((a) => upsertAllocation({ ...a, status: "approved", approvedBy: user!.email, history: [...a.history, `${nowISO()} — Delivered (by ${user!.name})`] }));
