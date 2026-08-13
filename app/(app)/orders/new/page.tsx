@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
@@ -33,6 +33,13 @@ export default function NewOrderPage() {
   const { toast } = useToast();
   const router = useRouter();
 
+  // Opened from a customer (e.g. the client detail "Create new order") — prefill
+  // their identity so the seller doesn't re-type what we already know.
+  const search = useSearchParams();
+  const initialPhone = search.get("phone") ?? "";
+  const initialName = search.get("name") ?? "";
+  const initialProduct = search.get("product") ?? "";
+
   // Roles allowed to create orders.
   const roleProduct: Product | undefined =
     user?.role === "Tetra Zone Manager" || user?.role === "Tetra Payment Checker"
@@ -44,7 +51,8 @@ export default function NewOrderPage() {
   const canCreate = isAdmin || roleProduct !== undefined;
 
   const [product, setProduct] = useState<Product | "">(
-    roleProduct ?? (isAdmin ? "" : "")
+    roleProduct ??
+      (initialProduct === "Ross 308" || initialProduct === "Tetra Super Harco" ? (initialProduct as Product) : "")
   );
   const isTetra = product === "Tetra Super Harco";
 
@@ -53,10 +61,10 @@ export default function NewOrderPage() {
   const [dsrId, setDsrId] = useState("");
   const [rossSource, setRossSource] = useState<"direct" | "dsr">("direct");
   const [sector, setSector] = useState("");
-  const [name, setName] = useState("");
+  const [name, setName] = useState(initialName);
   const [clientDistrict, setClientDistrict] = useState("");
   const [clientSector, setClientSector] = useState("");
-  const [phone, setPhone] = useState("");
+  const [phone, setPhone] = useState(initialPhone);
   const [chicks, setChicks] = useState("");
   const [comp, setComp] = useState("0");
   const [price, setPrice] = useState("");
@@ -149,8 +157,7 @@ export default function NewOrderPage() {
   // fields — product, chicks, compensation, unit price, date and payment — are
   // always left for fresh entry.
   const filledCustomerRef = useRef<string | null>(null);
-  function onPhoneChange(value: string) {
-    setPhone(value);
+  function prefillFromCustomer(value: string) {
     const key = normalizePhone(value);
     if (key.length < 6) { filledCustomerRef.current = null; return; }
     const theirs = orders
@@ -185,6 +192,23 @@ export default function NewOrderPage() {
       || "";
     if (cd && cs && sectorsOfDistrict(cd).includes(cs)) setClientSector(cs);
   }
+  function onPhoneChange(value: string) {
+    setPhone(value);
+    prefillFromCustomer(value);
+  }
+
+  // Opened from a customer link (?phone=…): prefill their identity once the
+  // orders/clients are loaded. One-shot, so it never overrides later edits.
+  const prefilledFromQuery = useRef(false);
+  useEffect(() => {
+    if (prefilledFromQuery.current) return;
+    if (initialPhone && normalizePhone(initialPhone).length >= 6 && orders.length > 0) {
+      prefilledFromQuery.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      prefillFromCustomer(initialPhone);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orders, clients]);
 
   // Any credit this customer is carrying — auto-applied to this order on save.
   const custCredit = useMemo(() => {

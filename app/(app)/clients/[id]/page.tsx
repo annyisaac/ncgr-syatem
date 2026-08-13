@@ -101,6 +101,12 @@ export default function ClientDetailPage() {
     return best || "—";
   })();
 
+  // Open the new-order form already knowing this customer (name/phone/district/
+  // sector prefill on the other side).
+  const newOrderHref =
+    `/orders/new?phone=${encodeURIComponent(client.phone)}&name=${encodeURIComponent(client.name)}` +
+    (preferredProduct === "Ross 308" || preferredProduct === "Tetra Super Harco" ? `&product=${encodeURIComponent(preferredProduct)}` : "");
+
   function openEdit() {
     if (!client || !user) return;
     const rec = client.record;
@@ -162,7 +168,7 @@ export default function ClientDetailPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <button type="button" onClick={() => router.back()} className="inline-flex items-center gap-1.5 text-sm font-medium text-gold-dark">← Back</button>
         {canWrite && (
-          <Link href="/orders/new">
+          <Link href={newOrderHref}>
             <Button size="sm">
               <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" className="mr-1.5"><path d="M10 4v12M4 10h12" /></svg>
               Create Order
@@ -323,7 +329,7 @@ export default function ClientDetailPage() {
 
           <SectionCard title="Quick actions">
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {canWrite && <Link href="/orders/new" className={qaBtn}>Create new order{availableCredit > 0 ? " (credit applies)" : ""}</Link>}
+              {canWrite && <Link href={newOrderHref} className={qaBtn}>Create new order{availableCredit > 0 ? " (credit applies)" : ""}</Link>}
               {canWrite && <Link href={recordHref} className={qaBtn}>Record payment</Link>}
               {canRefund && availableCredit > 0 && <button type="button" onClick={openRefund} className={qaBtn}>Refund credit</button>}
               {smsHref ? <a href={smsHref} className={qaBtn}>Send message</a> : <span className={`${qaBtn} cursor-not-allowed opacity-50`}>Send message</span>}
