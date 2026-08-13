@@ -18,14 +18,62 @@ import {
   customerCredit,
   isFullyPaid,
   orderTotal,
+  type Availability,
   type Order,
   type Payment,
+  type Product,
   type User,
 } from "./types";
 
 /** Append an audit line tagged with the actor and timestamp. */
 export function logLine(actor: User, action: string): string {
   return `${nowISO()} — ${action} (by ${actor.name})`;
+}
+
+// ---------------------------------------------------------------------------
+// Oversold detection — a delivery date whose ordered chicks exceed the number
+// the admin made available for that product (e.g. after they lower the number).
+// ---------------------------------------------------------------------------
+
+export interface OversoldGroup {
+  date: string;
+  product: Product;
+  cap: number; // chicks the admin made available for this product that day
+  ordered: number; // active chicks ordered for this product that day
+  over: number; // ordered − cap (always > 0)
+}
+
+const PRODUCTS: Product[] = ["Ross 308", "Tetra Super Harco"];
+const isLiveOrder = (s?: string) => s !== "refunded" && s !== "rejected";
+
+/**
+ * Every date+product whose active orders exceed the available cap, worst first.
+ * Computed from the orders the caller can see, so roles with full product
+ * visibility (Admin, Accountant, payment checkers) get the exact figure.
+ */
+export function oversoldGroups(
+  orders: Pick<Order, "date" | "product" | "chicks" | "status">[],
+  availability: Pick<Availability, "date" | "ross" | "tetra">[]
+): OversoldGroup[] {
+  const out: OversoldGroup[] = [];
+  for (const a of availability) {
+    for (const product of PRODUCTS) {
+      const cap = product === "Ross 308" ? a.ross : a.tetra;
+      const ordered = orders
+        .filter((o) => o.date === a.date && o.product === product && isLiveOrder(o.status))
+        .reduce((s, o) => s + (o.chicks || 0), 0);
+      if (ordered > cap) out.push({ date: a.date, product, cap, ordered, over: ordered - cap });
+    }
+  }
+  return out.sort((x, y) => y.over - x.over);
+}
+
+/** Set of "date|product" keys that are oversold — for flagging order rows. */
+export function oversoldKeys(
+  orders: Pick<Order, "date" | "product" | "chicks" | "status">[],
+  availability: Pick<Availability, "date" | "ross" | "tetra">[]
+): Set<string> {
+  return new Set(oversoldGroups(orders, availability).map((g) => `${g.date}|${g.product}`));
 }
 
 export function withHistory(order: Order, actor: User, action: string): Order {

@@ -185,6 +185,13 @@ export default function AvailabilityPage() {
     }
   }
 
+  // Live oversell check for the manual form: is the number being typed below
+  // what's already ordered on that date?
+  const rossOrderedForDate = orderedOn(date, "Ross 308");
+  const tetraOrderedForDate = orderedOn(date, "Tetra Super Harco");
+  const rossOversell = ross.trim() !== "" && Number(ross) < rossOrderedForDate;
+  const tetraOversell = tetra.trim() !== "" && Number(tetra) < tetraOrderedForDate;
+
   return (
     <div className="space-y-5">
       <p className="-mt-2 text-sm text-muted">
@@ -314,6 +321,13 @@ export default function AvailabilityPage() {
             <Field label="Tetra Super Harco chicks"><Input type="number" min={0} value={tetra} onChange={(e) => setTetra(e.target.value)} /></Field>
             <Button type="submit">Save availability</Button>
             {err && <p className="w-full text-sm text-status-refunded">{err}</p>}
+            {(rossOversell || tetraOversell) && (
+              <p className="w-full rounded-lg border border-red/30 bg-red-bg px-3 py-2 text-sm font-medium text-red">
+                ⚠ {formatDate(date)} already has orders — saving this will oversell the date.
+                {rossOversell && ` Ross: ${rossOrderedForDate.toLocaleString()} ordered vs ${Number(ross).toLocaleString()} you're setting (over by ${(rossOrderedForDate - Number(ross)).toLocaleString()}).`}
+                {tetraOversell && ` Tetra: ${tetraOrderedForDate.toLocaleString()} ordered vs ${Number(tetra).toLocaleString()} you're setting (over by ${(tetraOrderedForDate - Number(tetra)).toLocaleString()}).`}
+              </p>
+            )}
           </form>
         </Card>
       )}

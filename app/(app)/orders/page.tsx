@@ -48,6 +48,8 @@ import {
   fulfillOrder,
   isClosed,
   isDebtApproved,
+  oversoldGroups,
+  oversoldKeys,
   paymentCheckState,
   refundOrder,
   rejectOrder,
@@ -249,6 +251,15 @@ function OrdersInner() {
     () => (user ? suggest(query, visibleOrders(orders, user), (o) => o.name, 6) : []),
     [query, orders, user]
   );
+
+  // Oversold delivery dates: a date+product whose ordered chicks exceed the
+  // number the admin made available (e.g. after they lowered it). Computed from
+  // every order this user can see, not just the filtered rows.
+  const oversold = useMemo(() => {
+    if (!user) return { groups: [], keys: new Set<string>() };
+    const vis = visibleOrders(orders, user);
+    return { groups: oversoldGroups(vis, availability), keys: oversoldKeys(vis, availability) };
+  }, [orders, availability, user]);
 
   // Delivery dates the Admin has opened, for the delivery-date filter — scoped to
   // the role's product (Ross roles see only Ross dates, Tetra roles only Tetra).
@@ -596,6 +607,30 @@ function OrdersInner() {
         <Kpi compact icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub="All time" />
       </div>
 
+      {oversold.groups.length > 0 && (
+        <div className="rounded-xl border border-red/30 bg-red-bg px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 text-red" aria-hidden>⚠</span>
+            <div className="min-w-0 text-sm">
+              <p className="font-semibold text-red">
+                {oversold.groups.length} delivery {oversold.groups.length === 1 ? "date is" : "dates are"} oversold — orders exceed what&apos;s available.
+              </p>
+              <ul className="mt-1 space-y-0.5 text-ink">
+                {oversold.groups.map((g) => (
+                  <li key={`${g.date}|${g.product}`}>
+                    <button type="button" onClick={() => setDateFilter(g.date)} className="font-medium text-gold-dark hover:underline">
+                      {formatDate(g.date)}
+                    </button>
+                    {" · "}{g.product} — ordered {g.ordered.toLocaleString()} vs available {g.cap.toLocaleString()}{" "}
+                    <span className="font-semibold text-red">(over by {g.over.toLocaleString()})</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {orderParam && (
         <div className="flex flex-wrap items-center gap-2">
           <Pill tone="gold">Showing one order from a notification</Pill>
@@ -725,6 +760,9 @@ function OrdersInner() {
                     <Td>
                       {formatDate(o.date)}
                       <div className="text-xs text-ink/50">Ordered {formatDateTime(o.createdAt)}</div>
+                      {oversold.keys.has(`${o.date}|${o.product}`) && (
+                        <div className="mt-1"><Pill tone="red">Oversold day</Pill></div>
+                      )}
                     </Td>
                     <Td>
                       <Pill tone={o.product === "Ross 308" ? "info" : "gold"}>
