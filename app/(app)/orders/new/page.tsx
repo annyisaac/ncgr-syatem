@@ -10,8 +10,9 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 
-import type { Order, Payment, Product, Province } from "@/lib/types";
+import type { Client, Order, Payment, Product, Province } from "@/lib/types";
 import { availableFor, customerCredit, orderTotal, sameCustomer } from "@/lib/types";
+import { clientRecordKey, findClient, creditRefundedFor, nextClientCode } from "@/lib/clients";
 import {
   DISTRICTS_BY_PROVINCE,
   PROVINCES,
@@ -28,7 +29,7 @@ import { uploadPaymentSlip } from "@/lib/db";
 
 export default function NewOrderPage() {
   const { user } = useAuth();
-  const { dsrs, orders, availability, placeOrder, newId } = useData();
+  const { dsrs, orders, availability, placeOrder, newId, clients, upsertClient } = useData();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -136,10 +137,11 @@ export default function NewOrderPage() {
     const key = normalizePhone(phone);
     if (key.length < 6) return null;
     const theirs = orders.filter((o) => normalizePhone(o.phone) === key);
-    if (theirs.length === 0) return null;
+    const rec = findClient(clients, phone, name);
+    if (theirs.length === 0 && !rec) return null;
     const latest = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-    return { name: latest.name, count: theirs.length, latest };
-  }, [phone, orders]);
+    return { name: rec?.name ?? latest?.name ?? name, code: rec?.code, count: theirs.length, latest };
+  }, [phone, name, orders, clients]);
 
   // Returning customer → reuse their saved identity & location, filled once per
   // matched customer directly from the phone field. Runs in an event handler
@@ -150,26 +152,35 @@ export default function NewOrderPage() {
   function onPhoneChange(value: string) {
     setPhone(value);
     const key = normalizePhone(value);
-    const theirs = key.length >= 6 ? orders.filter((o) => normalizePhone(o.phone) === key) : [];
-    if (theirs.length === 0) { filledCustomerRef.current = null; return; }
+    if (key.length < 6) { filledCustomerRef.current = null; return; }
+    const theirs = orders.filter((o) => normalizePhone(o.phone) === key);
+    const rec = findClient(clients, value, name);
+    if (theirs.length === 0 && !rec) { filledCustomerRef.current = null; return; }
     const o = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
-    if (filledCustomerRef.current === o.id) return;
-    filledCustomerRef.current = o.id;
-    setName(o.name);
-    if (o.province) setProvince(o.province as Province);
-    if (o.district) setDistrict(o.district);
-    if (o.sector) setSector(o.sector);
-    if (o.clientDistrict) setClientDistrict(o.clientDistrict);
-    if (o.clientSector) setClientSector(o.clientSector);
-    if (o.dsrId) { setDsrId(o.dsrId); setRossSource("dsr"); }
+    const marker = o?.id ?? rec?.id ?? null;
+    if (filledCustomerRef.current === marker) return;
+    filledCustomerRef.current = marker;
+    const nm = rec?.name ?? o?.name;
+    if (nm) setName(nm);
+    if (o) {
+      if (o.province) setProvince(o.province as Province);
+      if (o.district) setDistrict(o.district);
+      if (o.sector) setSector(o.sector);
+      if (o.clientDistrict) setClientDistrict(o.clientDistrict);
+      if (o.clientSector) setClientSector(o.clientSector);
+      if (o.dsrId) { setDsrId(o.dsrId); setRossSource("dsr"); }
+    }
+    if (rec?.district && !o?.clientDistrict) setClientDistrict(rec.district);
+    if (rec?.sector && !o?.clientSector) setClientSector(rec.sector);
   }
 
   // Any credit this customer is carrying — auto-applied to this order on save.
   const custCredit = useMemo(() => {
     const nm = (existingCustomer?.name ?? name).trim();
     if (!nm || normalizePhone(phone).length < 6) return 0;
-    return customerCredit(orders, { phone: phone.trim(), name: nm });
-  }, [orders, phone, name, existingCustomer]);
+    const refunded = creditRefundedFor(clients, phone.trim(), nm);
+    return customerCredit(orders, { phone: phone.trim(), name: nm }, undefined, refunded);
+  }, [orders, clients, phone, name, existingCustomer]);
 
   // Ordering availability: only Admin-opened dates are selectable; remaining
   // chicks are visible to Admin & Zone Managers only.
@@ -279,11 +290,13 @@ export default function NewOrderPage() {
 
     const samedate = orders.filter((o) => o.date === date).length;
     const finalName = (existingCustomer?.name ?? name).trim();
+    const clientId = clientRecordKey({ phone: phone.trim(), name: finalName });
 
     // Auto-apply any credit this customer is carrying (overpayments / short
-    // deliveries), capped at what this order is billed.
+    // deliveries), less any that has been refunded, capped at this order's bill.
+    const refunded = creditRefundedFor(clients, phone.trim(), finalName);
     const applied = Math.min(
-      customerCredit(orders, { phone: phone.trim(), name: finalName }),
+      customerCredit(orders, { phone: phone.trim(), name: finalName }, undefined, refunded),
       orderTotal({ chicks: nChicks, price: nPrice })
     );
     if (applied > 0) {
@@ -314,6 +327,7 @@ export default function NewOrderPage() {
       history,
       plan: samedate,
       payments,
+      clientId,
       ...(applied > 0 ? { creditApplied: applied } : {}),
       ...(pickup.trim() ? { pickupLocation: pickup.trim() } : {}),
     };
@@ -346,6 +360,24 @@ export default function NewOrderPage() {
       if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order. Check the reference and enter the correct one.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
+    // Register a new customer in the clients registry (assign a customer id).
+    // Existing records are left untouched so edits made on the Clients page win.
+    if (!findClient(clients, phone.trim(), finalName)) {
+      const rec: Client = {
+        id: clientId,
+        code: nextClientCode(clients),
+        name: finalName,
+        phone: phone.trim(),
+        district: clientDistrict,
+        sector: clientSector.trim(),
+        product: product as Product,
+        active: true,
+        by: user!.email,
+        on: nowISO(),
+      };
+      void upsertClient(rec);
+    }
+
     toast(`Order created for ${order.name}.`);
     router.push("/orders");
   }
@@ -512,8 +544,9 @@ export default function NewOrderPage() {
               {existingCustomer && (
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#efdfae] bg-gold-bg px-3 py-2.5 text-sm">
                   <span>
-                    <strong className="text-ink">Existing customer:</strong> {existingCustomer.name}{" "}
-                    <span className="text-muted">· {existingCustomer.count} order{existingCustomer.count > 1 ? "s" : ""}. This order is added to them.</span>
+                    <strong className="text-ink">Existing customer:</strong> {existingCustomer.name}
+                    {existingCustomer.code && <span className="ml-1 font-mono text-xs text-gold-dark">({existingCustomer.code})</span>}{" "}
+                    <span className="text-muted">· {existingCustomer.count > 0 ? `${existingCustomer.count} order${existingCustomer.count > 1 ? "s" : ""}. This order is added to them.` : "already in your customer list."}</span>
                   </span>
                   {name.trim() !== existingCustomer.name && (
                     <Button variant="ghost" size="sm" onClick={() => setName(existingCustomer.name)}>Use “{existingCustomer.name}”</Button>

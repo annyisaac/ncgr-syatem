@@ -281,6 +281,9 @@ export interface Order {
   /** Customer credit (RWF) drawn onto this order from their wallet — counts
    *  toward the balance so a credit-funded order can be confirmed/delivered. */
   creditApplied?: number;
+  /** The customer registry id (clients table) this order belongs to. Stamped at
+   *  creation; identity still falls back to phone+name for older orders. */
+  clientId?: string;
 }
 
 /**
@@ -491,8 +494,20 @@ export interface BankStatement {
  * matching key (normalized phone, else name slug), so it never creates a
  * duplicate — financials always come from the orders, contact info from here.
  */
+/** A credit paid back to the customer (recorded from the client detail page).
+ *  It reduces the customer's available credit and keeps the audit trail. */
+export interface CreditRefund {
+  amt: number;
+  on: string; // ISO datetime
+  by: string; // who refunded (email)
+  method?: string; // MoMo / Bank / Cash
+  note?: string;
+}
+
 export interface Client {
   id: string; // client key: normalized phone, else `name:<slug>` (see clientRecordKey)
+  /** Friendly customer id shown in the UI, e.g. "C-000123". Assigned once. */
+  code?: string;
   name: string;
   phone: string;
   district?: string;
@@ -505,6 +520,8 @@ export interface Client {
   /** Manual active flag — used for the Active/Inactive tabs when the client has
    *  no live orders. Defaults to true. */
   active?: boolean;
+  /** Credits paid back to the customer — subtracted from their computed credit. */
+  creditRefunds?: CreditRefund[];
   by?: string; // creator email
   on?: string; // ISO created timestamp
 }
@@ -613,7 +630,9 @@ export function sameCustomer(
 export function customerCredit(
   orders: Order[],
   ref: Pick<Order, "phone" | "name">,
-  excludeId?: string
+  excludeId?: string,
+  /** Credit already paid back to the customer (from the client registry). */
+  refunded = 0
 ): number {
   const mine = orders.filter(
     (o) =>
@@ -623,7 +642,7 @@ export function customerCredit(
       sameCustomer(o, ref)
   );
   const raw = mine.reduce((s, o) => s + paidAmount(o) - orderTotal(o), 0);
-  return Math.max(0, raw);
+  return Math.max(0, raw - Math.max(0, refunded));
 }
 
 export function allVerified(order: Pick<Order, "payments">): boolean {

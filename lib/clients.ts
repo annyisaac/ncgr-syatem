@@ -103,6 +103,28 @@ export function clientById(orders: Order[], id: string, clients: Client[] = []):
   return buildClients(orders, clients).find((c) => c.id === id);
 }
 
+/** Find the registry record for a customer (by phone, else name slug). */
+export function findClient(clients: Client[], phone: string, name: string): Client | undefined {
+  const key = clientRecordKey({ phone, name });
+  return clients.find((c) => c.id === key || clientRecordKey(c) === key);
+}
+
+/** Credit already paid back to this customer — subtracted from their credit. */
+export function creditRefundedFor(clients: Client[], phone: string, name: string): number {
+  const c = findClient(clients, phone, name);
+  return (c?.creditRefunds ?? []).reduce((s, r) => s + (r.amt || 0), 0);
+}
+
+/** The next friendly customer code, e.g. "C-000123", from the existing records. */
+export function nextClientCode(clients: Client[]): string {
+  let max = 0;
+  for (const c of clients) {
+    const m = /^C-(\d+)$/.exec(c.code ?? "");
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  return `C-${String(max + 1).padStart(6, "0")}`;
+}
+
 /** All payments across a client's orders, newest first, tagged with the order. */
 export function clientPayments(client: ClientRecord): Array<Payment & { orderName: string; product: string }> {
   return client.orders

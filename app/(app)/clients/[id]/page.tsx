@@ -10,6 +10,8 @@ import { useToast } from "@/components/ui/Toast";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
+import { Modal } from "@/components/ui/Modal";
+import { Field, Input, Select } from "@/components/ui/Select";
 import { Kpi } from "@/components/dashboard/Kpi";
 import { Avatar } from "@/components/ui/Avatar";
 import { ClientFormModal } from "@/components/clients/ClientFormModal";
@@ -17,9 +19,9 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { visibleOrders, productForRole, canWriteClients } from "@/lib/permissions";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
-import { clientById, clientPayments } from "@/lib/clients";
+import { clientById, clientPayments, nextClientCode } from "@/lib/clients";
 import { clientStatementPDF } from "@/lib/reports";
-import { balance, paidAmount, orderTotal, toDeliver, type Client, type Order } from "@/lib/types";
+import { balance, paidAmount, orderTotal, toDeliver, type Client, type CreditRefund, type Order } from "@/lib/types";
 
 function deliveryStatus(o: Order, routeName?: string): { label: string; tone: "green" | "gold" | "info" | "neutral" | "red" } {
   if (o.status === "refunded") return { label: "Refunded", tone: "red" };
@@ -51,9 +53,12 @@ export default function ClientDetailPage() {
   const router = useRouter();
   const id = decodeURIComponent(params.id);
   const { user } = useAuth();
-  const { orders, routes, clients } = useData();
+  const { orders, routes, clients, upsertClient } = useData();
   const { toast } = useToast();
   const [editing, setEditing] = useState<Client | null>(null);
+  const [refunding, setRefunding] = useState(false);
+  const [refundAmt, setRefundAmt] = useState("");
+  const [refundMethod, setRefundMethod] = useState("MoMo");
 
   const client = useMemo(
     () => (user ? clientById(visibleOrders(orders, user), id, clients) : undefined),
@@ -77,6 +82,9 @@ export default function ClientDetailPage() {
   const totalOrdered = client.orders.reduce((s, o) => s + orderTotal(o), 0);
   const outstanding = Math.max(0, client.balance);
   const overpaid = Math.max(0, -client.balance);
+  const refundedTotal = (client.record?.creditRefunds ?? []).reduce((s, r) => s + (r.amt || 0), 0);
+  const availableCredit = Math.max(0, overpaid - refundedTotal);
+  const canRefund = user.role === "Admin" || user.role === "Accountant";
   const location = [client.districts[0], client.sectors[0]].filter(Boolean).join(", ");
   const firstOrderDate = ordersSorted.length ? ordersSorted[ordersSorted.length - 1].date : "";
   const since = firstOrderDate || client.record?.on || "";
@@ -112,6 +120,31 @@ export default function ClientDetailPage() {
       toast("Statement downloaded.");
     } catch {
       toast("Could not build the statement.", "error");
+    }
+  }
+
+  function openRefund() {
+    setRefundAmt(String(availableCredit));
+    setRefunding(true);
+  }
+  async function doRefund() {
+    if (!client || !user) return;
+    const amt = Math.min(Math.round(Number(refundAmt) || 0), availableCredit);
+    if (amt <= 0) { toast("Enter an amount up to the available credit.", "info"); return; }
+    const entry: CreditRefund = { amt, on: nowISO(), by: user.email, method: refundMethod };
+    const base: Client = client.record ?? {
+      id: client.id, code: nextClientCode(clients), name: client.name, phone: client.phone,
+      district: client.districts[0] ?? "", sector: client.sectors[0] ?? "",
+      product: client.product, active: client.active, by: user.email, on: nowISO(),
+    };
+    const rec: Client = { ...base, creditRefunds: [...(base.creditRefunds ?? []), entry] };
+    try {
+      await upsertClient(rec);
+      toast(`Refunded ${formatRWF(amt)} credit to ${client.name}.`);
+      setRefunding(false);
+      setRefundAmt("");
+    } catch {
+      toast("Could not record the refund.", "error");
     }
   }
 
@@ -219,8 +252,9 @@ export default function ClientDetailPage() {
               <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Total order value</p><p className="mt-0.5 font-bold text-ink">{formatRWF(totalOrdered)}</p></div>
               <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Total paid</p><p className="mt-0.5 font-bold text-green">{formatRWF(client.paid)}</p></div>
               <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Balance</p><p className={`mt-0.5 font-bold ${outstanding > 0 ? "text-red" : "text-ink"}`}>{formatRWF(outstanding)}</p></div>
-              <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Overpaid</p><p className="mt-0.5 font-bold text-green">{formatRWF(overpaid)}</p></div>
+              <div><p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Credit available</p><p className="mt-0.5 font-bold text-green">{formatRWF(availableCredit)}</p></div>
             </div>
+            {refundedTotal > 0 && <p className="mt-2 text-xs text-muted">Credit refunded to date: {formatRWF(refundedTotal)}.</p>}
           </SectionCard>
 
           <SectionCard title="Order & delivery history" action={<Link href="/orders" className="text-sm font-medium text-gold-dark">View full history</Link>}>
@@ -256,6 +290,7 @@ export default function ClientDetailPage() {
             ) : undefined}
           >
             <div className="divide-y divide-line">
+              {infoRow("Customer ID", client.record?.code ? <span className="font-mono">{client.record.code}</span> : "—")}
               {infoRow("Full name", client.name)}
               {infoRow("Phone number", client.phone || "—")}
               {infoRow("District", client.districts[0] || "—")}
@@ -288,8 +323,9 @@ export default function ClientDetailPage() {
 
           <SectionCard title="Quick actions">
             <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {canWrite && <Link href="/orders/new" className={qaBtn}>Create new order</Link>}
+              {canWrite && <Link href="/orders/new" className={qaBtn}>Create new order{availableCredit > 0 ? " (credit applies)" : ""}</Link>}
               {canWrite && <Link href={recordHref} className={qaBtn}>Record payment</Link>}
+              {canRefund && availableCredit > 0 && <button type="button" onClick={openRefund} className={qaBtn}>Refund credit</button>}
               {smsHref ? <a href={smsHref} className={qaBtn}>Send message</a> : <span className={`${qaBtn} cursor-not-allowed opacity-50`}>Send message</span>}
               <button type="button" onClick={downloadStatement} className={qaBtn}>Download statement</button>
             </div>
@@ -298,6 +334,33 @@ export default function ClientDetailPage() {
       </div>
 
       {editing && <ClientFormModal key={editing.id || "new"} initial={editing} onClose={() => setEditing(null)} />}
+
+      {refunding && (
+        <Modal
+          open
+          onClose={() => setRefunding(false)}
+          title="Refund customer credit"
+          footer={<><Button variant="ghost" onClick={() => setRefunding(false)}>Cancel</Button><Button onClick={doRefund}>Refund</Button></>}
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-muted">
+              Available credit: <strong className="text-ink">{formatRWF(availableCredit)}</strong>. Recording a refund reduces the customer&apos;s credit and keeps an audit trail — it does not move money itself.
+            </p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Amount (RWF)" required>
+                <Input type="number" min={1} max={availableCredit} value={refundAmt} onChange={(e) => setRefundAmt(e.target.value)} />
+              </Field>
+              <Field label="Method">
+                <Select
+                  value={refundMethod}
+                  onChange={(e) => setRefundMethod(e.target.value)}
+                  options={[{ value: "MoMo", label: "Mobile Money" }, { value: "Bank", label: "Bank transfer" }, { value: "Cash", label: "Cash" }]}
+                />
+              </Field>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
