@@ -81,7 +81,7 @@ export default function NewOrderPage() {
     const list =
       isZoneManager && user?.zone
         ? zoneDistricts(user.zone, province)
-        : DISTRICTS_BY_PROVINCE[province];
+        : (DISTRICTS_BY_PROVINCE[province] ?? []); // legacy orders may carry an unknown province (e.g. "Kigali")
     return list.map((d) => ({ value: d, label: d }));
   }, [province, isZoneManager, user]);
 
@@ -163,7 +163,7 @@ export default function NewOrderPage() {
     const nm = rec?.name ?? o?.name;
     if (nm) setName(nm);
     if (o) {
-      if (o.province) setProvince(o.province as Province);
+      if (o.province && DISTRICTS_BY_PROVINCE[o.province as Province]) setProvince(o.province as Province);
       if (o.district) setDistrict(o.district);
       if (o.sector) setSector(o.sector);
       if (o.clientDistrict) setClientDistrict(o.clientDistrict);
