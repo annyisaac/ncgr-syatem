@@ -1,6 +1,7 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { ChunkReloadGuard } from "./ChunkReloadGuard";
 import { AuthProvider } from "./AuthProvider";
 import { DataProvider } from "./DataProvider";
 import { HatcheryProvider } from "./HatcheryProvider";
@@ -13,6 +14,7 @@ import { ToastProvider } from "./ui/Toast";
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider>
+      <ChunkReloadGuard />
       <LanguageProvider>
         <AuthProvider>
           <DataProvider>
