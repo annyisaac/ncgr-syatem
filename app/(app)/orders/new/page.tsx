@@ -93,11 +93,6 @@ export default function NewOrderPage() {
     return list.map((d) => ({ value: d, label: d }));
   }, [province, isZoneManager, user]);
 
-  const rossDistrictOptions = useMemo(
-    () => ALL_DISTRICTS.map((d) => ({ value: d, label: d })),
-    []
-  );
-
   const dsrOptions = useMemo(() => {
     if (!district) return [];
     return dsrs
@@ -128,12 +123,7 @@ export default function NewOrderPage() {
     () => (selectedDsr ? selectedDsr.sectors.map((s) => ({ value: s, label: s })) : []),
     [selectedDsr]
   );
-  // Official sectors of the chosen district — for the Ross order sector and the
-  // client's own sector.
-  const orderSectorOptions = useMemo(
-    () => sectorsOfDistrict(district).map((s) => ({ value: s, label: s })),
-    [district]
-  );
+  // Official sectors of the client's district — for the client's own sector.
   const clientSectorOptions = useMemo(
     () => sectorsOfDistrict(clientDistrict).map((s) => ({ value: s, label: s })),
     [clientDistrict]
@@ -256,12 +246,18 @@ export default function NewOrderPage() {
     if (saving) return; // guard against a double-submit while one is in flight
     setError(null);
 
+    // A Ross 308 direct customer has no DSR, so the order's location is simply the
+    // client's own district/sector (captured below) — we don't ask for it twice.
+    const rossDirect = product === "Ross 308" && rossSource === "direct";
+    const effDistrict = rossDirect ? clientDistrict : district;
+    const effSector = rossDirect ? clientSector.trim() : sector.trim();
+
     if (!product) return setError("Choose a product.");
     if (isTetra && !province) return setError("Choose a province.");
-    if (!district) return setError("Choose a district.");
+    if (!rossDirect && !district) return setError("Choose a district.");
     if (isTetra && !dsrId) return setError("Choose a registered DSR.");
     if (product === "Ross 308" && rossSource === "dsr" && !dsrId) return setError("Select a DSR, or choose “No DSR”.");
-    if (!sector.trim()) return setError("Enter or choose a sector.");
+    if (!rossDirect && !sector.trim()) return setError("Enter or choose a sector.");
     if (!name.trim()) return setError("Enter the client name.");
     if (phone.trim().length < 6) return setError("Enter a valid phone number.");
     if (!clientDistrict) return setError("Choose the client's district.");
@@ -289,9 +285,9 @@ export default function NewOrderPage() {
 
     const orderProvince: Province = isTetra
       ? (province as Province)
-      : (PROVINCES.find((p) => DISTRICTS_BY_PROVINCE[p].includes(district)) ??
+      : (PROVINCES.find((p) => DISTRICTS_BY_PROVINCE[p].includes(effDistrict)) ??
         "Eastern");
-    const zone = zoneOfDistrict(district) ?? user!.zone ?? "Zone 1";
+    const zone = zoneOfDistrict(effDistrict) ?? user!.zone ?? "Zone 1";
 
     // Upload the bank slip first (to the private bucket) so the order only
     // stores its path.
@@ -343,8 +339,8 @@ export default function NewOrderPage() {
       id: newId("ord"),
       product: product as Product,
       province: orderProvince,
-      district,
-      sector: sector.trim(),
+      district: effDistrict,
+      sector: effSector,
       dsr: selectedDsr?.name,
       dsrId: dsrId || undefined,
       name: finalName,
@@ -545,28 +541,9 @@ export default function NewOrderPage() {
                     </Field>
                   </>
                 ) : (
-                  <>
-                    <Field label="District" required>
-                      <Select
-                        value={district}
-                        placeholder="Select district"
-                        options={rossDistrictOptions}
-                        onChange={(e) => {
-                          setDistrict(e.target.value);
-                          setSector("");
-                        }}
-                      />
-                    </Field>
-                    <Field label="Sector" required>
-                      <Select
-                        value={sector}
-                        placeholder={district ? "Select sector" : "Choose district first"}
-                        options={orderSectorOptions}
-                        disabled={!district}
-                        onChange={(e) => setSector(e.target.value)}
-                      />
-                    </Field>
-                  </>
+                  <p className="self-end text-xs text-muted sm:col-span-2">
+                    Direct customer — no DSR needed. The order uses the client&apos;s district &amp; sector entered below.
+                  </p>
                 )}
               </>
             ) : null}
