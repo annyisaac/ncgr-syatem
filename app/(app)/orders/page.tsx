@@ -349,6 +349,21 @@ function OrdersInner() {
     setSelected(new Set());
     setBulkDate("");
   }
+  function bulkDelete() {
+    if (!user) return;
+    const targets = [...selected].filter((id) => orders.some((o) => o.id === id));
+    if (targets.length === 0) return;
+    const withPay = orders.filter((o) => selected.has(o.id) && (o.payments?.length ?? 0) > 0).length;
+    const warn = withPay > 0 ? `\n\nWARNING: ${withPay} of them have recorded payments.` : "";
+    if (!confirm(`Permanently delete ${targets.length} selected order(s)?${warn}\n\nThis cannot be undone.`)) return;
+    Promise.allSettled(targets.map((id) => removeOrder(id))).then((res) => {
+      const ok = res.filter((r) => r.status === "fulfilled").length;
+      const failed = res.length - ok;
+      if (failed) void reload();
+      toast(failed ? `Deleted ${ok} order(s); ${failed} failed.` : `Deleted ${ok} order(s).`, failed ? "error" : "success");
+    });
+    setSelected(new Set());
+  }
 
   function deletePayment(order: Order, payIndex: number) {
     const p = order.payments[payIndex];
@@ -723,6 +738,8 @@ function OrdersInner() {
             <label className="text-sm text-muted" htmlFor="bulk-reschedule-date">Reschedule to</label>
             <Input id="bulk-reschedule-date" type="date" value={bulkDate} onChange={(e) => setBulkDate(e.target.value)} className="w-auto" />
             <Button size="sm" onClick={bulkReschedule} disabled={!bulkDate}>Reschedule {selected.size} order(s)</Button>
+            <span className="h-5 w-px bg-gold/40" aria-hidden />
+            <Button size="sm" variant="danger" onClick={bulkDelete}>Delete {selected.size} order(s)</Button>
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
           </div>
         )}
