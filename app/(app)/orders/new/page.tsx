@@ -327,12 +327,19 @@ export default function NewOrderPage() {
     // Auto-apply any credit this customer is carrying (overpayments / short
     // deliveries), less any that has been refunded, capped at this order's bill.
     const refunded = creditRefundedFor(clients, phone.trim(), finalName);
+    const orderTotalValue = orderTotal({ chicks: nChicks, price: nPrice });
     const applied = Math.min(
       customerCredit(orders, { phone: phone.trim(), name: finalName }, undefined, refunded),
-      orderTotal({ chicks: nChicks, price: nPrice })
+      orderTotalValue
     );
+    // Credit fully covers the order and no cash was recorded → it's paid by
+    // already-verified money, so confirm it automatically (nothing to verify).
+    const fullyByCredit = applied >= orderTotalValue && payAmount <= 0;
     if (applied > 0) {
       history.push(logLine(user!, `Applied ${applied.toLocaleString()} RWF customer credit`));
+    }
+    if (fullyByCredit) {
+      history.push(logLine(user!, "Confirmed — fully covered by customer credit"));
     }
 
     const order: Order = {
@@ -361,6 +368,7 @@ export default function NewOrderPage() {
       payments,
       clientId,
       ...(applied > 0 ? { creditApplied: applied } : {}),
+      ...(fullyByCredit ? { confirmedOk: true } : {}),
       ...(pickup.trim() ? { pickupLocation: pickup.trim() } : {}),
     };
 

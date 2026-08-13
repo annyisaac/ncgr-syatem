@@ -645,10 +645,13 @@ export function customerCredit(
   return Math.max(0, raw - Math.max(0, refunded));
 }
 
-export function allVerified(order: Pick<Order, "payments">): boolean {
+export function allVerified(order: Pick<Order, "payments" | "creditApplied">): boolean {
   // Voided payments are ignored — they neither count nor block delivery.
   const active = order.payments.filter((p) => !p.voided);
-  return active.length > 0 && active.every((p) => p.verified);
+  if (active.some((p) => !p.verified)) return false; // any unverified cash blocks
+  // Applied customer credit comes from already-verified money, so it counts as
+  // verified — a credit-funded order needs no fresh payment to be verified.
+  return active.length > 0 || (order.creditApplied ?? 0) > 0;
 }
 
 /** Number of verified payments over total, e.g. for a "Partially checked" pill. */

@@ -108,8 +108,10 @@ export function canConfirm(order: Order, allowUnpaid = false): string | null {
   if (order.confirmedOk) return "Already confirmed.";
   if (order.status !== "pending") return "Order is not pending.";
   // Admin and payment checkers may confirm an order that has no payment yet;
-  // sellers must record a payment first.
-  if (order.payments.length === 0 && !allowUnpaid)
+  // sellers must record a payment first. Applied customer credit counts as a
+  // payment (it's already-verified money), so a credit-funded order can confirm.
+  const hasCredit = (order.creditApplied ?? 0) > 0;
+  if (order.payments.length === 0 && !hasCredit && !allowUnpaid)
     return "Record at least one payment before confirming.";
   return null;
 }
