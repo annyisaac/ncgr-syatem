@@ -805,12 +805,13 @@ function OrdersInner() {
                     </Td>
                     <Td>
                       <div className="flex items-center gap-1.5">
-                        <span>{o.district}</span>
+                        {/* The customer's own district/sector — for DSR orders this differs from the DSR's location. */}
+                        <span>{o.clientDistrict || o.district}</span>
                         {showZone && o.product === "Tetra Super Harco" && (
                           <Pill tone={o.zone === "Zone 2" ? "gold" : "info"}>{o.zone}</Pill>
                         )}
                       </div>
-                      <div className="text-xs text-ink/50">{o.sector}</div>
+                      <div className="text-xs text-ink/50">{o.clientSector || o.sector}</div>
                     </Td>
                     <Td className="whitespace-nowrap text-right">
                       {o.chicks.toLocaleString()}
