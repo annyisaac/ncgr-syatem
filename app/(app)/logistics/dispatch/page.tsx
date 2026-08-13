@@ -87,6 +87,8 @@ export default function DispatchPage() {
       if (!o || isDelivered(o) || isClosed(o)) continue;
       const accepted = Number(st.delivered) || 0;
       if (st.outcome === "delivered" && accepted > 0) {
+        // Never record a delivery before the hatchery has allocated the chicks.
+        if (!o.allocatedOk) { toast(`${o.name}: not allocated at the hatchery yet — delivery not recorded.`, "info"); continue; }
         if (accepted >= o.chicks) { upsertOrder(fulfillOrder(o, user!, `Delivered on ${d.ref}`)); }
         else { const { order, backorder } = shortDeliver(o, accepted, addDays(d.date, 7), user!, orders, newId); upsertOrder(order); upsertOrder(backorder); }
       } else if (st.outcome === "failed") {
