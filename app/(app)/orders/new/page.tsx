@@ -153,10 +153,12 @@ export default function NewOrderPage() {
     setPhone(value);
     const key = normalizePhone(value);
     if (key.length < 6) { filledCustomerRef.current = null; return; }
-    const theirs = orders.filter((o) => normalizePhone(o.phone) === key);
+    const theirs = orders
+      .filter((o) => normalizePhone(o.phone) === key)
+      .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
     const rec = findClient(clients, value, name);
     if (theirs.length === 0 && !rec) { filledCustomerRef.current = null; return; }
-    const o = theirs.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))[0];
+    const o = theirs[0];
     const marker = o?.id ?? rec?.id ?? null;
     if (filledCustomerRef.current === marker) return;
     filledCustomerRef.current = marker;
@@ -166,12 +168,22 @@ export default function NewOrderPage() {
       if (o.province && DISTRICTS_BY_PROVINCE[o.province as Province]) setProvince(o.province as Province);
       if (o.district) setDistrict(o.district);
       if (o.sector) setSector(o.sector);
-      if (o.clientDistrict) setClientDistrict(o.clientDistrict);
-      if (o.clientSector) setClientSector(o.clientSector);
       if (o.dsrId) { setDsrId(o.dsrId); setRossSource("dsr"); }
     }
-    if (rec?.district && !o?.clientDistrict) setClientDistrict(rec.district);
-    if (rec?.sector && !o?.clientSector) setClientSector(rec.sector);
+    // The client's own district & sector — reuse the most recent value we already
+    // know (registry record → the most recent order that carries a client
+    // district/sector → the order's location), so a returning customer is never
+    // asked again. Sector is only reused when it's valid for the district.
+    const cd = rec?.district
+      || theirs.find((x) => x.clientDistrict)?.clientDistrict
+      || theirs.find((x) => x.district)?.district
+      || "";
+    if (cd) setClientDistrict(cd);
+    const cs = rec?.sector
+      || theirs.find((x) => x.clientSector)?.clientSector
+      || theirs.find((x) => x.sector)?.sector
+      || "";
+    if (cd && cs && sectorsOfDistrict(cd).includes(cs)) setClientSector(cs);
   }
 
   // Any credit this customer is carrying — auto-applied to this order on save.
