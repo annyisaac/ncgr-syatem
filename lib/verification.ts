@@ -174,41 +174,33 @@ export function runAutoCheck(
         return { ...base, comment: "Auto-verified from bank statement", flag: undefined, pendingApproval: undefined };
       }
 
-      // Amounts differ. A small gap is adopted automatically; a material one is
-      // held so a person confirms it (the manual check shows the bank figure for
-      // one-click confirmation).
-      if (amountNeedsReview(p.amt, bankAmt)) {
-        outcomes.push({
-          orderId: order.id,
-          client: order.name,
-          ref: p.ref,
-          result: "review",
-          detail: `Recorded ${p.amt.toLocaleString()} vs statement ${bankAmt.toLocaleString()} — verify manually`,
-        });
-        changed = true;
-        return {
-          ...p,
-          flag: `Amount review: statement RWF ${bankAmt.toLocaleString()} vs recorded RWF ${p.amt.toLocaleString()}`,
-        };
-      }
-
+      // Amounts differ. The bank statement is the source of truth, so the payment
+      // is ALWAYS set to the statement amount and the recorded amount is discarded.
+      // A material gap is flagged as an override so the Admin is notified (the
+      // notify_order trigger fires on the "overridden" flag); a small gap is a
+      // quiet correction.
       const was = p.amt;
+      const large = amountNeedsReview(p.amt, bankAmt);
       outcomes.push({
         orderId: order.id,
         client: order.name,
         ref: p.ref,
         result: "corrected",
-        detail: `Amount corrected ${was.toLocaleString()} -> ${bankAmt.toLocaleString()}`,
+        detail: large
+          ? `Amount overridden ${was.toLocaleString()} → ${bankAmt.toLocaleString()} (statement) — Admin notified`
+          : `Amount corrected ${was.toLocaleString()} → ${bankAmt.toLocaleString()}`,
       });
       extraHistory.push(
-        `${nowISO()} — Payment ${p.ref} amount corrected from ${was.toLocaleString()} to ${bankAmt.toLocaleString()} RWF (auto, by ${actor.name})`
+        `${nowISO()} — Payment ${p.ref} amount ${large ? "overridden" : "corrected"} from ${was.toLocaleString()} to ${bankAmt.toLocaleString()} RWF — used bank statement (auto, by ${actor.name})`
       );
       changed = true;
       return {
         ...base,
         amt: bankAmt,
         comment: "Auto-verified; amount adopted from bank statement",
-        flag: `Amount corrected from ${was.toLocaleString()}`,
+        flag: large
+          ? `Amount overridden: recorded RWF ${was.toLocaleString()} vs statement RWF ${bankAmt.toLocaleString()}`
+          : `Amount corrected from ${was.toLocaleString()}`,
         pendingApproval: undefined,
       };
     });
