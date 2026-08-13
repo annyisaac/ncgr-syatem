@@ -18,6 +18,7 @@ import {
   customerCredit,
   isFullyPaid,
   orderTotal,
+  toDeliver,
   type Availability,
   type Order,
   type Payment,
@@ -52,7 +53,7 @@ const isLiveOrder = (s?: string) => s !== "refunded" && s !== "rejected";
  * visibility (Admin, Accountant, payment checkers) get the exact figure.
  */
 export function oversoldGroups(
-  orders: Pick<Order, "date" | "product" | "chicks" | "status">[],
+  orders: Pick<Order, "date" | "product" | "chicks" | "comp" | "status">[],
   availability: Pick<Availability, "date" | "ross" | "tetra">[]
 ): OversoldGroup[] {
   const out: OversoldGroup[] = [];
@@ -61,7 +62,7 @@ export function oversoldGroups(
       const cap = product === "Ross 308" ? a.ross : a.tetra;
       const ordered = orders
         .filter((o) => o.date === a.date && o.product === product && isLiveOrder(o.status))
-        .reduce((s, o) => s + (o.chicks || 0), 0);
+        .reduce((s, o) => s + toDeliver(o), 0);
       if (ordered > cap) out.push({ date: a.date, product, cap, ordered, over: ordered - cap });
     }
   }
@@ -70,7 +71,7 @@ export function oversoldGroups(
 
 /** Set of "date|product" keys that are oversold — for flagging order rows. */
 export function oversoldKeys(
-  orders: Pick<Order, "date" | "product" | "chicks" | "status">[],
+  orders: Pick<Order, "date" | "product" | "chicks" | "comp" | "status">[],
   availability: Pick<Availability, "date" | "ross" | "tetra">[]
 ): Set<string> {
   return new Set(oversoldGroups(orders, availability).map((g) => `${g.date}|${g.product}`));

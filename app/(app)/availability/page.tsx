@@ -13,7 +13,7 @@ import { Pill } from "@/components/ui/Pill";
 import { Kpi } from "@/components/dashboard/Kpi";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
-import { availableFor, type Availability, type Product } from "@/lib/types";
+import { availableFor, toDeliver, type Availability, type Product } from "@/lib/types";
 import {
   INCUBATION_DAYS,
   DELIVERY_LAG_DAYS,
@@ -71,12 +71,13 @@ export default function AvailabilityPage() {
   const projections = useMemo(() => batchProjections(batches), [batches]);
   const hatched = useMemo(() => hatchedBatches(batches), [batches]);
 
-  // Chicks already ordered on a date for a product (active orders only).
+  // Chicks already committed on a date for a product (active orders only) — the
+  // full amount that leaves the hatchery: chicks + 2% free extra + compensation.
   const orderedOn = useMemo(() => {
     return (dateId: string, product: Product) =>
       orders
         .filter((o) => o.date === dateId && o.product === product && isActive(o.status))
-        .reduce((s, o) => s + (o.chicks || 0), 0);
+        .reduce((s, o) => s + toDeliver(o), 0);
   }, [orders]);
 
   // Group upcoming projections by delivery date, with per-date subtotals.

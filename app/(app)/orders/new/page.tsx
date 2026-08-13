@@ -269,9 +269,10 @@ export default function NewOrderPage() {
     if (!pickup.trim()) return setError("Enter the pickup location.");
     if (selAvail) {
       const left = availableFor(selAvail, product as Product, orders);
-      if (nChicks > left) {
+      // Counts what actually leaves the hatchery for this order (chicks + 2% + comp).
+      if (toDeliver > left) {
         return setError(canSeeAvail
-          ? `Only ${left.toLocaleString()} ${product} chicks left on ${formatDate(date)}.`
+          ? `Only ${left.toLocaleString()} ${product} chicks left on ${formatDate(date)} — this order needs ${toDeliver.toLocaleString()} (incl. 2% + compensation).`
           : `Not enough ${product} chicks available on ${formatDate(date)} for this order.`);
       }
     }

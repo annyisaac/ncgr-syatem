@@ -345,17 +345,19 @@ export interface Availability {
   on: string;
 }
 
-/** Chicks a product can still take on a given date (available − already ordered). */
+/** Chicks a product can still take on a given date (available − already committed).
+ *  "Committed" counts what actually leaves the hatchery per order — the ordered
+ *  chicks plus the 2% free extra and any compensation (toDeliver). */
 export function availableFor(
   avail: Availability | undefined,
   product: Product,
-  orders: Pick<Order, "date" | "product" | "chicks" | "status">[]
+  orders: Pick<Order, "date" | "product" | "chicks" | "comp" | "status">[]
 ): number {
   if (!avail) return 0;
   const cap = product === "Ross 308" ? avail.ross : avail.tetra;
   const used = orders
     .filter((o) => o.date === avail.date && o.product === product && o.status !== "refunded" && o.status !== "rejected")
-    .reduce((s, o) => s + o.chicks, 0);
+    .reduce((s, o) => s + toDeliver(o), 0);
   return Math.max(0, cap - used);
 }
 
