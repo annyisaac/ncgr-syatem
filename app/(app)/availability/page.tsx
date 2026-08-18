@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
@@ -155,6 +155,37 @@ export default function AvailabilityPage() {
       .slice(0, 8)
       .map((a) => availableFor(a, "Ross 308", orders) + availableFor(a, "Tetra Super Harco", orders));
   }, [rows, orders]);
+
+  // Auto-match: a delivery date opened MANUALLY (in anticipation of chicks) is
+  // linked to its batch as soon as one is set for the same delivery date — the
+  // row flips to batch-backed and its capacity follows the batch projection from
+  // then on. This is the same effect as "Re-sync to calendar", but automatic and
+  // scoped to the manual dates a batch now covers (batch-only dates still publish
+  // via Re-sync). Only an Admin persists it; once one loads the page, every user
+  // sees the linked date. The write flips fromBatch → true, so a matched row is
+  // skipped on the next run and the effect converges after one write per date.
+  useEffect(() => {
+    if (!canManage) return;
+    const derived = availabilityFromBatches(batches);
+    for (const a of availability) {
+      if (a.fromBatch) continue; // already batch-backed
+      const v = derived.get(a.id);
+      if (!v || (v.ross <= 0 && v.tetra <= 0)) continue; // no batch delivers on this date
+      const same = v.ross === a.ross && v.tetra === a.tetra;
+      void upsertAvailability({
+        id: a.id, date: a.date, ross: v.ross, tetra: v.tetra,
+        fromBatch: true, closed: a.closed, by: a.by ?? user!.email, on: nowISO(),
+      });
+      toast(
+        same
+          ? `Linked ${formatDate(a.date)} to its batch.`
+          : `Linked ${formatDate(a.date)} to its batch — capacity now follows the batch projection (Ross ${v.ross.toLocaleString()}, Tetra ${v.tetra.toLocaleString()}).`
+      );
+    }
+    // upsertAvailability / toast are stable enough; re-running on their identity
+    // would just repeat a converged no-op. Track the real inputs only.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [batches, availability, canManage]);
 
   if (!user) return null;
 
