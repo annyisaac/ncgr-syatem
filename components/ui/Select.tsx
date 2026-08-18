@@ -4,8 +4,8 @@ import { cn } from "@/lib/cn";
 import type { SelectHTMLAttributes } from "react";
 
 const fieldBase =
-  "w-full rounded-[9px] border border-line bg-field px-3.5 py-2.5 text-[0.9rem] text-ink " +
-  "focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-gold focus-visible:border-gold " +
+  "w-full rounded-[10px] border border-line bg-field px-3.5 py-2.5 text-[0.9rem] text-ink transition " +
+  "focus:outline-none focus-visible:border-gold focus-visible:ring-2 focus-visible:ring-gold/25 " +
   "disabled:opacity-50 disabled:bg-grey-bg";
 
 interface SelectProps extends SelectHTMLAttributes<HTMLSelectElement> {

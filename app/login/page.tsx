@@ -289,7 +289,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={submitting}
-              className="flex h-12 w-full items-center justify-center gap-2.5 rounded-lg bg-gold text-[0.95rem] font-bold text-ink transition hover:bg-gold-dark hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+              className="flex h-12 w-full items-center justify-center gap-2.5 rounded-lg bg-gold bg-[linear-gradient(160deg,var(--color-gold),var(--color-gold-dark))] text-[0.95rem] font-bold text-ink transition hover:brightness-105 disabled:cursor-not-allowed disabled:opacity-60"
             >
               <Icon d={ICONS.lock} size={16} />
               {submitting ? "Signing in…" : "Sign in"}

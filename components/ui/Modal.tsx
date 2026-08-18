@@ -47,7 +47,9 @@ export function Modal({
       />
       <div
         className={cn(
-          "relative z-10 flex w-full max-w-lg flex-col rounded-2xl border-t-4 border-gold bg-paper shadow-pop",
+          "relative z-10 flex w-full flex-col rounded-2xl border-t-4 border-gold bg-paper shadow-pop",
+          // Default width, unless the caller passes their own max-w-* (cn doesn't merge).
+          !className?.includes("max-w-") && "max-w-lg",
           "max-h-[92vh] overflow-hidden",
           className
         )}

@@ -5,41 +5,42 @@
  * Tailwind v4 exposes each token below as utilities (bg-gold, text-muted, …).
  */
 @theme {
-  --color-ink: #1c1a16; /* lettering / dark surfaces */
-  --color-muted: #7c766a; /* secondary text */
-  --color-line: #e7e4dc; /* borders */
+  --color-ink: #201c16; /* lettering / dark surfaces (warm near-black) */
+  --color-muted: #6e6858; /* secondary text — deeper for better contrast */
+  --color-line: #e7e3d8; /* borders */
 
-  --color-gold: #d4a017; /* brand gold */
-  --color-gold-dark: #a87d0e; /* gold text on light */
-  --color-gold-bg: #fbf3dd; /* gold wash */
+  --color-gold: #bd8c17; /* brand gold — deeper, crisper on white */
+  --color-gold-dark: #a2760d; /* gold text on light */
+  --color-gold-bg: #f6ecd2; /* gold wash (row hover, gold pills) */
 
-  --color-cream: #f6f5f1; /* page background */
+  --color-cream: #f7f5ef; /* page background */
   --color-paper: #ffffff;
   --color-card: #ffffff;
-  --color-field: #fcfbf8; /* input background */
-  --color-onyx: #1c1a16; /* constant dark surface (table head, dark buttons) */
-  --color-zebra: #faf9f5; /* alternating table row background */
+  --color-field: #fcfbf7; /* input background */
+  --color-onyx: #201c16; /* constant dark surface (table head, dark buttons) */
+  --color-zebra: #faf8f2; /* alternating table row background */
 
-  --color-green: #2e7d32;
-  --color-green-bg: #e8f3e9;
-  --color-red: #b3261e;
-  --color-red-bg: #fbe9e7;
-  --color-blue: #1565c0;
-  --color-blue-bg: #e7f0fb;
-  --color-amber: #9a7208;
-  --color-amber-bg: #fbf3dd;
+  --color-green: #2f7d34;
+  --color-green-bg: #e7f2e8;
+  --color-red: #bb2d22;
+  --color-red-bg: #fbe8e5;
+  --color-blue: #1663c0;
+  --color-blue-bg: #e6f0fb;
+  --color-amber: #90690a;
+  --color-amber-bg: #f7edcf;
   --color-purple: #6a4fa3;
-  --color-purple-bg: #f0ebfa;
-  --color-grey-bg: #efeeea;
+  --color-purple-bg: #efeafa;
+  --color-grey-bg: #eeece5;
 
   /* alias kept for existing error/flag text (renders red) */
-  --color-status-refunded: #b3261e;
+  --color-status-refunded: #bb2d22;
 
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 
-  --shadow-card: 0 1px 2px rgba(30, 25, 10, 0.04), 0 6px 16px rgba(30, 25, 10, 0.05);
-  --shadow-pop: 0 12px 40px rgba(30, 25, 10, 0.16);
+  /* Softer, layered elevation — a hairline plus a wider ambient shadow. */
+  --shadow-card: 0 1px 2px rgba(28, 22, 8, 0.04), 0 10px 26px rgba(28, 22, 8, 0.06);
+  --shadow-pop: 0 18px 48px rgba(28, 22, 8, 0.18);
 }
 
 html,
@@ -53,22 +54,30 @@ body {
  * surfaces that are meant to read as dark chips (table heads, dark buttons).
  */
 :root[data-theme="dark"] {
-  --color-ink: #f2eee4; /* primary text becomes light */
-  --color-muted: #a29b8c;
-  --color-line: #38332b;
-  --color-cream: #141310; /* page background */
-  --color-paper: #201d18; /* cards / sidebar */
-  --color-card: #201d18;
-  --color-field: #2a2620; /* inputs */
-  --color-onyx: #2c2820; /* raised dark chips */
-  --color-zebra: #26221c; /* alternating row background (dark) */
-  --color-grey-bg: #2a2620;
-  --color-gold-bg: #3a3018;
+  --color-ink: #f1ede2; /* primary text becomes light */
+  --color-muted: #a49d8d;
+  --color-line: #34302a;
+  --color-cream: #15130f; /* page background */
+  --color-paper: #1e1b16; /* cards / sidebar */
+  --color-card: #1e1b16;
+  --color-field: #27231c; /* inputs */
+  --color-onyx: #2b271f; /* raised dark chips */
+  --color-zebra: #232019; /* alternating row background (dark) */
+  --color-grey-bg: #2a251f;
+
+  /* Gold is brightened on the dark ground so accents, bars and buttons read. */
+  --color-gold: #e0b544;
+  --color-gold-dark: #ecc563;
+  --color-gold-bg: #38301a;
+
   --color-green-bg: #17301b;
-  --color-red-bg: #3a1e1c;
+  --color-red-bg: #38201d;
   --color-blue-bg: #16273a;
-  --color-amber-bg: #3a3018;
+  --color-amber-bg: #38301a;
   --color-purple-bg: #251f36;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.35), 0 12px 30px rgba(0, 0, 0, 0.4);
+  --shadow-pop: 0 20px 50px rgba(0, 0, 0, 0.6);
 }
 
 /* Base size that scales the whole (rem-based) UI proportionally. */

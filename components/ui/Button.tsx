@@ -12,9 +12,9 @@ interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variants: Record<Variant, string> = {
-  // btn-gold
+  // btn-gold — subtle top-to-bottom gold gradient (adapts to theme via tokens)
   primary:
-    "bg-gold text-[#231b04] hover:brightness-[1.05] focus-visible:ring-gold disabled:opacity-50",
+    "bg-gold bg-[linear-gradient(160deg,var(--color-gold),var(--color-gold-dark))] text-[#231b04] hover:brightness-[1.05] focus-visible:ring-gold disabled:opacity-50",
   // btn-dark
   secondary:
     "bg-onyx text-white hover:brightness-[1.12] focus-visible:ring-onyx disabled:opacity-50",

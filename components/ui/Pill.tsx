@@ -40,7 +40,8 @@ export function Pill({ children, tone = "neutral", className }: PillProps) {
   return (
     <span
       className={cn(
-        "inline-flex items-center rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold whitespace-nowrap",
+        "inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-[0.65rem] font-bold whitespace-nowrap",
+        "before:h-1.5 before:w-1.5 before:shrink-0 before:rounded-full before:bg-current before:opacity-70 before:content-['']",
         tones[tone],
         className
       )}

@@ -40,6 +40,7 @@ export function Kpi({
   tone = "default",
   icon = "chart",
   onClick,
+  active = false,
   compact = false,
 }: {
   label: string;
@@ -48,6 +49,8 @@ export function Kpi({
   tone?: Tone;
   icon?: keyof typeof ICONS;
   onClick?: () => void;
+  /** Highlight this card as the currently-applied filter. */
+  active?: boolean;
   /** Denser card — smaller padding, chip and value. Used on list pages. */
   compact?: boolean;
 }) {
@@ -57,12 +60,14 @@ export function Kpi({
       type="button"
       onClick={onClick}
       disabled={!onClick}
+      aria-pressed={onClick ? active : undefined}
       className={cn(
-        "group flex flex-col border border-line bg-paper text-left shadow-card transition",
+        "group flex flex-col border bg-paper text-left shadow-card transition",
         compact ? "rounded-xl p-3" : "rounded-2xl p-4",
         onClick
           ? "cursor-pointer hover:-translate-y-0.5 hover:border-gold/60 hover:shadow-pop"
-          : "cursor-default"
+          : "cursor-default",
+        active ? "border-gold ring-2 ring-gold/30" : "border-line"
       )}
     >
       <div className="flex items-center justify-between">
