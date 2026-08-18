@@ -1226,7 +1226,7 @@ function PayModal({
           />
         </Field>
         <Field label={`Amount (${cur})`}>
-          <Input type="number" min={1} value={amt} onChange={(e) => setAmt(e.target.value)} />
+          <Input type="number" min={0} step={cur === "RWF" ? "1" : "0.01"} value={amt} onChange={(e) => setAmt(e.target.value)} />
         </Field>
         <Field label="Transaction ID">
           <Input value={ref} onChange={(e) => setRef(e.target.value)} placeholder={method === "Bank" ? "Bank transfer reference" : "MoMo transaction ID"} />
@@ -1534,7 +1534,7 @@ function EditModal({
         <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
         <Field label="Chicks"><Input type="number" value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
         <Field label="Compensated chicks"><Input type="number" value={comp} onChange={(e) => setComp(e.target.value)} /></Field>
-        <Field label="Unit price"><Input type="number" value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
+        <Field label={`Unit price (${order.currency ?? "RWF"})`}><Input type="number" step={(order.currency ?? "RWF") === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
         <Field label={order.backorderOf ? "Backorder delivery date" : "Delivery date"}><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field label="Pickup location"><Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. Nyabugogo taxi park" /></Field>
       </div>

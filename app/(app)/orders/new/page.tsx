@@ -607,8 +607,8 @@ export default function NewOrderPage() {
                 <Field label="Compensated (free) chicks">
                   <Input type="number" min={0} value={comp} onChange={(e) => setComp(e.target.value)} />
                 </Field>
-                <Field label="Unit price (RWF)" required>
-                  <Input type="number" min={1} value={price} onChange={(e) => setPrice(e.target.value)} />
+                <Field label={`Unit price (${currency})`} required>
+                  <Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} />
                 </Field>
                 <Field label="Delivery date" required hint={canSeeAvail && selAvail && product ? `${remaining.toLocaleString()} ${product} chicks left this day` : undefined}>
                   {openDates.length === 0 ? (
@@ -661,7 +661,7 @@ export default function NewOrderPage() {
                   />
                 </Field>
                 <Field label={`Amount (${currency})`}>
-                  <Input type="number" min={0} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} />
+                  <Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} />
                 </Field>
                 <Field label="Transaction reference">
                   <Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder={payMethod === "Bank" ? "Bank transfer reference" : "MoMo transaction ID"} />

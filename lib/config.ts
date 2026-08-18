@@ -169,12 +169,14 @@ export function formatRWF(amount: number): string {
   return `${Math.round(amount).toLocaleString("en-US")} RWF`;
 }
 
-/** Format an amount in a given order currency (defaults to RWF). */
+/** Format an amount in a given order currency (defaults to RWF).
+ *  USD/EUR show two decimals (cents); RWF is whole — the franc has no subunit. */
 export function formatMoney(amount: number, currency: "RWF" | "USD" | "EUR" = "RWF"): string {
-  const n = Math.round(amount).toLocaleString("en-US");
-  if (currency === "USD") return `$${n}`;
-  if (currency === "EUR") return `€${n}`;
-  return `${n} RWF`;
+  if (currency === "USD" || currency === "EUR") {
+    const n = amount.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    return currency === "USD" ? `$${n}` : `€${n}`;
+  }
+  return `${Math.round(amount).toLocaleString("en-US")} RWF`;
 }
 
 // ---------------------------------------------------------------------------
