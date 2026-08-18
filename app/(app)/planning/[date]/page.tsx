@@ -491,9 +491,14 @@ export default function DayPlanPage() {
               return (
               <tr key={o.id}>
                 <Td className="font-medium">
-                  {o.name} <span className="text-xs text-muted">· {o.phone}</span>
-                  {o.debtOk && <span className="ml-2 align-middle"><Pill tone="info">On debt</Pill></span>}
-                  {o.splitOf && <span className="ml-2 align-middle"><Pill tone="purple">Split</Pill></span>}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span>{o.name}</span>
+                    <a href={`tel:${o.phone}`} title="Call" className="flex h-7 w-7 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><IcoPhone /></a>
+                    <a href={waHref(o.phone)} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="flex h-7 w-7 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><IcoChat /></a>
+                    <span className="text-xs text-muted">{o.phone}</span>
+                    {o.debtOk && <span className="align-middle"><Pill tone="info">On debt</Pill></span>}
+                    {o.splitOf && <span className="align-middle"><Pill tone="purple">Split</Pill></span>}
+                  </div>
                 </Td>
                 <Td>{o.product}</Td>
                 <Td>{custDistrict(o)}<div className="text-xs text-muted">{custSector(o)}</div></Td>

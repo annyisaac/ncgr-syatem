@@ -10,7 +10,7 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
-import { Kpi } from "@/components/dashboard/Kpi";
+import { Modal } from "@/components/ui/Modal";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
 import { availableFor, toDeliver, type Availability, type Product } from "@/lib/types";
@@ -52,6 +52,29 @@ function FillBar({ pct, over }: { pct: number; over: boolean }) {
   );
 }
 
+/** A metric tile with a coloured accent bar — the top overview row. */
+function Metric({ label, value, note, accent }: {
+  label: string; value: string; note?: React.ReactNode; accent: string;
+}) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-line bg-paper p-4 shadow-card">
+      <span className="absolute left-0 top-4 h-8 w-1 rounded-r-full" style={{ background: accent }} aria-hidden />
+      <div className="ml-2 text-[0.66rem] font-bold uppercase tracking-wide text-muted">{label}</div>
+      <div className="ml-2 mt-1.5 text-[1.5rem] font-extrabold leading-none tracking-tight tabular-nums">{value}</div>
+      {note !== undefined && <div className="ml-2 mt-1 text-[0.72rem] text-muted">{note}</div>}
+    </div>
+  );
+}
+
+/** Build an SVG polyline `d` from a numeric series, scaled to w×h. */
+function sparkPath(vals: number[], w = 300, h = 54): string {
+  if (vals.length < 2) return "";
+  const max = Math.max(...vals), min = Math.min(...vals), span = max - min || 1, step = w / (vals.length - 1);
+  return vals
+    .map((v, i) => `${i === 0 ? "M" : "L"} ${(i * step).toFixed(1)} ${(h - 4 - ((v - min) / span) * (h - 8)).toFixed(1)}`)
+    .join(" ");
+}
+
 export default function AvailabilityPage() {
   const { user } = useAuth();
   const { availability, orders, upsertAvailability, removeAvailability } = useData();
@@ -63,6 +86,7 @@ export default function AvailabilityPage() {
   const [tetra, setTetra] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({}); // per-batch projection edits
+  const [showForm, setShowForm] = useState(false); // "open / update a date" modal
 
   const canManage = !!user && CAN_MANAGE.includes(user.role);
   const canProject = !!user && CAN_PROJECT.includes(user.role);
@@ -95,10 +119,42 @@ export default function AvailabilityPage() {
   const kpi = useMemo(() => {
     const upRoss = projections.filter((p) => p.product === "Ross 308").reduce((s, p) => s + p.projected, 0);
     const upTetra = projections.filter((p) => p.product === "Tetra Super Harco").reduce((s, p) => s + p.projected, 0);
-    const open = rows.filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0));
+    const open = rows.filter((a) => !a.closed && a.date >= todayISO() && (a.ross > 0 || a.tetra > 0));
     const left = open.reduce((s, a) => s + availableFor(a, "Ross 308", orders) + availableFor(a, "Tetra Super Harco", orders), 0);
     return { upRoss, upTetra, openCount: open.length, left, next: projections[0]?.deliveryDate ?? null };
   }, [projections, rows, orders]);
+
+  // Open dates whose orders already exceed the capacity set for a product.
+  const attention = useMemo(
+    () => rows.filter((a) => !a.closed && a.date >= todayISO() && (orderedOn(a.id, "Ross 308") > a.ross || orderedOn(a.id, "Tetra Super Harco") > a.tetra)),
+    [rows, orderedOn]
+  );
+
+  // Capacity health across open dates: on-plan (<90% full), watch (90–100%),
+  // oversold (>100%). Score weights a watch date as half a healthy one.
+  const health = useMemo(() => {
+    const open = rows.filter((a) => !a.closed && a.date >= todayISO() && (a.ross > 0 || a.tetra > 0));
+    let onPlan = 0, watch = 0, oversold = 0;
+    for (const a of open) {
+      const rp = a.ross > 0 ? orderedOn(a.id, "Ross 308") / a.ross : 0;
+      const tp = a.tetra > 0 ? orderedOn(a.id, "Tetra Super Harco") / a.tetra : 0;
+      const p = Math.max(rp, tp);
+      if (p > 1) oversold++; else if (p >= 0.9) watch++; else onPlan++;
+    }
+    const total = open.length;
+    const score = total ? Math.round((100 * (onPlan + watch * 0.5)) / total) : 100;
+    return { onPlan, watch, oversold, total, score };
+  }, [rows, orderedOn]);
+
+  // Chicks still available across the next few open delivery dates — the trend.
+  const trend = useMemo(() => {
+    const today = todayISO();
+    return rows
+      .filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0) && a.date >= today)
+      .sort((a, b) => (a.date < b.date ? -1 : 1))
+      .slice(0, 8)
+      .map((a) => availableFor(a, "Ross 308", orders) + availableFor(a, "Tetra Super Harco", orders));
+  }, [rows, orders]);
 
   if (!user) return null;
 
@@ -114,21 +170,20 @@ export default function AvailabilityPage() {
     upsertAvailability(rec);
     toast(`${existing ? "Updated" : "Opened"} ${formatDate(date)} — Ross ${r.toLocaleString()}, Tetra ${t.toLocaleString()}.`);
     setRoss(""); setTetra("");
+    setShowForm(false);
   }
 
   function editRow(a: Availability) {
+    setErr(null);
     setDate(a.date); setRoss(String(a.ross)); setTetra(String(a.tetra));
+    setShowForm(true);
   }
 
-  function deleteDate(a: Availability) {
-    const onDate = orders.filter((o) => o.date === a.id && isActive(o.status)).length;
-    const warn = onDate > 0
-      ? `\n\nWARNING: ${onDate} order(s) are on this date. They keep their date, but it will no longer be an open availability slot.`
-      : "";
-    if (!confirm(`Delete the delivery date ${formatDate(a.date)}?${warn}\n\nThis cannot be undone.`)) return;
-    void removeAvailability(a.id);
-    toast(`Deleted delivery date ${formatDate(a.date)}.`);
-  }
+  // Delivery dates are never deleted from the calendar — a date is taken out of
+  // ordering with Close (reversible), so orders can never be orphaned from their
+  // date. Auto-published (batch-driven) dates are still cleaned up when their
+  // batch goes away, but only if no active order still sits on that date.
+  const hasActiveOrders = (id: string) => orders.some((o) => o.date === id && isActive(o.status));
 
   function toggleClose(a: Availability) {
     upsertAvailability({ ...a, closed: !a.closed, by: user!.email, on: nowISO() });
@@ -140,7 +195,7 @@ export default function AvailabilityPage() {
     const v = availabilityFromBatches(list).get(deliveryDate);
     const existing = availability.find((a) => a.id === deliveryDate);
     if (!v || (v.ross <= 0 && v.tetra <= 0)) {
-      if (existing?.fromBatch) void removeAvailability(deliveryDate);
+      if (existing?.fromBatch && !hasActiveOrders(deliveryDate)) void removeAvailability(deliveryDate);
       return;
     }
     upsertAvailability({
@@ -160,7 +215,7 @@ export default function AvailabilityPage() {
       });
     }
     for (const a of availability) {
-      if (a.fromBatch && !derived.has(a.id)) void removeAvailability(a.id);
+      if (a.fromBatch && !derived.has(a.id) && !hasActiveOrders(a.id)) void removeAvailability(a.id);
     }
     toast(`Published ${derived.size} batch-driven date(s) to the ordering calendar.`);
   }
@@ -193,86 +248,163 @@ export default function AvailabilityPage() {
   const rossOversell = ross.trim() !== "" && Number(ross) < rossOrderedForDate;
   const tetraOversell = tetra.trim() !== "" && Number(tetra) < tetraOrderedForDate;
 
+  // Donut fill: green = on-plan share, amber = watch, red = oversold.
+  const gEnd = health.total ? (health.onPlan / health.total) * 100 : 0;
+  const aEnd = health.total ? ((health.onPlan + health.watch) / health.total) * 100 : 0;
+  const ringBg = health.total
+    ? `conic-gradient(var(--color-green) 0 ${gEnd}%, var(--color-amber) ${gEnd}% ${aEnd}%, var(--color-red) ${aEnd}% 100%)`
+    : "conic-gradient(var(--color-grey-bg) 0 100%)";
+
   return (
     <div className="space-y-5">
-      <p className="-mt-2 text-sm text-muted">
-        Chicks hatch <strong>{INCUBATION_DAYS} days</strong> after a batch is set and are delivered{" "}
-        <strong>{DELIVERY_LAG_DAYS} days</strong> later — so they reach the delivery calendar{" "}
-        <strong>{INCUBATION_DAYS + DELIVERY_LAG_DAYS} days</strong> after setting, at{" "}
-        {ROSS_HATCH_RATE === TETRA_HATCH_RATE
-          ? <><strong>{Math.round(ROSS_HATCH_RATE * 100)}%</strong> of the eggs set</>
-          : <>Ross <strong>{Math.round(ROSS_HATCH_RATE * 100)}%</strong> / Tetra <strong>{Math.round(TETRA_HATCH_RATE * 100)}%</strong> of eggs set</>}.
-        Adjust any batch below; zone managers see the remaining numbers, DSRs only see that a date is open.
-      </p>
-
-      {/* Supply at a glance */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
-        <Kpi compact icon="chicks" tone="blue" label="Upcoming Ross" value={kpi.upRoss.toLocaleString()} sub="projected, not yet hatched" />
-        <Kpi compact icon="chicks" tone="purple" label="Upcoming Tetra" value={kpi.upTetra.toLocaleString()} sub="projected, not yet hatched" />
-        <Kpi compact icon="orders" tone="default" label="Open dates" value={String(kpi.openCount)} />
-        <Kpi compact icon="check" tone="green" label="Chicks still available" value={kpi.left.toLocaleString()} />
-        <Kpi compact icon="pending" tone="amber" label="Next delivery" value={kpi.next ? formatDate(kpi.next) : "—"} sub={kpi.next ? daysLabel(daysUntil(kpi.next)) : undefined} />
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[0.62rem] font-extrabold uppercase tracking-[0.14em] text-gold-dark">Delivery availability</p>
+          <h1 className="mt-0.5 text-2xl font-extrabold tracking-tight text-ink">Capacity at a glance</h1>
+          <p className="mt-1 max-w-2xl text-sm text-muted">
+            Chicks hatch <strong className="text-ink">{INCUBATION_DAYS} days</strong> after a batch is set and are delivered{" "}
+            <strong className="text-ink">{DELIVERY_LAG_DAYS} days</strong> later — reaching the calendar{" "}
+            <strong className="text-ink">{INCUBATION_DAYS + DELIVERY_LAG_DAYS} days</strong> after setting, at{" "}
+            {ROSS_HATCH_RATE === TETRA_HATCH_RATE
+              ? <><strong className="text-ink">{Math.round(ROSS_HATCH_RATE * 100)}%</strong> of eggs set</>
+              : <>Ross <strong className="text-ink">{Math.round(ROSS_HATCH_RATE * 100)}%</strong> / Tetra <strong className="text-ink">{Math.round(TETRA_HATCH_RATE * 100)}%</strong> of eggs set</>}.
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {canManage && (
+            <Button size="sm" onClick={() => { setErr(null); setDate(todayISO()); setRoss(""); setTetra(""); setShowForm(true); }}>
+              Open a date
+            </Button>
+          )}
+          {canProject && <Button size="sm" variant="ghost" onClick={syncAll}>Re-sync to calendar</Button>}
+        </div>
       </div>
 
-      {canProject && (
-        <Card>
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <CardHeader title="Expected from batches" />
-            <Button size="sm" onClick={syncAll}>Re-sync to calendar</Button>
+      {/* Overview metric tiles */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Metric label="Upcoming Ross" value={kpi.upRoss.toLocaleString()} note="projected, not yet hatched" accent="var(--color-blue)" />
+        <Metric label="Upcoming Tetra" value={kpi.upTetra.toLocaleString()} note="projected, not yet hatched" accent="var(--color-purple)" />
+        <Metric label="Open dates" value={String(kpi.openCount)} accent="var(--color-gold)" />
+        <Metric label="Chicks still available" value={kpi.left.toLocaleString()} accent="var(--color-green)" />
+        <Metric label="Next delivery" value={kpi.next ? formatDate(kpi.next) : "—"} note={kpi.next ? daysLabel(daysUntil(kpi.next)) : undefined} accent="var(--color-amber)" />
+      </div>
+
+      {/* Attention banner */}
+      {attention.length > 0 ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber/40 bg-amber-bg/60 p-4 shadow-card">
+          <div className="flex items-center gap-3">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-amber-bg font-extrabold text-amber">!</span>
+            <div>
+              <b className="text-sm text-ink">{attention.length} date{attention.length > 1 ? "s" : ""} need attention</b>
+              <p className="text-xs text-muted">Orders exceed the capacity you set — raise the cap or reschedule.</p>
+            </div>
           </div>
-          <p className="-mt-1 mb-3 text-sm text-muted">
-            Each set batch opens its delivery date automatically (hatch + {DELIVERY_LAG_DAYS} days). Adjust a batch&apos;s
-            expected chicks below — the delivery date&apos;s total updates. A batch&apos;s own number always wins over the default rate.
-          </p>
-          <TableWrap>
-            <thead>
-              <tr>
-                <Th>Batch</Th>
-                <Th>Product</Th>
-                <Th className="text-right">Eggs set</Th>
-                <Th className="text-right">Expected chicks</Th>
-                <Th></Th>
-              </tr>
-            </thead>
-            <tbody>
-              {grouped.length === 0 ? (
-                <EmptyRow colSpan={5} text="No upcoming batches. Set a batch to project its chicks here." />
-              ) : grouped.map((g) => (
-                <FragmentRows key={g.date} groupDate={g.date} ross={g.ross} tetra={g.tetra}>
-                  {g.items.map((p) => {
-                    const current = projectedChicksOf(p.batch);
-                    const val = draft[p.batch.id] ?? String(current);
-                    const changed = Number(val) !== current;
-                    const adjusted = p.batch.projectedChicks != null;
-                    return (
-                      <tr key={p.batch.id}>
-                        <Td className="font-medium">{p.batch.batchNo}</Td>
-                        <Td><Pill tone={p.product === "Ross 308" ? "ross" : "tetra"}>{p.product}</Pill></Td>
-                        <Td className="text-right">{p.eggsSet.toLocaleString()}</Td>
-                        <Td className="text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <input
-                              type="number" min={0}
-                              className="w-24 rounded-md border border-line bg-transparent px-2 py-1 text-right text-sm"
-                              value={val}
-                              onChange={(e) => setDraft((d) => ({ ...d, [p.batch.id]: e.target.value }))}
-                            />
-                            {!adjusted && !changed && <span className="text-xs text-muted">{Math.round((p.product === "Ross 308" ? ROSS_HATCH_RATE : TETRA_HATCH_RATE) * 100)}%</span>}
-                            {adjusted && !changed && <span className="text-xs text-muted">adj.</span>}
-                          </div>
-                        </Td>
-                        <Td>
-                          <Button size="sm" variant={changed ? "primary" : "ghost"} disabled={!changed} onClick={() => saveProjection(p.batch.id)}>Save</Button>
-                        </Td>
-                      </tr>
-                    );
-                  })}
-                </FragmentRows>
-              ))}
-            </tbody>
-          </TableWrap>
-        </Card>
+          <Button size="sm" variant="ghost" onClick={() => document.getElementById("dates-table")?.scrollIntoView({ behavior: "smooth", block: "start" })}>Review oversold</Button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-3 rounded-2xl border border-green/25 bg-green-bg/50 p-4 shadow-card">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-green-bg font-extrabold text-green">✓</span>
+          <div>
+            <b className="text-sm text-ink">All open dates are within capacity</b>
+            <p className="text-xs text-muted">No date is oversold right now.</p>
+          </div>
+        </div>
       )}
+
+      {/* Upcoming production (editable batch projections) + capacity health */}
+      <div className={canProject ? "grid gap-5 lg:grid-cols-[1.6fr_1fr]" : "grid gap-5"}>
+        {canProject && (
+          <Card>
+            <h3 className="card-title">Upcoming production</h3>
+            <p className="mb-3 mt-1 text-sm text-muted">
+              Each set batch opens its delivery date automatically (hatch + {DELIVERY_LAG_DAYS} days). Adjust a batch&apos;s
+              expected chicks — the delivery date&apos;s total updates.
+            </p>
+            {grouped.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">No upcoming batches. Set a batch to project its chicks here.</p>
+            ) : (
+              <div className="space-y-3">
+                {grouped.map((g) => (
+                  <div key={g.date}>
+                    <div className="mb-1.5 flex flex-wrap items-center gap-x-1.5 text-xs">
+                      <span className="font-semibold text-ink">{formatDate(g.date)}</span>
+                      <span className="text-muted">· {daysLabel(daysUntil(g.date))}</span>
+                      {g.ross > 0 && <span className="text-blue">· Ross {g.ross.toLocaleString()}</span>}
+                      {g.tetra > 0 && <span className="text-purple">· Tetra {g.tetra.toLocaleString()}</span>}
+                    </div>
+                    <div className="space-y-1.5">
+                      {g.items.map((p) => {
+                        const current = projectedChicksOf(p.batch);
+                        const val = draft[p.batch.id] ?? String(current);
+                        const changed = Number(val) !== current;
+                        const adjusted = p.batch.projectedChicks != null;
+                        const rate = p.eggsSet > 0 ? Math.round((current / p.eggsSet) * 100) : 0;
+                        return (
+                          <div key={p.batch.id} className="flex items-center gap-3 rounded-xl border border-line bg-field/50 px-3 py-2">
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center gap-2">
+                                <span className="truncate text-xs font-semibold text-ink">{p.batch.batchNo}</span>
+                                <Pill tone={p.product === "Ross 308" ? "ross" : "tetra"}>{p.product === "Ross 308" ? "Ross" : "Tetra"}</Pill>
+                              </div>
+                              <div className="mt-1 flex items-center gap-2">
+                                <div className="h-1.5 w-24 overflow-hidden rounded-full bg-grey-bg"><div className="h-full bg-green" style={{ width: `${Math.min(100, rate)}%` }} /></div>
+                                <span className="text-[0.68rem] text-muted tabular-nums">{p.eggsSet.toLocaleString()} eggs · {adjusted ? "adj." : `${rate}%`}</span>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="number" min={0}
+                                className="w-20 rounded-md border border-line bg-transparent px-2 py-1 text-right text-xs tabular-nums"
+                                value={val}
+                                onChange={(e) => setDraft((d) => ({ ...d, [p.batch.id]: e.target.value }))}
+                              />
+                              <Button size="sm" variant={changed ? "primary" : "ghost"} disabled={!changed} onClick={() => saveProjection(p.batch.id)}>Save</Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </Card>
+        )}
+
+        <Card>
+          <h3 className="card-title">Capacity health</h3>
+          <div className="mt-4 flex items-center gap-5">
+            <div className="grid h-24 w-24 shrink-0 place-items-center rounded-full" style={{ background: ringBg }}>
+              <div className="grid h-[4.6rem] w-[4.6rem] place-items-center rounded-full bg-paper text-center">
+                <div>
+                  <div className="text-xl font-extrabold leading-none tracking-tight text-ink tabular-nums">{health.score}</div>
+                  <div className="text-[0.6rem] text-muted">score / 100</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex-1 space-y-1.5 text-xs">
+              <div className="flex items-center justify-between"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-green" />On plan</span><b className="tabular-nums">{health.onPlan}</b></div>
+              <div className="flex items-center justify-between"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-amber" />Watch (≥90%)</span><b className="tabular-nums">{health.watch}</b></div>
+              <div className="flex items-center justify-between"><span className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full bg-red" />Oversold</span><b className="tabular-nums">{health.oversold}</b></div>
+            </div>
+          </div>
+          <div className="mt-4 border-t border-line pt-3">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-semibold text-ink">Chicks available ahead</span>
+              <span className="text-muted">next {trend.length} date{trend.length === 1 ? "" : "s"}</span>
+            </div>
+            {trend.length >= 2 ? (
+              <svg viewBox="0 0 300 54" preserveAspectRatio="none" className="mt-2 h-14 w-full" aria-hidden>
+                <path d={`${sparkPath(trend)} L 300 54 L 0 54 Z`} fill="var(--color-green-bg)" />
+                <path d={sparkPath(trend)} fill="none" stroke="var(--color-green)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <p className="mt-2 text-xs text-muted">Not enough upcoming dates to chart yet.</p>
+            )}
+          </div>
+        </Card>
+      </div>
 
       {canProject && hatched.length > 0 && (
         <Card>
@@ -314,27 +446,32 @@ export default function AvailabilityPage() {
       )}
 
       {canManage && (
-        <Card>
-          <CardHeader title="Open / update a date manually" />
-          <form onSubmit={save} className="flex flex-wrap items-end gap-3">
+        <Modal open={showForm} onClose={() => setShowForm(false)} title="Open / update a delivery date">
+          <form onSubmit={save} className="space-y-3">
             <Field label="Delivery date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
-            <Field label="Ross 308 chicks"><Input type="number" min={0} value={ross} onChange={(e) => setRoss(e.target.value)} /></Field>
-            <Field label="Tetra Super Harco chicks"><Input type="number" min={0} value={tetra} onChange={(e) => setTetra(e.target.value)} /></Field>
-            <Button type="submit">Save availability</Button>
-            {err && <p className="w-full text-sm text-status-refunded">{err}</p>}
+            <div className="grid grid-cols-2 gap-3">
+              <Field label="Ross 308 chicks"><Input type="number" min={0} value={ross} onChange={(e) => setRoss(e.target.value)} /></Field>
+              <Field label="Tetra Super Harco chicks"><Input type="number" min={0} value={tetra} onChange={(e) => setTetra(e.target.value)} /></Field>
+            </div>
+            {err && <p className="text-sm text-status-refunded">{err}</p>}
             {(rossOversell || tetraOversell) && (
-              <p className="w-full rounded-lg border border-red/30 bg-red-bg px-3 py-2 text-sm font-medium text-red">
+              <p className="rounded-lg border border-red/30 bg-red-bg px-3 py-2 text-sm font-medium text-red">
                 ⚠ {formatDate(date)} already has orders — saving this will oversell the date.
                 {rossOversell && ` Ross: ${rossOrderedForDate.toLocaleString()} ordered vs ${Number(ross).toLocaleString()} you're setting (over by ${(rossOrderedForDate - Number(ross)).toLocaleString()}).`}
                 {tetraOversell && ` Tetra: ${tetraOrderedForDate.toLocaleString()} ordered vs ${Number(tetra).toLocaleString()} you're setting (over by ${(tetraOrderedForDate - Number(tetra)).toLocaleString()}).`}
               </p>
             )}
+            <div className="flex justify-end pt-1">
+              <Button type="submit">Save availability</Button>
+            </div>
           </form>
-        </Card>
+        </Modal>
       )}
 
       <Card>
-        <CardHeader title={`${rows.length} date(s)`} />
+        <div id="dates-table" className="mb-4 scroll-mt-24">
+          <h3 className="card-title">Delivery dates · {rows.length}</h3>
+        </div>
         <TableWrap>
           <thead>
             <tr>
@@ -359,8 +496,9 @@ export default function AvailabilityPage() {
               const ord = rossOrd + tetraOrd;
               const pct = cap > 0 ? Math.round((ord / cap) * 100) : 0;
               const over = rossOrd > a.ross || tetraOrd > a.tetra;
+              const past = a.date < todayISO(); // a finished date is auto-closed
               return (
-                <tr key={a.id} className={a.closed ? "opacity-55" : undefined}>
+                <tr key={a.id} className={a.closed || past ? "opacity-55" : undefined}>
                   <Td className="font-medium">{formatDate(a.date)}</Td>
                   <Td>{a.fromBatch ? <Pill tone="green">Batches</Pill> : <span className="text-muted">Manual</span>}</Td>
                   <Td className="text-right">
@@ -376,18 +514,21 @@ export default function AvailabilityPage() {
                     </div>
                   </Td>
                   <Td>
-                    {a.closed ? <Pill tone="neutral">Closed</Pill> : over ? <Pill tone="red">Oversold</Pill> : <Pill tone="green">Open</Pill>}
+                    {past ? <Pill tone="neutral">Ended</Pill> : a.closed ? <Pill tone="neutral">Closed</Pill> : over ? <Pill tone="red">Oversold</Pill> : <Pill tone="green">Open</Pill>}
                   </Td>
                   {canManage && (
                     <Td>
-                      <div className="flex flex-wrap gap-2">
-                        <Button size="sm" variant="ghost" onClick={() => toggleClose(a)}>{a.closed ? "Reopen" : "Close"}</Button>
-                        {!a.fromBatch && <>
-                          <Button size="sm" variant="ghost" onClick={() => editRow(a)}>Edit</Button>
-                          <Button size="sm" variant="ghost" onClick={() => deleteDate(a)}>Delete</Button>
-                        </>}
-                        {a.fromBatch && <span className="self-center text-xs text-muted">auto</span>}
-                      </div>
+                      {past ? (
+                        <span className="text-xs text-muted">—</span>
+                      ) : (
+                        <div className="flex flex-wrap gap-2">
+                          <Button size="sm" variant="ghost" onClick={() => toggleClose(a)}>{a.closed ? "Reopen" : "Close"}</Button>
+                          {!a.fromBatch && (
+                            <Button size="sm" variant="ghost" onClick={() => editRow(a)}>Edit</Button>
+                          )}
+                          {a.fromBatch && <span className="self-center text-xs text-muted">auto</span>}
+                        </div>
+                      )}
                     </Td>
                   )}
                 </tr>
@@ -397,26 +538,5 @@ export default function AvailabilityPage() {
         </TableWrap>
       </Card>
     </div>
-  );
-}
-
-/** A date sub-header row (date · countdown · subtotals) followed by its batch rows. */
-function FragmentRows({ groupDate, ross, tetra, children }: {
-  groupDate: string; ross: number; tetra: number; children: React.ReactNode;
-}) {
-  return (
-    <>
-      <tr className="bg-cream/40">
-        <td colSpan={5} className="border-b border-line px-2.5 py-2 align-middle">
-          <span className="font-semibold text-ink">{formatDate(groupDate)}</span>
-          <span className="text-muted"> · {daysLabel(daysUntil(groupDate))}</span>
-          <span className="text-muted"> · </span>
-          {ross > 0 && <span className="text-blue">Ross {ross.toLocaleString()}</span>}
-          {ross > 0 && tetra > 0 && <span className="text-muted"> · </span>}
-          {tetra > 0 && <span className="text-purple">Tetra {tetra.toLocaleString()}</span>}
-        </td>
-      </tr>
-      {children}
-    </>
   );
 }
