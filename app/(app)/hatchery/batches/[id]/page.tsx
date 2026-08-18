@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
-import { LIFECYCLE_STEPS, type Batch, type BatchStatus } from "@/lib/hatchery/types";
+import { LIFECYCLE_STEPS, CANDLING_1_CATEGORIES, CANDLING_2_CATEGORIES, type Batch, type BatchStatus } from "@/lib/hatchery/types";
 import { PRODUCTS, type Product } from "@/lib/types";
 import { removedInStage, fertilityPct, flockRemoved, flockFertileAfterC2, flockTransferred, settableEggs } from "@/lib/hatchery/lifecycle";
 
@@ -75,6 +75,11 @@ export default function BatchDetailPage() {
 
   const nextStep = LIFECYCLE_STEPS.find((s) => !batch.steps[s.key]);
   const totalSet = batch.setters.reduce((s, a) => s + a.eggs, 0);
+
+  // Deep link straight into the candling form for THIS batch (its next flock).
+  const needC1 = !batch.steps["candling-1"];
+  const needC2 = !!batch.steps["candling-1"] && !batch.steps["candling-2"];
+  const candleHref = `/hatchery/candling?batch=${batch.id}&stage=${needC2 ? "c2" : "c1"}`;
 
   function openEdit() { setCode(batch!.batchNo); setErr(null); setEditOpen(true); }
   function copyCode() {
@@ -188,10 +193,12 @@ export default function BatchDetailPage() {
               <button type="button" onClick={copyCode} title="Copy" className="text-muted hover:text-ink"><IcoCopy /></button>
             </span>
           </Info>
+          <Info label="Set date">{formatDate(batch.setDate ?? batch.createdAt.slice(0, 10))}</Info>
           <Info label="Farm">{batch.farm}</Info>
           <Info label="Eggs set" tone="green">{batch.eggsSet.toLocaleString()}</Info>
           <Info label="Hatched">{batch.hatchedCount.toLocaleString()}</Info>
-          <Info label="Created on">{formatDateTime(batch.createdAt)}</Info>
+          {/* System-generated date/time — Admin only; everyone still sees the user-chosen Set date above. */}
+          {user.role === "Admin" && <Info label="Created on">{formatDateTime(batch.createdAt)}</Info>}
           <Info label="Product">{batch.productType}</Info>
           <Info label="Flock">{batch.flockId}</Info>
           <Info label="Fertility" tone="green">{`${fertilityPct(batch).toFixed(0)}%`}</Info>
@@ -284,7 +291,12 @@ export default function BatchDetailPage() {
           )}
 
           <Card>
-            <p className="mb-3 text-[0.68rem] font-bold uppercase tracking-[0.09em] text-muted">Candling</p>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-[0.68rem] font-bold uppercase tracking-[0.09em] text-muted"><IcoScan />Candling</p>
+              {batch.candlings.length > 0 && (needC1 || needC2) && (
+                <Link href={candleHref}><Button size="sm" variant="ghost">{needC2 ? "Start Candling II" : "Continue Candling I"}</Button></Link>
+              )}
+            </div>
             {batch.candlings.length === 0 ? (
               <div className="flex flex-wrap items-center gap-3 rounded-xl border border-gold/30 bg-gold-bg/40 px-4 py-3">
                 <span className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-gold-bg text-gold-dark"><IcoHourglass /></span>
@@ -292,18 +304,55 @@ export default function BatchDetailPage() {
                   <p className="text-sm font-semibold text-ink">No candling yet</p>
                   <p className="text-xs text-muted">Candling I is usually done on day 10 of incubation to remove infertile and early dead embryos.</p>
                 </div>
-                <Link href="/hatchery/candling"><Button>Start Candling I</Button></Link>
+                <Link href={candleHref}><Button>Start Candling I</Button></Link>
               </div>
             ) : (
-              <div className="space-y-2 text-sm">
-                {batch.candlings.map((c, i) => (
-                  <div key={i} className="rounded-lg border border-line px-3 py-2">
-                    <div className="flex justify-between"><strong className="text-ink">Candling {c.stage === 1 ? "I" : "II"}</strong><span className="text-muted">{formatDate(c.date)} · {c.by}</span></div>
-                    <div className="mt-1 text-xs text-muted">{Object.entries(c.categories).filter(([, n]) => n > 0).map(([k, n]) => `${k}: ${n}`).join(" · ") || "none"} — total removed {c.totalRemoved}</div>
-                  </div>
-                ))}
-                <p className="text-xs text-muted">Removed: Candling I = {removedInStage(batch, 1)}, Candling II = {removedInStage(batch, 2)}.</p>
-              </div>
+              <>
+                <div className="space-y-3">
+                  {batch.candlings.map((c, i) => {
+                    const cats = c.stage === 1 ? CANDLING_1_CATEGORIES : CANDLING_2_CATEGORIES;
+                    const primary = cats.filter((x) => x.key !== "others" && x.key !== "contaminated" && (c.categories[x.key] ?? 0) > 0);
+                    const pills = cats.filter((x) => (x.key === "others" || x.key === "contaminated") && (c.categories[x.key] ?? 0) > 0);
+                    return (
+                      <div key={i} className="rounded-2xl border border-line bg-paper p-4 shadow-card">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-green-bg text-green"><IcoScan /></span>
+                            <div className="min-w-0">
+                              <p className="text-sm font-bold text-ink">Candling {c.stage === 1 ? "I" : "II"}</p>
+                              <p className="text-xs text-muted">{formatDate(c.date)} · <span className="break-all">{c.by}</span></p>
+                            </div>
+                          </div>
+                          <span className="whitespace-nowrap text-sm font-bold text-green">{c.totalRemoved.toLocaleString()} removed</span>
+                        </div>
+                        {primary.length > 0 && (
+                          <div className="mt-3 grid grid-cols-2 gap-px overflow-hidden rounded-xl border border-line bg-line sm:grid-cols-3">
+                            {primary.map((x) => (
+                              <div key={x.key} className="bg-paper px-3 py-2.5">
+                                <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{x.label}</p>
+                                <p className="mt-0.5 text-lg font-extrabold tabular-nums text-ink">{(c.categories[x.key] ?? 0).toLocaleString()}</p>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {pills.length > 0 && (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {pills.map((x) => (
+                              <span key={x.key} className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${x.key === "contaminated" ? "bg-gold-bg text-gold-dark" : "bg-grey-bg text-ink"}`}>
+                                {x.label} <strong className="tabular-nums">{(c.categories[x.key] ?? 0).toLocaleString()}</strong>
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="mt-3 flex flex-wrap items-center justify-between gap-2 border-t border-line pt-3 text-sm">
+                  <span className="text-muted">Removed in this batch</span>
+                  <span className="font-semibold text-ink">Candling I <span className="tabular-nums">{removedInStage(batch, 1).toLocaleString()}</span> · Candling II <span className="tabular-nums">{removedInStage(batch, 2).toLocaleString()}</span></span>
+                </div>
+              </>
             )}
           </Card>
         </div>
@@ -409,6 +458,7 @@ const IcoDoc = () => <span className="text-gold-dark">{isvg(<><rect x="5" y="3" 
 const IcoCopy = () => isvg(<><rect x="9" y="9" width="11" height="11" rx="2" /><path d="M5 15V5a2 2 0 0 1 2-2h8" /></>, 14);
 const IcoMachine = () => isvg(<><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M8 8h8v8H8z" /></>);
 const IcoBox = () => isvg(<><path d="M4 8l8-4 8 4-8 4-8-4Z" /><path d="M4 8v8l8 4 8-4V8" /></>);
+const IcoScan = () => isvg(<><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" /></>);
 const IcoCheck = () => isvg(<path d="M5 12l4 4 10-10" />, 14);
 const IcoHourglass = () => isvg(<><path d="M7 3h10M7 21h10M8 3c0 4 8 5 8 9s-8 5-8 9M16 3c0 4-8 5-8 9s8 5 8 9" /></>, 14);
 const IcoLock = () => isvg(<><rect x="5" y="10" width="14" height="10" rx="2" /><path d="M8 10V7a4 4 0 0 1 8 0v3" /></>, 12);

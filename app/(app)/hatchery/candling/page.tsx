@@ -1,7 +1,7 @@
 "use client";
 
-import { useMemo, useState, type ReactNode } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
@@ -61,6 +61,7 @@ export default function CandlingPage() {
   const { batches, machines, upsertBatch, upsertMachine } = useHatchery();
   const { toast } = useToast();
   const router = useRouter();
+  const search = useSearchParams();
 
   const [mode, setMode] = useState<"c1" | "c2">("c1");
   const [sel, setSel] = useState<{ batchId: string; idx: number } | null>(null);
@@ -144,6 +145,31 @@ export default function CandlingPage() {
   const curPage = Math.min(page, pageCount);
   const start = (curPage - 1) * perPage;
   const pageRows = filtered.slice(start, start + perPage);
+
+  // Deep link from a batch's "Start Candling I/II": ?batch=<id>&stage=c1|c2 —
+  // switch to the right tab, filter to that batch and open the record form for
+  // the first flock still needing that stage. Runs once the batches have loaded.
+  const openedRef = useRef<string | null>(null);
+  useEffect(() => {
+    const bId = search.get("batch");
+    if (!bId) return;
+    const stg = search.get("stage") === "c2" ? "c2" : "c1";
+    const key = `${bId}|${stg}`;
+    if (openedRef.current === key) return;
+    const b = batches.find((x) => x.id === bId);
+    if (!b) return; // batches not loaded yet — retry when they arrive
+    openedRef.current = key;
+    const flocks = batchFlocks(b);
+    const idx = flocks.findIndex((f) =>
+      stg === "c1" ? !flockHasCandling(f, 1) : (flockHasCandling(f, 1) && !flockHasCandling(f, 2))
+    );
+    /* eslint-disable react-hooks/set-state-in-effect */
+    setMode(stg);
+    setQ(b.batchNo);
+    setPage(1);
+    if (idx >= 0) { setSel({ batchId: bId, idx }); setEditStage(null); setCats({}); setTRows([{ machineCode: "", eggs: "" }]); }
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [search, batches]);
 
   if (!user) return null;
 
