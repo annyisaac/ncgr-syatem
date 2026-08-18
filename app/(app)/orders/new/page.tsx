@@ -10,26 +10,27 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 
-import type { Client, Order, Payment, Product, Province } from "@/lib/types";
-import { availableFor, customerCredit, orderTotal, sameCustomer } from "@/lib/types";
-import { clientRecordKey, findClient, creditRefundedFor, nextClientCode } from "@/lib/clients";
+import type { Currency, Order, Payment, Product, Province } from "@/lib/types";
+import { availableFor, customerCredit, orderTotal } from "@/lib/types";
+import { clientRecordKey, findClient, creditRefundedFor } from "@/lib/clients";
 import {
   DISTRICTS_BY_PROVINCE,
   PROVINCES,
   ALL_DISTRICTS,
   formatRWF,
+  formatMoney,
   sectorsOfDistrict,
   zoneDistricts,
   zoneOfDistrict,
   zoneProvinces,
 } from "@/lib/config";
-import { nowISO, normalizePhone, formatDate } from "@/lib/format";
+import { nowISO, normalizePhone, formatDate, todayISO } from "@/lib/format";
 import { logLine } from "@/lib/orders";
 import { uploadPaymentSlip } from "@/lib/db";
 
 export default function NewOrderPage() {
   const { user } = useAuth();
-  const { dsrs, orders, availability, placeOrder, newId, clients, upsertClient } = useData();
+  const { dsrs, orders, availability, placeOrder, newId, clients } = useData();
   const { toast } = useToast();
   const router = useRouter();
 
@@ -73,6 +74,7 @@ export default function NewOrderPage() {
   const [payAmt, setPayAmt] = useState("");
   const [payRef, setPayRef] = useState("");
   const [payMethod, setPayMethod] = useState<"MoMo" | "Bank">("MoMo");
+  const [currency, setCurrency] = useState<Currency>("RWF");
   const [bankName, setBankName] = useState("");
   const [slipFile, setSlipFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -217,7 +219,8 @@ export default function NewOrderPage() {
     () =>
       availability
         .slice()
-        .filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0))
+        // Only open, not-yet-finished dates are selectable for a new order.
+        .filter((a) => !a.closed && a.date >= todayISO() && (a.ross > 0 || a.tetra > 0))
         .filter((a) => !product || (product === "Ross 308" ? a.ross > 0 : a.tetra > 0))
         .sort((a, b) => (a.date < b.date ? -1 : 1)),
     [availability, product]
@@ -317,7 +320,7 @@ export default function NewOrderPage() {
         verified: false,
       });
       history.push(
-        logLine(user!, `Recorded first payment ${payAmount.toLocaleString()} RWF via ${payMethod} (ref ${payRef.trim()})`)
+        logLine(user!, `Recorded first payment ${payAmount.toLocaleString()} ${currency} via ${payMethod} (ref ${payRef.trim()})`)
       );
     }
 
@@ -368,22 +371,27 @@ export default function NewOrderPage() {
       plan: samedate,
       payments,
       clientId,
+      currency,
       ...(applied > 0 ? { creditApplied: applied } : {}),
       ...(fullyByCredit ? { confirmedOk: true } : {}),
       ...(pickup.trim() ? { pickupLocation: pickup.trim() } : {}),
     };
 
-    // One order per customer (name + phone) per product per delivery date.
+    // One live order per customer per delivery date — phone is the primary key,
+    // so this holds across products (matches the DB guard in place_order).
+    const dupKey = normalizePhone(order.phone);
     const dupMsg = (o: Order) =>
-      `${order.name} (${order.phone}) already has a ${order.product} order for ${formatDate(order.date)}${o.by ? ` — created by ${o.by}` : ""}. You can't create another for the same customer on the same day.`;
+      `${order.name} (${order.phone}) already has an order for ${formatDate(order.date)}${o.by ? ` — created by ${o.by}` : ""}. A customer can only have one order per delivery date.`;
     const dup = orders.find(
       (o) =>
         o.id !== order.id &&
         o.date === order.date &&
-        o.product === order.product &&
         o.status !== "rejected" &&
         o.status !== "refunded" &&
-        sameCustomer(o, order)
+        (dupKey
+          ? normalizePhone(o.phone) === dupKey
+          : order.name.trim() !== "" &&
+            o.name.trim().toLowerCase() === order.name.trim().toLowerCase())
     );
     if (dup) return setError(dupMsg(dup));
 
@@ -397,27 +405,12 @@ export default function NewOrderPage() {
           : `Not enough ${product} chicks available on ${formatDate(date)}. Please pick another day or a smaller order.`);
       }
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
-      if (res.reason === "duplicate") return setError(`${order.name} already has a ${order.product} order for ${formatDate(date)}. You can't create another for the same customer on the same day.`);
+      if (res.reason === "duplicate") return setError(`${order.name} already has an order for ${formatDate(date)}. A customer can only have one order per delivery date.`);
       if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order. Check the reference and enter the correct one.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
-    // Register a new customer in the clients registry (assign a customer id).
-    // Existing records are left untouched so edits made on the Clients page win.
-    if (!findClient(clients, phone.trim(), finalName)) {
-      const rec: Client = {
-        id: clientId,
-        code: nextClientCode(clients),
-        name: finalName,
-        phone: phone.trim(),
-        district: clientDistrict,
-        sector: clientSector.trim(),
-        product: product as Product,
-        active: true,
-        by: user!.email,
-        on: nowISO(),
-      };
-      void upsertClient(rec);
-    }
+    // The customer registry row (stable id + friendly code) is created server-side
+    // by place_order, so every order path registers the customer exactly once.
 
     toast(`Order created for ${order.name}.`);
     router.push("/orders");
@@ -640,7 +633,7 @@ export default function NewOrderPage() {
               <div className="mt-4 grid grid-cols-2 gap-3 rounded-md bg-ink/5 p-3 text-sm sm:grid-cols-4">
                 <Calc label="2% extra (free)" value={String(extra2)} />
                 <Calc label="To deliver" value={String(toDeliver)} />
-                <Calc label="Total (charged)" value={formatRWF(total)} />
+                <Calc label="Total (charged)" value={formatMoney(total, currency)} />
                 <Calc label="Free chicks" value={String(extra2 + nComp)} />
               </div>
             </Card>
@@ -650,6 +643,15 @@ export default function NewOrderPage() {
               <p className="mb-3 text-xs text-ink/60">
                 You can record the first payment now, or add payments later.
               </p>
+              <div className="mb-4">
+                <Field label="Currency (the whole order is in this currency)">
+                  <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[
+                    { value: "RWF", label: "RWF — Rwandan Franc" },
+                    { value: "USD", label: "USD — US Dollar" },
+                    { value: "EUR", label: "EUR — Euro" },
+                  ]} />
+                </Field>
+              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Payment method">
                   <Select
@@ -658,7 +660,7 @@ export default function NewOrderPage() {
                     options={[{ value: "MoMo", label: "Mobile Money (MoMo)" }, { value: "Bank", label: "Bank transfer" }]}
                   />
                 </Field>
-                <Field label="Amount (RWF)">
+                <Field label={`Amount (${currency})`}>
                   <Input type="number" min={0} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} />
                 </Field>
                 <Field label="Transaction reference">

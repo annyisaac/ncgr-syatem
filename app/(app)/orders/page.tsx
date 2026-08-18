@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
+import { uploadPaymentSlip } from "@/lib/db";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ActionsDropdown, type DropdownAction } from "@/components/ui/Dropdown";
 import { PageHeader } from "@/components/ui/PageHeader";
@@ -32,7 +33,7 @@ import {
   settledAmount,
   toDeliver,
 } from "@/lib/types";
-import { formatRWF } from "@/lib/config";
+import { formatRWF, formatMoney } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders, productForRole, dateHasProduct } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
@@ -110,6 +111,8 @@ function OrdersInner() {
   // ?q= prefills the search (the dashboard's search bar hands off to here).
   const [query, setQuery] = useState(search.get("q") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
+  // Clickable stat-card filter (Total / Fulfilled / Confirmed / Pending / Cancelled).
+  const [cardFilter, setCardFilter] = useState<"all" | "fulfilled" | "confirmed" | "pending" | "cancelled">("all");
   const [productFilter, setProductFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState(dateParam);
   const [preset, setPreset] = useState<PeriodPreset>("all");
@@ -154,7 +157,7 @@ function OrdersInner() {
   }
 
   // Any filter change sends the table back to the first page.
-  const filterSig = `${tile}|${statusFilter}|${productFilter}|${dateFilter}|${preset}|${custom.from}|${custom.to}|${query}|${orderParam}`;
+  const filterSig = `${tile}|${cardFilter}|${statusFilter}|${productFilter}|${dateFilter}|${preset}|${custom.from}|${custom.to}|${query}|${orderParam}`;
   const [prevSig, setPrevSig] = useState(filterSig);
   if (prevSig !== filterSig) {
     setPrevSig(filterSig);
@@ -191,6 +194,17 @@ function OrdersInner() {
       list = list.filter((o) => !isClosed(o) && balance(o) > 0);
     else if (tile === "collected")
       list = list.filter((o) => allVerified(o));
+
+    // Clickable stat-card filter — same classification the KPI counts use.
+    if (cardFilter !== "all") {
+      list = list.filter((o) => {
+        const c =
+          o.status === "refunded" || o.status === "rejected" ? "cancelled"
+          : o.status === "fulfilled" ? "fulfilled"
+          : o.confirmedOk ? "confirmed" : "pending";
+        return c === cardFilter;
+      });
+    }
 
     // One dropdown covers both the order status and the payment status.
     if (statusFilter !== "all") {
@@ -245,7 +259,7 @@ function OrdersInner() {
               ? 1
               : 0
       );
-  }, [orders, user, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
+  }, [orders, user, tile, cardFilter, statusFilter, productFilter, dateFilter, range, query, orderParam]);
 
   // As-you-type client-name suggestions from the orders this user can see.
   const searchSuggestions = useMemo(
@@ -266,15 +280,18 @@ function OrdersInner() {
   // the role's product (Ross roles see only Ross dates, Tetra roles only Tetra).
   const deliveryDateOptions = useMemo(() => {
     const prod = role ? productForRole(role) : undefined;
+    // Open delivery dates from availability, plus any date that actually has
+    // orders this user can see — so a date whose availability row was removed
+    // (but still carries orders) stays filterable instead of disappearing.
+    const dates = new Set<string>();
+    for (const a of availability) if (dateHasProduct(a, prod)) dates.add(a.id);
+    const vis = user ? visibleOrders(orders, user) : [];
+    for (const o of vis) if (o.date && (!prod || o.product === prod)) dates.add(o.date);
     return [
       { value: "", label: "All delivery dates" },
-      ...availability
-        .slice()
-        .filter((a) => dateHasProduct(a, prod))
-        .sort((a, b) => (a.id < b.id ? -1 : 1))
-        .map((a) => ({ value: a.id, label: formatDate(a.date) })),
+      ...[...dates].sort().map((d) => ({ value: d, label: formatDate(d) })),
     ];
-  }, [availability, role]);
+  }, [availability, role, orders, user]);
 
   // KPI aggregates over every order this user can see (all time, unfiltered).
   const stats = useMemo(() => {
@@ -476,10 +493,13 @@ function OrdersInner() {
     }
 
     if (!o.deliverOk && !isClosed(o)) {
-      acts.push({ label: "Reschedule", onClick: () => setModal({ type: "reschedule", order: o }) });
-      // A backorder (the continuation of a short delivery) may only be edited by
-      // the Admin; a normal order stays editable by sellers and zone managers.
-      if (!o.backorderOf || isAdmin) {
+      // An order can only be changed by the person who created it — except the
+      // Admin, who can change any order. Backorders remain Admin-only for Edit.
+      const isMine = !!user?.email && o.by === user.email;
+      if (isAdmin || isMine) {
+        acts.push({ label: "Reschedule", onClick: () => setModal({ type: "reschedule", order: o }) });
+      }
+      if (isAdmin || (isMine && !o.backorderOf)) {
         acts.push({ label: "Edit", onClick: () => setModal({ type: "edit", order: o }) });
       }
     }
@@ -615,11 +635,11 @@ function OrdersInner() {
       />
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
-        <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub="All time" />
-        <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} />
-        <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} />
-        <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} />
-        <Kpi compact icon="cross" tone="red" value={stats.cancelled.toLocaleString()} label="Cancelled" sub={stats.pct(stats.cancelled)} />
+        <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub="All time" active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
+        <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} active={cardFilter === "fulfilled"} onClick={() => setCardFilter((f) => (f === "fulfilled" ? "all" : "fulfilled"))} />
+        <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} active={cardFilter === "confirmed"} onClick={() => setCardFilter((f) => (f === "confirmed" ? "all" : "confirmed"))} />
+        <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} active={cardFilter === "pending"} onClick={() => setCardFilter((f) => (f === "pending" ? "all" : "pending"))} />
+        <Kpi compact icon="cross" tone="red" value={stats.cancelled.toLocaleString()} label="Cancelled" sub={stats.pct(stats.cancelled)} active={cardFilter === "cancelled"} onClick={() => setCardFilter((f) => (f === "cancelled" ? "all" : "cancelled"))} />
         <Kpi compact icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub="All time" />
       </div>
 
@@ -823,7 +843,7 @@ function OrdersInner() {
                     </Td>
                     <Td className="whitespace-nowrap text-right">
                       <div className={`font-medium ${isFullyPaid(o) ? "text-green" : "text-ink"}`}>
-                        {formatRWF(orderTotal(o))}
+                        {formatMoney(orderTotal(o), o.currency)}
                       </div>
                       <div className="text-xs text-ink/50">
                         Paid {settledAmount(o).toLocaleString()} · Bal{" "}
@@ -906,7 +926,7 @@ function OrdersInner() {
               withHistory(
                 { ...modal.order, payments: [...modal.order.payments, payment] },
                 user,
-                `Recorded payment ${payment.amt.toLocaleString()} RWF (ref ${payment.ref})`
+                `Recorded payment ${payment.amt.toLocaleString()} ${modal.order.currency ?? "RWF"}${payment.method ? ` via ${payment.method}` : ""} (ref ${payment.ref})`
               ),
               "Payment added."
             );
@@ -1145,9 +1165,43 @@ function PayModal({
   onClose: () => void;
   onSave: (p: Payment) => void;
 }) {
+  const cur = order.currency ?? "RWF";
   const [amt, setAmt] = useState("");
   const [ref, setRef] = useState("");
+  const [method, setMethod] = useState<"MoMo" | "Bank">("MoMo");
+  const [bankName, setBankName] = useState("");
+  const [slipFile, setSlipFile] = useState<File | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  async function save() {
+    const n = Number(amt);
+    if (!n || n <= 0) return setErr("Enter an amount greater than zero.");
+    if (!ref.trim()) return setErr("Enter the transaction ID.");
+    if (method === "Bank" && !bankName.trim()) return setErr("Enter the bank name.");
+    if (method === "Bank" && !slipFile) return setErr("Upload the bank payment slip.");
+    setSaving(true);
+    let slipPath: string | undefined;
+    if (method === "Bank" && slipFile) {
+      try {
+        slipPath = await uploadPaymentSlip(slipFile);
+      } catch {
+        setSaving(false);
+        return setErr("Could not upload the slip — please try again.");
+      }
+    }
+    onSave({
+      amt: n,
+      ref: ref.trim(),
+      on: nowISO(),
+      by: user.email,
+      verified: false,
+      method,
+      ...(method === "Bank" ? { bankName: bankName.trim() } : {}),
+      ...(slipPath ? { slipPath } : {}),
+    });
+  }
+
   return (
     <Modal
       open
@@ -1155,30 +1209,38 @@ function PayModal({
       title={`Add payment — ${order.name}`}
       footer={
         <>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button
-            onClick={() => {
-              const n = Number(amt);
-              if (!n || n <= 0) return setErr("Enter an amount greater than zero.");
-              if (!ref.trim()) return setErr("Enter the transaction ID.");
-              onSave({ amt: n, ref: ref.trim(), on: nowISO(), by: user.email, verified: false });
-            }}
-          >
-            Save payment
-          </Button>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={save} disabled={saving}>{saving ? "Saving…" : "Save payment"}</Button>
         </>
       }
     >
       <div className="space-y-3">
         <p className="text-sm text-ink/60">
-          Balance: <strong>{formatRWF(balance(order))}</strong>
+          Balance: <strong>{formatMoney(balance(order), cur)}</strong>
         </p>
-        <Field label="Amount (RWF)">
+        <Field label="Payment method">
+          <Select
+            value={method}
+            onChange={(e) => setMethod(e.target.value as "MoMo" | "Bank")}
+            options={[{ value: "MoMo", label: "Mobile Money (MoMo)" }, { value: "Bank", label: "Bank transfer" }]}
+          />
+        </Field>
+        <Field label={`Amount (${cur})`}>
           <Input type="number" min={1} value={amt} onChange={(e) => setAmt(e.target.value)} />
         </Field>
         <Field label="Transaction ID">
-          <Input value={ref} onChange={(e) => setRef(e.target.value)} />
+          <Input value={ref} onChange={(e) => setRef(e.target.value)} placeholder={method === "Bank" ? "Bank transfer reference" : "MoMo transaction ID"} />
         </Field>
+        {method === "Bank" && (
+          <>
+            <Field label="Bank name">
+              <Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. Bank of Kigali" />
+            </Field>
+            <Field label="Payment slip (image/PDF)">
+              <Input type="file" accept="image/*,application/pdf" onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)} />
+            </Field>
+          </>
+        )}
         {err && <p className="text-sm text-status-refunded">{err}</p>}
       </div>
     </Modal>

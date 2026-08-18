@@ -10,10 +10,10 @@ import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Select";
 
-import { PRODUCTS, type Product, type Order, type Payment, type Province } from "@/lib/types";
-import { availableFor, sameCustomer } from "@/lib/types";
-import { ALL_DISTRICTS, formatRWF, provinceOfDistrict, sectorsOfDistrict, zoneOfDistrict } from "@/lib/config";
-import { nowISO, formatDate, normalizePhone } from "@/lib/format";
+import { PRODUCTS, type Product, type Order, type Payment, type Province, type Currency } from "@/lib/types";
+import { availableFor } from "@/lib/types";
+import { ALL_DISTRICTS, formatMoney, provinceOfDistrict, sectorsOfDistrict, zoneOfDistrict } from "@/lib/config";
+import { nowISO, formatDate, normalizePhone, todayISO } from "@/lib/format";
 import { logLine } from "@/lib/orders";
 
 const num = (v: string) => Number(v) || 0;
@@ -35,12 +35,13 @@ export default function DsrOrderPage() {
   const [chicks, setChicks] = useState("");
   const [price, setPrice] = useState("");
   const [payAmt, setPayAmt] = useState("");
+  const [currency, setCurrency] = useState<Currency>("RWF");
   const [payRef, setPayRef] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const openDates = useMemo(
-    () => availability.slice().filter((a) => !a.closed && (a.ross > 0 || a.tetra > 0)).sort((a, b) => (a.date < b.date ? -1 : 1)),
+    () => availability.slice().filter((a) => !a.closed && a.date >= todayISO() && (a.ross > 0 || a.tetra > 0)).sort((a, b) => (a.date < b.date ? -1 : 1)),
     [availability]
   );
   const selAvail = availability.find((a) => a.id === date);
@@ -128,19 +129,23 @@ export default function DsrOrderPage() {
       name: (existingCustomer?.name ?? name).trim(), clientDistrict: district, clientSector: sector.trim(),
       phone: phone.trim(), chicks: nChicks, comp: 0, price: nPrice, date,
       status: "pending", by: user!.email, zone, created: date, createdAt: nowISO(),
-      history, plan: samedate, payments,
+      history, plan: samedate, payments, currency,
     };
-    // One order per customer (name + phone) per product per delivery date.
+    // One live order per customer per delivery date — phone is the primary key,
+    // so this holds across products (matches the DB guard in place_order).
+    const dupKey = normalizePhone(order.phone);
     const dup = orders.find(
       (o) =>
         o.id !== order.id &&
         o.date === order.date &&
-        o.product === order.product &&
         o.status !== "rejected" &&
         o.status !== "refunded" &&
-        sameCustomer(o, order)
+        (dupKey
+          ? normalizePhone(o.phone) === dupKey
+          : order.name.trim() !== "" &&
+            o.name.trim().toLowerCase() === order.name.trim().toLowerCase())
     );
-    if (dup) return setError(`${order.name} (${order.phone}) already has a ${order.product} order for ${formatDate(order.date)}. You can't create another for the same customer on the same day.`);
+    if (dup) return setError(`${order.name} (${order.phone}) already has an order for ${formatDate(order.date)}. A customer can only have one order per delivery date.`);
 
     setSaving(true);
     const res = await placeOrder(order);
@@ -150,7 +155,7 @@ export default function DsrOrderPage() {
         return setError(`Not enough ${product} chicks available on ${formatDate(date)} anymore. Please pick another day or a smaller order.`);
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
       if (res.reason === "out_of_zone") return setError(`That client is outside your zone (${myDsr!.zone}). You can only take clients in your zone.`);
-      if (res.reason === "duplicate") return setError(`${order.name} already has a ${order.product} order for ${formatDate(order.date)}. You can't create another for the same customer on the same day.`);
+      if (res.reason === "duplicate") return setError(`${order.name} already has an order for ${formatDate(order.date)}. A customer can only have one order per delivery date.`);
       if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order. Check the reference and enter the correct one.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
@@ -197,14 +202,23 @@ export default function DsrOrderPage() {
           <div className="mt-4 grid grid-cols-3 gap-3 rounded-md bg-ink/5 p-3 text-sm">
             <Calc label="2% extra (free)" value={String(extra2)} />
             <Calc label="To deliver" value={String(toDeliverN)} />
-            <Calc label="Total (charged)" value={formatRWF(total)} />
+            <Calc label="Total (charged)" value={formatMoney(total, currency)} />
           </div>
         </Card>
 
         <Card>
           <CardHeader title="First payment (optional)" />
+          <div className="mb-4">
+            <Field label="Currency (the whole order is in this currency)">
+              <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[
+                { value: "RWF", label: "RWF — Rwandan Franc" },
+                { value: "USD", label: "USD — US Dollar" },
+                { value: "EUR", label: "EUR — Euro" },
+              ]} />
+            </Field>
+          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <Field label="Amount (RWF)"><Input type="number" min={0} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} /></Field>
+            <Field label={`Amount (${currency})`}><Input type="number" min={0} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} /></Field>
             <Field label="Transaction ID"><Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="MTN / bank ref" /></Field>
           </div>
         </Card>
