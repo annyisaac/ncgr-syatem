@@ -13,8 +13,9 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { PRODUCTS, type Product, type Order, type Payment, type Province, type Currency } from "@/lib/types";
 import { availableFor } from "@/lib/types";
 import { ALL_DISTRICTS, formatMoney, provinceOfDistrict, sectorsOfDistrict, zoneOfDistrict } from "@/lib/config";
-import { nowISO, formatDate, normalizePhone, todayISO } from "@/lib/format";
+import { nowISO, formatDate, normalizePhone, todayISO, phoneDigitCount, isValidMomoRef } from "@/lib/format";
 import { logLine } from "@/lib/orders";
+import { uploadPaymentSlip } from "@/lib/db";
 
 const num = (v: string) => Number(v) || 0;
 
@@ -37,6 +38,9 @@ export default function DsrOrderPage() {
   const [payAmt, setPayAmt] = useState("");
   const [currency, setCurrency] = useState<Currency>("RWF");
   const [payRef, setPayRef] = useState("");
+  const [payMethod, setPayMethod] = useState<"MoMo" | "Bank">("MoMo");
+  const [bankName, setBankName] = useState("");
+  const [slipFile, setSlipFile] = useState<File | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -101,7 +105,7 @@ export default function DsrOrderPage() {
     if (!product) return setError("Choose a product.");
     if (!date) return setError("Choose an open delivery date.");
     if (!name.trim()) return setError("Enter the client name.");
-    if (phone.trim().length < 6) return setError("Enter a valid phone number.");
+    if (phoneDigitCount(phone) < 10) return setError("Phone number must be at least 10 digits.");
     if (!district) return setError("Choose the client's district.");
     if (zoneOfDistrict(district) !== myDsr!.zone)
       return setError(`You can only take clients in your zone (${myDsr!.zone}). ${district} is outside it.`);
@@ -112,15 +116,39 @@ export default function DsrOrderPage() {
       return setError(`Not enough ${product} chicks available on ${formatDate(date)}. Please pick another day or a smaller order.`);
     }
     const payAmount = num(payAmt);
-    if (payAmount > 0 && !payRef.trim()) return setError("Enter the transaction ID for the first payment.");
+    if (payAmount > 0) {
+      if (!payRef.trim()) return setError("Enter the transaction ID for the first payment.");
+      if (payMethod === "MoMo" && !isValidMomoRef(payRef)) return setError("MoMo transaction ID must be exactly 11 digits.");
+      if (payMethod === "Bank" && !bankName.trim()) return setError("Enter the bank name.");
+      if (payMethod === "Bank" && !slipFile) return setError("Upload the bank payment slip.");
+    }
 
     const province: Province = (provinceOfDistrict(district) ?? "Eastern") as Province;
     const zone = zoneOfDistrict(district) ?? myDsr!.zone;
+
+    // Upload the bank slip first (private bucket) so the order stores only its path.
+    let slipPath: string | undefined;
+    if (payAmount > 0 && payMethod === "Bank" && slipFile) {
+      setSaving(true);
+      try {
+        slipPath = await uploadPaymentSlip(slipFile);
+      } catch (err) {
+        setSaving(false);
+        return setError(err instanceof Error ? err.message : "Could not upload the payment slip.");
+      }
+    }
+
     const payments: Payment[] = [];
     const history = [logLine(user!, "Created order (Not confirmed)")];
     if (payAmount > 0) {
-      payments.push({ amt: payAmount, ref: payRef.trim(), on: nowISO(), by: user!.email, verified: false });
-      history.push(logLine(user!, `Recorded first payment ${payAmount.toLocaleString()} RWF (ref ${payRef.trim()})`));
+      payments.push({
+        amt: payAmount, ref: payRef.trim(), on: nowISO(), by: user!.email,
+        method: payMethod,
+        ...(payMethod === "Bank" ? { bankName: bankName.trim() } : {}),
+        ...(slipPath ? { slipPath } : {}),
+        verified: false,
+      });
+      history.push(logLine(user!, `Recorded first payment ${payAmount.toLocaleString()} ${currency} via ${payMethod} (ref ${payRef.trim()})`));
     }
     const samedate = orders.filter((o) => o.date === date).length;
     const order: Order = {
@@ -210,8 +238,17 @@ export default function DsrOrderPage() {
         <Card>
           <CardHeader title="First payment (optional)" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Payment method">
+              <Select value={payMethod} onChange={(e) => setPayMethod(e.target.value as "MoMo" | "Bank")} options={[{ value: "MoMo", label: "Mobile Money (MoMo)" }, { value: "Bank", label: "Bank transfer" }]} />
+            </Field>
             <Field label={`Amount (${currency})`}><Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} /></Field>
-            <Field label="Transaction ID"><Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="MTN / bank ref" /></Field>
+            <Field label="Transaction ID"><Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder={payMethod === "Bank" ? "Bank transfer reference" : "MoMo transaction ID (11 digits)"} /></Field>
+            {payMethod === "Bank" && (
+              <>
+                <Field label="Bank name"><Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. Bank of Kigali" /></Field>
+                <Field label="Payment slip (image/PDF)"><Input type="file" accept="image/*,application/pdf" onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)} /></Field>
+              </>
+            )}
           </div>
         </Card>
 

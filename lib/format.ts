@@ -75,3 +75,13 @@ export function normalizePhone(phone: string): string {
   if (d.startsWith("0")) d = d.slice(1);
   return d;
 }
+
+/** How many digits a phone number carries (used to enforce a minimum length). */
+export function phoneDigitCount(phone: string): number {
+  return (phone || "").replace(/\D/g, "").length;
+}
+
+/** MTN MoMo transaction IDs are exactly 11 digits. */
+export function isValidMomoRef(ref: string): boolean {
+  return /^\d{11}$/.test((ref || "").trim());
+}

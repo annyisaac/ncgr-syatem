@@ -33,7 +33,7 @@ import {
   toDeliver,
 } from "@/lib/types";
 import { formatRWF, formatMoney } from "@/lib/config";
-import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
+import { formatDate, formatDateTime, nowISO, todayISO, isValidMomoRef } from "@/lib/format";
 import { visibleOrders, productForRole, dateHasProduct } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
 import { clientKey } from "@/lib/clients";
@@ -1222,6 +1222,7 @@ function PayModal({
     const n = Number(amt);
     if (!n || n <= 0) return setErr("Enter an amount greater than zero.");
     if (!ref.trim()) return setErr("Enter the transaction ID.");
+    if (method === "MoMo" && !isValidMomoRef(ref)) return setErr("MoMo transaction ID must be exactly 11 digits.");
     if (method === "Bank" && !bankName.trim()) return setErr("Enter the bank name.");
     if (method === "Bank" && !slipFile) return setErr("Upload the bank payment slip.");
     setSaving(true);

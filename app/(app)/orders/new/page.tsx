@@ -24,7 +24,7 @@ import {
   zoneOfDistrict,
   zoneProvinces,
 } from "@/lib/config";
-import { nowISO, normalizePhone, formatDate, todayISO } from "@/lib/format";
+import { nowISO, normalizePhone, formatDate, todayISO, phoneDigitCount, isValidMomoRef } from "@/lib/format";
 import { logLine } from "@/lib/orders";
 import { uploadPaymentSlip } from "@/lib/db";
 
@@ -262,7 +262,7 @@ export default function NewOrderPage() {
     if (product === "Ross 308" && rossSource === "dsr" && !dsrId) return setError("Select a DSR, or choose “No DSR”.");
     if (!rossDirect && !sector.trim()) return setError("Enter or choose a sector.");
     if (!name.trim()) return setError("Enter the client name.");
-    if (phone.trim().length < 6) return setError("Enter a valid phone number.");
+    if (phoneDigitCount(phone) < 10) return setError("Phone number must be at least 10 digits.");
     if (!clientDistrict) return setError("Choose the client's district.");
     if (!clientSector.trim()) return setError("Enter the client's sector.");
     if (nChicks <= 0) return setError("Chicks must be greater than zero.");
@@ -283,6 +283,7 @@ export default function NewOrderPage() {
     const payAmount = Number(payAmt) || 0;
     if (payAmount > 0) {
       if (!payRef.trim()) return setError("Enter the transaction reference for the first payment.");
+      if (payMethod === "MoMo" && !isValidMomoRef(payRef)) return setError("MoMo transaction ID must be exactly 11 digits.");
       if (payMethod === "Bank" && !bankName.trim()) return setError("Enter the bank name.");
       if (payMethod === "Bank" && !slipFile) return setError("Upload the bank payment slip.");
     }
