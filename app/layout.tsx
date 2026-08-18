@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { Providers } from "@/components/Providers";
+import { PWA } from "@/components/PWA";
 import { themeInitScript } from "@/components/ThemeProvider";
 
 const geistSans = Geist({
@@ -17,6 +18,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "NCGR LTD",
   description: "Your Partner in Poultry Excellence",
+  // Installed-PWA behaviour on iOS (standalone, home-screen title).
+  appleWebApp: { capable: true, statusBarStyle: "default", title: "NCGR" },
 };
 
 /** Render at device width on phones/tablets and tint the mobile browser bar. */
@@ -45,6 +48,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full">
         <Providers>{children}</Providers>
+        <PWA />
       </body>
     </html>
   );
