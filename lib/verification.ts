@@ -37,8 +37,10 @@ export interface AutoOutcome {
 export const AMOUNT_REVIEW_FLAT = 1000; // RWF
 export const AMOUNT_REVIEW_PCT = 0.02; // 2% of the recorded amount
 
-function amountNeedsReview(recorded: number, bank: number): boolean {
-  return Math.abs(bank - recorded) > Math.max(AMOUNT_REVIEW_FLAT, recorded * AMOUNT_REVIEW_PCT);
+function amountNeedsReview(recorded: number, bank: number, currency: string): boolean {
+  // The flat floor is an RWF figure; for USD/EUR a tiny flat keeps the percentage rule in charge.
+  const flat = currency === "RWF" ? AMOUNT_REVIEW_FLAT : 1;
+  return Math.abs(bank - recorded) > Math.max(flat, recorded * AMOUNT_REVIEW_PCT);
 }
 
 /**
@@ -81,19 +83,21 @@ export function runAutoCheck(
   actor: User,
   visibleIds: Set<string>
 ): { orders: Order[]; outcomes: AutoOutcome[] } {
-  const allRows = statements.flatMap((s) => s.rows);
   const outcomes: AutoOutcome[] = [];
 
-  // Index the statements once: normalized ref -> the distinct amounts seen for
-  // that ref (identical repeats collapsed). A ref is *claimed* by the first
-  // payment that matches it and then removed, so a single bank credit can only
-  // ever verify one payment — the rest report a "collision".
+  // Index the statements once, SCOPED BY CURRENCY so a payment only ever matches
+  // a bank credit in its own currency. Key = "<currency>|<normalized ref>". A ref
+  // is *claimed* by the first payment that matches it and then removed, so a
+  // single bank credit can only ever verify one payment — the rest "collision".
   const byRef = new Map<string, number[]>();
-  for (const row of allRows) {
-    const key = norm(row.ref);
-    const amts = byRef.get(key);
-    if (!amts) byRef.set(key, [row.amt]);
-    else if (!amts.includes(row.amt)) amts.push(row.amt);
+  for (const s of statements) {
+    const cur = s.currency ?? "RWF";
+    for (const row of s.rows) {
+      const key = cur + "|" + norm(row.ref);
+      const amts = byRef.get(key);
+      if (!amts) byRef.set(key, [row.amt]);
+      else if (!amts.includes(row.amt)) amts.push(row.amt);
+    }
   }
   // Every ref the statements ever held — used to tell "never in any statement"
   // apart from "already matched to an earlier payment".
@@ -103,6 +107,7 @@ export function runAutoCheck(
     if (!visibleIds.has(order.id)) return order;
     if (!order.confirmedOk) return order;
 
+    const cur = order.currency ?? "RWF";
     let changed = false;
     const extraHistory: string[] = [];
 
@@ -111,7 +116,7 @@ export function runAutoCheck(
       if (p.voided) return p; // Admin-rejected — never auto-re-verify.
       if (p.returnedForFix) return p; // with the seller to correct the id
 
-      const key = norm(p.ref);
+      const key = cur + "|" + norm(p.ref);
       const avail = byRef.get(key);
 
       if (!avail) {
@@ -180,7 +185,7 @@ export function runAutoCheck(
       // notify_order trigger fires on the "overridden" flag); a small gap is a
       // quiet correction.
       const was = p.amt;
-      const large = amountNeedsReview(p.amt, bankAmt);
+      const large = amountNeedsReview(p.amt, bankAmt, cur);
       outcomes.push({
         orderId: order.id,
         client: order.name,
@@ -191,7 +196,7 @@ export function runAutoCheck(
           : `Amount corrected ${was.toLocaleString()} → ${bankAmt.toLocaleString()}`,
       });
       extraHistory.push(
-        `${nowISO()} — Payment ${p.ref} amount ${large ? "overridden" : "corrected"} from ${was.toLocaleString()} to ${bankAmt.toLocaleString()} RWF — used bank statement (auto, by ${actor.name})`
+        `${nowISO()} — Payment ${p.ref} amount ${large ? "overridden" : "corrected"} from ${was.toLocaleString()} to ${bankAmt.toLocaleString()} ${cur} — used bank statement (auto, by ${actor.name})`
       );
       changed = true;
       return {
@@ -199,7 +204,7 @@ export function runAutoCheck(
         amt: bankAmt,
         comment: "Auto-verified; amount adopted from bank statement",
         flag: large
-          ? `Amount overridden: recorded RWF ${was.toLocaleString()} vs statement RWF ${bankAmt.toLocaleString()}`
+          ? `Amount overridden: recorded ${cur} ${was.toLocaleString()} vs statement ${cur} ${bankAmt.toLocaleString()}`
           : `Amount corrected from ${was.toLocaleString()}`,
         pendingApproval: undefined,
       };

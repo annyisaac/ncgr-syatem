@@ -5,16 +5,18 @@ import { useMemo, useRef, useState } from "react";
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { useToast } from "@/components/ui/Toast";
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Modal } from "@/components/ui/Modal";
+import { Kpi } from "@/components/dashboard/Kpi";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
+import { Pagination } from "@/components/ui/Pagination";
 
-import type { BankStatement, Order, Payment } from "@/lib/types";
+import type { BankStatement, Currency, Order, Payment } from "@/lib/types";
 import { orderTotal } from "@/lib/types";
-import { formatRWF } from "@/lib/config";
+import { formatMoney } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO, todayISO } from "@/lib/format";
 import { visibleOrders, productForRole, dateHasProduct } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
@@ -25,6 +27,7 @@ import { presetToRange, type PeriodPreset } from "@/lib/period";
 import {
   buildStatementRows,
   guessAmountColumn,
+  guessDateColumn,
   guessRefColumn,
   parseWorkbook,
   type ParsedSheet,
@@ -43,6 +46,8 @@ interface Staged {
   sheet: ParsedSheet;
   refCol: string;
   amtCol: string;
+  dateCol: string;
+  currency: Currency;
 }
 
 /** A checker may enter several transaction ids separated by a dash/space/comma. */
@@ -64,10 +69,11 @@ function lookupRefs(refs: string[], statements: BankStatement[]) {
 function payMatch(o: Order): { tone: "green" | "gold" | "blue"; label: string } {
   const total = orderTotal(o);
   const paid = o.payments.filter((p) => p.verified).reduce((s, p) => s + p.amt, 0);
-  if (paid > total) return { tone: "blue", label: `Overpaid +${formatRWF(paid - total)}` };
+  const cur = o.currency;
+  if (paid > total) return { tone: "blue", label: `Overpaid +${formatMoney(paid - total, cur)}` };
   if (paid === total) return { tone: "green", label: "Paid in full" };
-  if (paid > 0) return { tone: "gold", label: `Short ${formatRWF(total - paid)}` };
-  return { tone: "gold", label: `Owes ${formatRWF(total)}` };
+  if (paid > 0) return { tone: "gold", label: `Short ${formatMoney(total - paid, cur)}` };
+  return { tone: "gold", label: `Owes ${formatMoney(total, cur)}` };
 }
 
 export default function VerificationPage() {
@@ -80,6 +86,12 @@ export default function VerificationPage() {
   const isAdmin = user?.role === "Admin" || user?.role === "Accountant";
 
   const [staged, setStaged] = useState<Staged | null>(null);
+  const [showStatements, setShowStatements] = useState(false); // "view details" modal
+  const [showApprovals, setShowApprovals] = useState(false);   // missing-payment approvals modal
+  const [showAutoResults, setShowAutoResults] = useState(false); // automatic-check results modal
+  const [stmtQuery, setStmtQuery] = useState("");                // search within uploaded statements
+  const [pPage, setPPage] = useState(1);
+  const [pSize, setPSize] = useState(10);
   const [outcomes, setOutcomes] = useState<AutoOutcome[]>([]);
   const [manual, setManual] = useState<{ order: Order; payIndex: number } | null>(null);
   const [approveFor, setApproveFor] = useState<{ order: Order; payIndex: number } | null>(null);
@@ -102,12 +114,6 @@ export default function VerificationPage() {
     [orders, user]
   );
   const visibleIds = useMemo(() => new Set(myOrders.map((o) => o.id)), [myOrders]);
-
-  // Orders with at least one unverified payment (voided ones don't count).
-  const pending = useMemo(
-    () => myOrders.filter((o) => o.payments.some((p) => !p.verified && !p.voided)),
-    [myOrders]
-  );
 
   // Every payment on confirmed orders — unverified first — so the checker sees
   // both what's left to check and what an admin/checker has already verified.
@@ -168,16 +174,19 @@ export default function VerificationPage() {
   const deliveryDateOptions = useMemo(
     () => {
       const prod = user ? productForRole(user.role) : undefined;
+      // Open delivery dates from availability, plus any date that actually has
+      // orders this checker can see — so a date whose availability row was
+      // removed (but still carries orders) stays filterable, not hidden.
+      const dates = new Set<string>();
+      for (const a of availability) if (dateHasProduct(a, prod)) dates.add(a.id);
+      const vis = user ? visibleOrders(orders, user) : [];
+      for (const o of vis) if (o.date && (!prod || o.product === prod)) dates.add(o.date);
       return [
         { value: "", label: "All delivery dates" },
-        ...availability
-          .slice()
-          .filter((a) => dateHasProduct(a, prod))
-          .sort((a, b) => (a.id < b.id ? -1 : 1))
-          .map((a) => ({ value: a.id, label: formatDate(a.date) })),
+        ...[...dates].sort().map((d) => ({ value: d, label: formatDate(d) })),
       ];
     },
-    [availability, user]
+    [availability, user, orders]
   );
 
   // Reconciliation report over exactly what the payments filter shows.
@@ -221,6 +230,62 @@ export default function VerificationPage() {
     };
   }, [shownPayRows, productFilter, statusFilter, dateFilter, preset, query, deliveryDateOptions]);
 
+  // Overview KPIs across the payments this user can see (non-voided).
+  const stats = useMemo(() => {
+    let received = 0, count = 0, verified = 0, verifiedAmt = 0, needsReview = 0, reviewAmt = 0;
+    for (const { p } of payRows) {
+      if (p.voided) continue;
+      count++; received += p.amt;
+      if (p.verified) { verified++; verifiedAmt += p.amt; }
+      else { needsReview++; reviewAmt += p.amt; }
+    }
+    const pct = count ? Math.round((verified / count) * 1000) / 10 : 0;
+    return { received, count, verified, verifiedAmt, pct, needsReview, reviewAmt };
+  }, [payRows]);
+
+  // Verified money grouped by each order's currency, no conversion (e.g. "9M RWF · $500").
+  const verifiedByCurrency = useMemo(() => {
+    const sums: Record<string, number> = {};
+    for (const { o, p } of payRows) {
+      if (p.verified && !p.voided) { const c = o.currency ?? "RWF"; sums[c] = (sums[c] ?? 0) + p.amt; }
+    }
+    const parts = (["RWF", "USD", "EUR"] as const).filter((c) => sums[c]).map((c) => formatMoney(sums[c], c));
+    return parts.length ? parts.join(" · ") : "0 RWF";
+  }, [payRows]);
+
+  // Reconciliation queue — work prioritised by the action it needs.
+  const queue = useMemo(() => {
+    const verifiedRefs = new Set<string>();
+    for (const { p } of payRows) if (p.verified && !p.voided) {
+      for (const r of [p.checkedRef, p.ref]) { const n = r ? normRef(r) : ""; if (n) verifiedRefs.add(n); }
+    }
+    const stmtRefs = new Set<string>();
+    for (const s of statements) for (const r of s.rows) { const n = normRef(r.ref); if (n) stmtRefs.add(n); }
+    let unmatchedBank = 0;
+    for (const n of stmtRefs) if (!verifiedRefs.has(n)) unmatchedBank++;
+    let partial = 0;
+    for (const o of myOrders) {
+      const paid = o.payments.filter((p) => p.verified && !p.voided).reduce((s, p) => s + p.amt, 0);
+      if (paid > 0 && paid < orderTotal(o)) partial++;
+    }
+    return { missingApprovals: approvalRows.length, unmatchedBank, partial };
+  }, [payRows, statements, myOrders, approvalRows]);
+
+  // Reconciliation progress across payments (non-voided): matched / review / unmatched.
+  const hero = useMemo(() => {
+    let matched = 0, review = 0, unmatched = 0, total = 0;
+    for (const { p } of payRows) {
+      if (p.voided) continue;
+      total++;
+      if (p.verified) matched++;
+      else if (p.pendingApproval || p.returnedForFix || p.flag) review++;
+      else unmatched++;
+    }
+    const pct = total ? Math.round((matched / total) * 100) : 0;
+    const w = (n: number) => (total ? (n / total) * 100 : 0);
+    return { matched, review, unmatched, total, pct, matchedW: w(matched), reviewW: w(review) };
+  }, [payRows]);
+
   if (!user) return null;
 
   async function onFile(e: React.ChangeEvent<HTMLInputElement>) {
@@ -237,6 +302,8 @@ export default function VerificationPage() {
         sheet,
         refCol: guessRefColumn(sheet.headers),
         amtCol: guessAmountColumn(sheet.headers),
+        dateCol: guessDateColumn(sheet.headers),
+        currency: "RWF",
       });
     } catch {
       toast("Could not read that file.", "error");
@@ -247,7 +314,7 @@ export default function VerificationPage() {
 
   function addStatement() {
     if (!staged) return;
-    const rows = buildStatementRows(staged.sheet, staged.refCol, staged.amtCol);
+    const rows = buildStatementRows(staged.sheet, staged.refCol, staged.amtCol, staged.dateCol || undefined);
     if (rows.length === 0) {
       toast("No rows found with those columns.", "error");
       return;
@@ -259,6 +326,8 @@ export default function VerificationPage() {
       uploadedOn: nowISO(),
       refColumn: staged.refCol,
       amtColumn: staged.amtCol,
+      dateColumn: staged.dateCol || undefined,
+      currency: staged.currency,
       rows,
     };
     // Single-row write — sending the whole list would delete statements another
@@ -275,6 +344,7 @@ export default function VerificationPage() {
     res.orders.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
     const cleared = res.outcomes.filter((x) => x.result === "verified" || x.result === "corrected").length;
     setOutcomes(res.outcomes);
+    if (res.outcomes.length > 0) setShowAutoResults(true);
     toast(
       cleared > 0
         ? `Added "${stmt.fileName}" (${rows.length} rows) — ${cleared} payment(s) auto-verified.`
@@ -298,6 +368,7 @@ export default function VerificationPage() {
     const before = new Map(orders.map((o) => [o.id, o]));
     res.orders.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
     setOutcomes(res.outcomes);
+    if (res.outcomes.length > 0) setShowAutoResults(true);
     const verified = res.outcomes.filter((o) => o.result === "verified" || o.result === "corrected").length;
     toast(`Automatic check done — ${verified} verified/corrected, ${res.outcomes.length} checked.`);
   }
@@ -375,7 +446,7 @@ export default function VerificationPage() {
           ? `Verified payment (${refLabel}) — amount ${p0.amt.toLocaleString()} → ${amt.toLocaleString()} RWF from statement — ${comment}`
           : `Verified payment (${refLabel}) from statement — ${comment}`);
       if (!ok) return;
-      toast(corrected ? `Verified — amount set to ${formatRWF(amt)} from the statement.` : `Verified ${formatRWF(amt)} from the statement.`);
+      toast(corrected ? `Verified — amount set to ${formatMoney(amt, order.currency)} from the statement.` : `Verified ${formatMoney(amt, order.currency)} from the statement.`);
       return setManual(null);
     }
 
@@ -422,7 +493,7 @@ export default function VerificationPage() {
         pendingApproval: undefined,
         reusedDispute: undefined, // dispute resolved once the Admin approves
       },
-      `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)} — ${note}`);
+      `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatMoney(p0.amt, order.currency)} — ${note}`);
     if (!ok) return;
     toast("Payment approved and verified.");
     setApproveFor(null);
@@ -431,7 +502,7 @@ export default function VerificationPage() {
     const p0 = order.payments[payIndex];
     void patchPayment(order, payIndex,
       { verified: false, voided: true, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" },
-      `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatRWF(p0.amt)} removed from paid`);
+      `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatMoney(p0.amt, order.currency)} removed from paid`);
     toast("Payment rejected and voided — no longer counts as paid.", "info");
   }
 
@@ -441,11 +512,11 @@ export default function VerificationPage() {
   async function rejectDuplicate(order: Order, payIndex: number) {
     const p0 = order.payments[payIndex];
     if (typeof window !== "undefined" && !window.confirm(
-      `Reject this DUPLICATE payment?\n\n${order.name} · ${formatRWF(p0.amt)} · ref ${p0.ref}\n\nThe payment is voided (stops counting as paid) and the Admin is notified.`
+      `Reject this DUPLICATE payment?\n\n${order.name} · ${formatMoney(p0.amt, order.currency)} · ref ${p0.ref}\n\nThe payment is voided (stops counting as paid) and the Admin is notified.`
     )) return;
     const ok = await patchPayment(order, payIndex,
       { verified: false, voided: true, verifiedBy: undefined, verifiedOn: undefined, pendingApproval: undefined, returnedForFix: undefined, flag: `Rejected as duplicate by ${user!.name}` },
-      `Payment (${p0.ref}) rejected as a DUPLICATE reference by ${user!.name} — ${formatRWF(p0.amt)} voided`);
+      `Payment (${p0.ref}) rejected as a DUPLICATE reference by ${user!.name} — ${formatMoney(p0.amt, order.currency)} voided`);
     if (ok) toast("Duplicate payment rejected — the Admin has been notified.");
   }
 
@@ -493,7 +564,7 @@ export default function VerificationPage() {
             ? { ...p, verified: true, verifiedBy: user!.email, verifiedOn: nowISO(), checkedRef: ref, comment: `Approved by Admin — ${note}`, flag: undefined, pendingApproval: undefined }
             : p
         );
-        updated = withHistory({ ...updated, payments }, user!, `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatRWF(p0.amt)} — ${note}`);
+        updated = withHistory({ ...updated, payments }, user!, `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatMoney(p0.amt, order.currency)} — ${note}`);
         count++;
       }
       if (updated !== order) void upsertOrder(updated);
@@ -517,7 +588,7 @@ export default function VerificationPage() {
             ? { ...p, verified: false, voided: true, pendingApproval: undefined, flag: "Rejected by Admin — not in statements" }
             : p
         );
-        updated = withHistory({ ...updated, payments }, user!, `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatRWF(p0.amt)} removed from paid`);
+        updated = withHistory({ ...updated, payments }, user!, `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatMoney(p0.amt, order.currency)} removed from paid`);
         count++;
       }
       if (updated !== order) void upsertOrder(updated);
@@ -526,162 +597,210 @@ export default function VerificationPage() {
     toast(count ? `${count} payment(s) rejected and voided.` : "Nothing to reject.", "info");
   }
 
+  const pageCount = Math.max(1, Math.ceil(shownPayRows.length / pSize));
+  const safePage = Math.min(pPage, pageCount);
+  const pageRows = shownPayRows.slice((safePage - 1) * pSize, safePage * pSize);
+
   return (
     <div className="space-y-6">
 
-      {/* How a not-in-statement id is handled — shown to checkers and the Admin. */}
+      {/* Header */}
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight text-ink">Reconcile payments</h1>
+          <p className="mt-1 text-sm text-muted">Match customer payments to your bank statement, then approve.</p>
+        </div>
+        <div className="text-sm text-muted">
+          <span className="font-semibold text-ink">{user.name}</span> · {user.role}
+        </div>
+      </div>
+
+      {/* Overview — click a card to filter the list */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <Kpi compact icon="money" tone="gold" value={stats.count.toLocaleString()} label="Total payments" sub={`${hero.pct}% reconciled`} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
+        <Kpi compact icon="check" tone="green" value={stats.verified.toLocaleString()} label="Matched" sub={verifiedByCurrency} active={statusFilter === "checked"} onClick={() => setStatusFilter((f) => (f === "checked" ? "all" : "checked"))} />
+        <Kpi compact icon="pending" tone="amber" value={stats.needsReview.toLocaleString()} label="Needs review" active={statusFilter === "unverified"} onClick={() => setStatusFilter((f) => (f === "unverified" ? "all" : "unverified"))} />
+        <Kpi compact icon="orders" tone="blue" value={queue.missingApprovals.toLocaleString()} label="Awaiting approval" active={statusFilter === "awaiting"} onClick={() => setStatusFilter((f) => (f === "awaiting" ? "all" : "awaiting"))} />
+        <Kpi compact icon="alert" tone="red" value={queue.unmatchedBank.toLocaleString()} label="Unmatched" sub="bank items" onClick={isAdmin ? () => setShowApprovals(true) : undefined} />
+      </div>
+
+      {/* Add your latest bank statement */}
       <Card>
-        <CardHeader title="When a transaction ID isn't in the statement" />
-        <ol className="list-decimal space-y-1.5 pl-5 text-sm text-ink/70">
-          <li>Verify a payment by matching its ID to the statement — automatically, or with <strong>Verify manually</strong> (the amount shows when the ID is found).</li>
-          <li>If the ID <strong>isn&apos;t found</strong>, in the Verify-manually box choose either <strong>Return to seller to fix</strong> (the seller / zone manager / accountant corrects the ID) or <strong>Send to Admin</strong> for approval.</li>
-          <li>When returned, they fix the ID and it comes back here to <strong>re-verify</strong> (or run the auto-check).</li>
-          <li>If the Admin / Accountant also can&apos;t find it, they <strong>reject the payment</strong> below — that voids the <em>payment only</em> (it stops counting as paid); the order stays open.</li>
-          <li>A <strong>duplicate</strong> ID (appears with different amounts) is ambiguous, not a typo, so it goes straight to the Admin.</li>
-        </ol>
-      </Card>
-
-      {/* Bank statements — uploaded files are visible only to the Admin & Accountant. */}
-      {isAdmin && (
-      <Card>
-        <CardHeader title="Bank statements" />
-        {isAdmin ? (
-          <>
-          <p className="mb-3 text-sm text-ink/60">
-            Upload one or more bank statements (Excel/CSV). Clients may pay via
-            different banks — all statements are searched together.
-          </p>
-
-          <input
-            ref={fileRef}
-            type="file"
-            accept=".xlsx,.xls,.csv"
-            onChange={onFile}
-            className="block text-sm text-ink file:mr-3 file:rounded-md file:border-0 file:bg-onyx file:px-4 file:py-2 file:text-white hover:file:brightness-110"
-          />
-
-          {staged && (
-            <div className="mt-4 rounded-md border border-ink/10 bg-ink/5 p-3">
-              <p className="mb-2 text-sm font-medium">
-                Map columns for “{staged.fileName}”
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <button
+              type="button"
+              onClick={isAdmin ? () => fileRef.current?.click() : undefined}
+              disabled={!isAdmin}
+              title={isAdmin ? "Upload a statement" : undefined}
+              aria-label={isAdmin ? "Upload a statement" : undefined}
+              className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gold-bg text-gold-dark transition ${isAdmin ? "cursor-pointer hover:brightness-95 hover:ring-2 hover:ring-gold/40" : "cursor-default"}`}
+            >
+              <svg width="18" height="18" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M10 13V4M6.5 7.5 10 4l3.5 3.5M4 15.5h12" /></svg>
+            </button>
+            <div>
+              <h3 className="text-sm font-extrabold text-ink">Add your latest bank statement</h3>
+              <p className="text-xs text-muted">
+                {isAdmin
+                  ? "CSV, XLSX or bank export — we match against open orders automatically."
+                  : "Uploaded by the Admin; used to verify payments."}
               </p>
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <Field label="Reference column">
-                  <Select
-                    value={staged.refCol}
-                    onChange={(e) => setStaged({ ...staged, refCol: e.target.value })}
-                    options={staged.sheet.headers.map((h) => ({ value: h, label: h }))}
-                  />
-                </Field>
-                <Field label="Amount column">
-                  <Select
-                    value={staged.amtCol}
-                    onChange={(e) => setStaged({ ...staged, amtCol: e.target.value })}
-                    options={staged.sheet.headers.map((h) => ({ value: h, label: h }))}
-                  />
-                </Field>
-              </div>
-              <div className="mt-3 flex justify-end gap-2">
-                <Button variant="ghost" onClick={() => setStaged(null)}>Cancel</Button>
-                <Button onClick={addStatement}>Add statement</Button>
-              </div>
             </div>
-          )}
-          </>
-        ) : (
-          <p className="mb-1 text-sm text-ink/60">
-            Bank statements are uploaded by the Admin — they&apos;re listed below
-            so you can verify payments against them.
-          </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {isAdmin && <Button size="sm" variant="ghost" onClick={runAuto}>Run automatic check</Button>}
+            <Button size="sm" variant="ghost" onClick={() => setShowStatements(true)}>View details ({statements.length})</Button>
+          </div>
+        </div>
+
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" onChange={onFile} className="hidden" />
+
+        {staged && (
+          <div className="mt-4 rounded-xl border border-line bg-field/50 p-3">
+            <p className="mb-2 text-sm font-medium text-ink">Map columns for “{staged.fileName}”</p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field label="Reference column"><Select value={staged.refCol} onChange={(e) => setStaged({ ...staged, refCol: e.target.value })} options={staged.sheet.headers.map((h) => ({ value: h, label: h }))} /></Field>
+              <Field label="Amount column"><Select value={staged.amtCol} onChange={(e) => setStaged({ ...staged, amtCol: e.target.value })} options={staged.sheet.headers.map((h) => ({ value: h, label: h }))} /></Field>
+              <Field label="Date column (optional)"><Select value={staged.dateCol} onChange={(e) => setStaged({ ...staged, dateCol: e.target.value })} options={[{ value: "", label: "— none —" }, ...staged.sheet.headers.map((h) => ({ value: h, label: h }))]} /></Field>
+              <Field label="Currency"><Select value={staged.currency} onChange={(e) => setStaged({ ...staged, currency: e.target.value as Currency })} options={[
+                { value: "RWF", label: "RWF" }, { value: "USD", label: "USD" }, { value: "EUR", label: "EUR" },
+              ]} /></Field>
+            </div>
+            <div className="mt-3 flex justify-end gap-2">
+              <Button variant="ghost" onClick={() => setStaged(null)}>Cancel</Button>
+              <Button onClick={addStatement}>Save statement</Button>
+            </div>
+          </div>
         )}
 
-        <div className="mt-4">
-          <TableWrap>
-            <thead>
-              <tr>
-                <Th>File</Th>
-                <Th className="text-right">Rows</Th>
-                <Th>Uploaded</Th>
-                {isAdmin && <Th>Action</Th>}
-              </tr>
-            </thead>
-            <tbody>
-              {statements.length === 0 ? (
-                <EmptyRow colSpan={isAdmin ? 4 : 3} text="No statements uploaded yet." />
-              ) : (
-                statements.map((s) => (
-                  <tr key={s.id}>
-                    <Td>{s.fileName}</Td>
-                    <Td className="text-right">{s.rows.length}</Td>
-                    <Td>{formatDateTime(s.uploadedOn)}</Td>
-                    {isAdmin && (
-                      <Td>
-                        <Button size="sm" variant="ghost" onClick={() => onRemoveStatement(s.id)}>
-                          Remove
-                        </Button>
-                      </Td>
-                    )}
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </TableWrap>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1 text-xs text-muted">
+          <span className="flex gap-1.5"><span className="font-bold text-green">✓</span>Exact matches prepared automatically.</span>
+          <span className="flex gap-1.5"><span className="font-bold text-green">✓</span>Unclear payments go to your review queue.</span>
+          <span className="flex gap-1.5"><span className="font-bold text-green">✓</span>Nothing is approved until you confirm.</span>
         </div>
       </Card>
-      )}
 
-      {/* Automatic check */}
+      {/* Payments list + approvals (full width) */}
+
+      {/* Payments to reconcile */}
       <Card>
-        <CardHeader
-          title="Automatic check"
-          action={<Button onClick={runAuto}>Run automatic check</Button>}
-        />
-        {outcomes.length === 0 ? (
-          <p className="text-sm text-ink/50">
-            Run the check to match confirmed payments against the statements.
-          </p>
-        ) : (
-          <TableWrap>
-            <thead>
-              <tr>
-                <Th>Client</Th>
-                <Th>Reference</Th>
-                <Th>Result</Th>
-                <Th>Detail</Th>
-              </tr>
-            </thead>
-            <tbody>
-              {outcomes.map((o, i) => (
-                <tr key={i}>
-                  <Td>{o.client}</Td>
-                  <Td>{o.ref}</Td>
+        <div id="payments-list" className="mb-3 flex scroll-mt-20 flex-wrap items-center justify-between gap-2">
+          <h3 className="card-title">Payments to reconcile</h3>
+          {isAdmin && (
+            <div className="flex gap-2">
+              <Button size="sm" variant="ghost" disabled={recon.rows.length === 0} onClick={() => void verificationPDF(recon.rows, recon.summary, recon.filterLabel)}>PDF</Button>
+              <Button size="sm" variant="ghost" disabled={recon.rows.length === 0} onClick={() => void verificationExcel(recon.rows, recon.filterLabel)}>Excel</Button>
+            </div>
+          )}
+        </div>
+
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <div className="min-w-0 flex-1">
+            <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
+          </div>
+          <div className="w-40"><Select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} options={[
+            { value: "all", label: "All products" },
+            { value: "Tetra Super Harco", label: "Tetra Super Harco" },
+            { value: "Ross 308", label: "Ross 308" },
+          ]} /></div>
+          <div className="w-44"><Select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} options={deliveryDateOptions} /></div>
+        </div>
+
+        <div className="mb-1 flex flex-wrap gap-1.5">
+          {([["all", "All"], ["unverified", "Needs review"], ["awaiting", "Awaiting admin"], ["checked", "Matched"], ["rejected", "Rejected"]] as const).map(([v, label]) => (
+            <button
+              key={v}
+              type="button"
+              onClick={() => setStatusFilter(v)}
+              className={`rounded-full border px-3 py-1 text-xs font-bold ${statusFilter === v ? "border-onyx bg-onyx text-white" : "border-line bg-paper text-muted hover:border-ink"}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
+        <TableWrap>
+          <thead>
+            <tr>
+              <Th>Client</Th>
+              <Th>Product</Th>
+              <Th>Delivery</Th>
+              <Th className="text-right">Amount</Th>
+              <Th>Reference</Th>
+              <Th>Status</Th>
+              <Th>Vs owed</Th>
+              <Th>Action</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {pageRows.length === 0 ? (
+              <EmptyRow colSpan={8} text="No payments match these filters." />
+            ) : pageRows.map(({ o, p, i }) => {
+              const initials = o.name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase() || "?";
+              const ross = o.product === "Ross 308";
+              const m = payMatch(o);
+              return (
+                <tr key={`${o.id}-${i}`} className={p.verified ? "bg-green-bg/40" : undefined}>
                   <Td>
-                    <Pill
-                      tone={
-                        o.result === "verified"
-                          ? "fulfilled"
-                          : o.result === "corrected" || o.result === "review"
-                            ? "gold"
-                            : o.result === "duplicate"
-                              ? "info"
-                              : "refunded"
-                      }
-                    >
-                      {o.result}
-                    </Pill>
+                    <div className="flex items-center gap-2">
+                      <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[0.65rem] font-extrabold ${ross ? "bg-blue-bg text-blue" : "bg-purple-bg text-purple"}`}>{initials}</span>
+                      <span className="font-medium text-ink">{o.name}</span>
+                    </div>
                   </Td>
-                  <Td>{o.detail}</Td>
+                  <Td><Pill tone={ross ? "ross" : "tetra"}>{ross ? "Ross" : "Tetra"}</Pill></Td>
+                  <Td className="whitespace-nowrap">{o.date}</Td>
+                  <Td className="text-right font-semibold tabular-nums">{formatMoney(p.amt, o.currency)}</Td>
+                  <Td>
+                    <span className="tabular-nums">{p.ref}</span>
+                    {(p.method || p.bankName) && <div className="text-xs text-muted">{p.method}{p.bankName ? ` · ${p.bankName}` : ""}</div>}
+                    {p.slipPath && <button type="button" onClick={() => void openSlip(p.slipPath!)} className="block text-xs text-gold-dark underline">View slip</button>}
+                    {p.flag && <div className="text-xs text-status-refunded">{p.flag}</div>}
+                  </Td>
+                  <Td>
+                    {p.voided ? <Pill tone="red">Rejected</Pill>
+                      : p.verified ? <Pill tone="fulfilled">Checked ✓</Pill>
+                      : p.pendingApproval ? <Pill tone="gold">Awaiting admin</Pill>
+                      : p.returnedForFix ? <Pill tone="gold">Returned</Pill>
+                      : p.flag ? <Pill tone="gold">Not in statement</Pill>
+                      : <Pill tone="pending">Unverified</Pill>}
+                  </Td>
+                  <Td><Pill tone={m.tone === "green" ? "fulfilled" : m.tone === "blue" ? "info" : "gold"}>{m.label}</Pill></Td>
+                  <Td>
+                    <div className="flex items-center gap-2">
+                      {isDoubled(p) && <Button size="sm" variant="danger" onClick={() => void rejectDuplicate(o, i)}>Reject dup</Button>}
+                      {p.voided ? (
+                        <span className="text-xs text-muted">—</span>
+                      ) : p.verified ? (
+                        isDoubled(p) ? null : <span className="text-xs text-muted">—</span>
+                      ) : p.pendingApproval ? (
+                        isAdmin ? (
+                          <><Button size="sm" onClick={() => setApproveFor({ order: o, payIndex: i })}>Approve</Button><Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button></>
+                        ) : (
+                          <span className="text-xs text-muted">with admin</span>
+                        )
+                      ) : p.returnedForFix ? (
+                        <span className="text-xs text-muted">with seller</span>
+                      ) : (
+                        <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>{p.flag ? "Find match" : "Review"}</Button>
+                      )}
+                    </div>
+                  </Td>
                 </tr>
-              ))}
-            </tbody>
-          </TableWrap>
+              );
+            })}
+          </tbody>
+        </TableWrap>
+
+        {shownPayRows.length > 0 && (
+          <div className="mt-4 border-t border-line pt-4">
+            <Pagination page={safePage} pageSize={pSize} total={shownPayRows.length} noun="payments" onPageChange={setPPage} onPageSizeChange={(s) => { setPSize(s); setPPage(1); }} />
+          </div>
         )}
       </Card>
 
-      {/* Admin's final say on missing/unmatched transaction ids */}
-      {isAdmin && (
-        <Card className={approvalRows.length ? "border-gold bg-gold-bg/25" : undefined}>
-          <CardHeader title={`Missing-payment approvals (${approvalRows.length})`} />
+      {/* Missing-payment approvals — opened from the "Unmatched" card */}
+      {isAdmin && showApprovals && (
+        <Modal open onClose={() => setShowApprovals(false)} title={`Missing-payment approvals (${approvalRows.length})`} className="max-w-5xl">
           <p className="mb-3 text-sm text-ink/60">
             Payments a checker could not match to any bank statement. You have the final say — <strong>approve</strong> to
             verify it, or <strong>reject</strong> if you also can&apos;t find it. Rejecting voids the <em>payment only</em> (it
@@ -713,7 +832,7 @@ export default function VerificationPage() {
                   <Td><input type="checkbox" checked={sel.has(selKey(o.id, i))} onChange={() => toggleSel(o.id, i)} className="h-4 w-4 accent-gold" aria-label={`Select ${o.name}`} /></Td>
                   <Td>{o.name}</Td>
                   <Td>{o.product}</Td>
-                  <Td className="text-right">{formatRWF(p.amt)}</Td>
+                  <Td className="text-right">{formatMoney(p.amt, o.currency)}</Td>
                   <Td>
                     <span className="font-mono text-xs">{(p.pendingApproval?.refs ?? []).join(", ")}</span>
                     <div className="text-xs text-status-refunded">{p.flag}</div>
@@ -730,136 +849,112 @@ export default function VerificationPage() {
               ))}
             </tbody>
           </TableWrap>
-        </Card>
+        </Modal>
       )}
 
-      {/* Payments — awaiting + already checked */}
-      <Card>
-        <CardHeader
-          title={`Payments (${shownPayRows.length} shown · ${pending.reduce((n, o) => n + o.payments.filter((p) => !p.verified).length, 0)} awaiting)`}
-          action={isAdmin ? (
-            <div className="flex gap-2">
-              <Button size="sm" variant="secondary" disabled={recon.rows.length === 0} onClick={() => void verificationPDF(recon.rows, recon.summary, recon.filterLabel)}>Report (PDF)</Button>
-              <Button size="sm" variant="secondary" disabled={recon.rows.length === 0} onClick={() => void verificationExcel(recon.rows, recon.filterLabel)}>Excel</Button>
-            </div>
-          ) : undefined}
-        />
-        <div className="flex flex-wrap items-center gap-3 sticky top-16 z-20 -mx-5 px-5 mb-3 border-b border-line bg-paper/95 py-3 backdrop-blur">
-          <div className="min-w-0 flex-1">
-            <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
-          </div>
-          <div className="w-44">
-            <Select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} options={[
-              { value: "all", label: "All products" },
-              { value: "Tetra Super Harco", label: "Tetra Super Harco" },
-              { value: "Ross 308", label: "Ross 308" },
-            ]} />
-          </div>
-          <div className="w-48">
-            <Select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} options={[
-              { value: "all", label: "All statuses" },
-              { value: "unverified", label: "Unverified" },
-              { value: "awaiting", label: "Awaiting admin" },
-              { value: "checked", label: "Checked ✓" },
-              { value: "rejected", label: "Rejected · voided" },
-            ]} />
-          </div>
-          <div className="w-48">
-            <Select value={dateFilter} onChange={(e) => setDateFilter(e.target.value)} options={deliveryDateOptions} />
-          </div>
-        </div>
-        <TableWrap>
-          <thead>
-            <tr>
-              <Th>Client</Th>
-              <Th>Product</Th>
-              <Th>Delivery</Th>
-              <Th className="text-right">Amount</Th>
-              <Th>Reference</Th>
-              <Th>Status</Th>
-              <Th>Vs owed</Th>
-              <Th>Action</Th>
-            </tr>
-          </thead>
-          <tbody>
-            {shownPayRows.length === 0 ? (
-              <EmptyRow colSpan={8} text="No payments match these filters." />
-            ) : (
-              shownPayRows.map(({ o, p, i }) => (
-                <tr key={`${o.id}-${i}`} className={p.verified ? "bg-green-bg" : undefined}>
-                  <Td>{o.name}</Td>
-                  <Td>{o.product}</Td>
-                  <Td>{o.date}</Td>
-                  <Td className="text-right">{formatRWF(p.amt)}</Td>
+
+      {/* Automatic check results — shown as a modal */}
+      {showAutoResults && (
+        <Modal open onClose={() => setShowAutoResults(false)} title="Automatic check results" className="max-w-3xl">
+          <TableWrap>
+            <thead>
+              <tr>
+                <Th>Client</Th>
+                <Th>Reference</Th>
+                <Th>Result</Th>
+                <Th>Detail</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {outcomes.length === 0 ? (
+                <EmptyRow colSpan={4} text="No results." />
+              ) : outcomes.map((o, i) => (
+                <tr key={i}>
+                  <Td>{o.client}</Td>
+                  <Td>{o.ref}</Td>
                   <Td>
-                    {p.ref}
-                    {(p.method || p.bankName) && <div className="text-xs text-muted">{p.method}{p.bankName ? ` · ${p.bankName}` : ""}</div>}
-                    {p.slipPath && <button type="button" onClick={() => void openSlip(p.slipPath!)} className="block text-xs text-gold-dark underline">View slip</button>}
-                    {p.flag && <div className="text-xs text-status-refunded">{p.flag}</div>}
+                    <Pill tone={o.result === "verified" ? "fulfilled" : o.result === "corrected" || o.result === "review" ? "gold" : o.result === "duplicate" ? "info" : "refunded"}>{o.result}</Pill>
                   </Td>
-                  <Td>
-                    {p.voided ? (
-                      <div>
-                        <Pill tone="red">Rejected · voided</Pill>
-                        <div className="text-xs text-muted">not counted as paid</div>
-                      </div>
-                    ) : p.verified ? (
-                      <div>
-                        <Pill tone="fulfilled">Checked ✓</Pill>
-                        <div className="text-xs text-muted">by {p.verifiedBy ?? "—"}{p.verifiedOn ? ` · ${formatDateTime(p.verifiedOn)}` : ""}</div>
-                      </div>
-                    ) : p.pendingApproval ? (
-                      <div>
-                        <Pill tone="gold">Awaiting admin</Pill>
-                        <div className="text-xs text-muted">sent by {p.pendingApproval.by}</div>
-                      </div>
-                    ) : p.returnedForFix ? (
-                      <div>
-                        <Pill tone="gold">Returned to seller</Pill>
-                        <div className="text-xs text-muted">to correct the id</div>
-                      </div>
-                    ) : p.flag ? (
-                      <Pill tone="gold">Not in statement</Pill>
-                    ) : (
-                      <Pill tone="pending">Unverified</Pill>
-                    )}
-                  </Td>
-                  <Td>
-                    {(() => { const m = payMatch(o); return <Pill tone={m.tone === "green" ? "fulfilled" : m.tone === "blue" ? "info" : "gold"}>{m.label}</Pill>; })()}
-                  </Td>
-                  <Td>
-                    <div className="flex items-center gap-2">
-                      {isDoubled(p) && (
-                        <Button size="sm" variant="danger" onClick={() => void rejectDuplicate(o, i)}>Reject dup</Button>
-                      )}
-                      {p.voided ? (
-                        <span className="text-xs text-muted">—</span>
-                      ) : p.verified ? (
-                        isDoubled(p) ? null : <span className="text-xs text-muted">—</span>
-                      ) : p.pendingApproval ? (
-                        isAdmin ? (
-                          <div className="flex gap-2">
-                            <Button size="sm" onClick={() => setApproveFor({ order: o, payIndex: i })}>Approve</Button>
-                            <Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button>
-                          </div>
-                        ) : (
-                          <span className="text-xs text-muted">with admin</span>
-                        )
-                      ) : p.returnedForFix ? (
-                        <span className="text-xs text-muted">with seller</span>
-                      ) : (
-                        <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>
-                          Verify manually
-                        </Button>
-                      )}
-                    </div>
-                  </Td>
+                  <Td>{o.detail}</Td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </TableWrap>
-      </Card>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Modal>
+      )}
+
+
+      {showStatements && (
+        <Modal open onClose={() => { setShowStatements(false); setStmtQuery(""); }} title="Bank statements" className="max-w-3xl">
+          {isAdmin && (
+            <div className="mb-3">
+              <Input value={stmtQuery} onChange={(e) => setStmtQuery(e.target.value)} placeholder="Search a transaction id across the uploaded statements — see amount & payment date…" />
+            </div>
+          )}
+          {stmtQuery.trim() ? (
+            (() => {
+              const q = normRef(stmtQuery);
+              const ql = stmtQuery.trim().toLowerCase();
+              const matches = statements.flatMap((s) =>
+                s.rows
+                  .filter((r) => (q && normRef(r.ref).includes(q)) || r.ref.toLowerCase().includes(ql))
+                  .map((r) => ({ ref: r.ref, amt: r.amt, date: r.date, file: s.fileName, on: s.uploadedOn, currency: s.currency }))
+              );
+              return (
+                <TableWrap>
+                  <thead>
+                    <tr>
+                      <Th>Transaction id</Th>
+                      <Th className="text-right">Amount</Th>
+                      <Th>Payment date</Th>
+                      <Th>Statement</Th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {matches.length === 0 ? (
+                      <EmptyRow colSpan={4} text="No transaction with that id in the statements." />
+                    ) : matches.map((mm, idx) => (
+                      <tr key={idx}>
+                        <Td className="font-mono text-xs">{mm.ref}</Td>
+                        <Td className="text-right font-semibold tabular-nums">{formatMoney(mm.amt, mm.currency)}</Td>
+                        <Td className="whitespace-nowrap">{mm.date || <span className="text-muted">—</span>}</Td>
+                        <Td>{mm.file}</Td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </TableWrap>
+              );
+            })()
+          ) : (
+            <TableWrap>
+              <thead>
+                <tr>
+                  <Th>File</Th>
+                  <Th className="text-right">Rows</Th>
+                  <Th>Uploaded</Th>
+                  {isAdmin && <Th>Action</Th>}
+                </tr>
+              </thead>
+              <tbody>
+                {statements.length === 0 ? (
+                  <EmptyRow colSpan={isAdmin ? 4 : 3} text="No statements uploaded yet." />
+                ) : (
+                  statements.map((s) => (
+                    <tr key={s.id}>
+                      <Td>{s.fileName}</Td>
+                      <Td className="text-right">{s.rows.length}</Td>
+                      <Td>{formatDateTime(s.uploadedOn)}</Td>
+                      {isAdmin && (
+                        <Td><Button size="sm" variant="ghost" onClick={() => onRemoveStatement(s.id)}>Remove</Button></Td>
+                      )}
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </TableWrap>
+          )}
+        </Modal>
+      )}
 
       {manual && (
         <ManualModal
@@ -917,7 +1012,7 @@ function ApproveModal({
     >
       <div className="space-y-3">
         <p className="text-sm text-ink/60">
-          Approving verifies <strong>{formatRWF(payment.amt)}</strong>
+          Approving verifies <strong>{formatMoney(payment.amt, order.currency)}</strong>
           {payment.pendingApproval?.refs?.length ? <> · <span className="font-mono text-xs">{payment.pendingApproval.refs.join(", ")}</span></> : null}
           {" "}even though it wasn&apos;t matched to a statement. Say why (e.g. confirmed with the bank / customer).
         </p>
@@ -960,7 +1055,7 @@ function ManualModal({
     cash ? "cash" : allClean ? "verify" : anyMissing ? "missing" : "dup";
   const verifyLabel =
     action === "cash" ? "Confirm (cash)"
-    : bankTotal !== payment.amt ? `Verify at ${formatRWF(bankTotal!)}` : "Confirm verification";
+    : bankTotal !== payment.amt ? `Verify at ${formatMoney(bankTotal!, order.currency)}` : "Confirm verification";
 
   const submit = (choice: "auto" | "admin" | "seller") => {
     if (!ref.trim()) return setErr("Enter the transaction id(s) or CASH.");
@@ -990,7 +1085,7 @@ function ManualModal({
       }
     >
       <div className="space-y-3">
-        <p className="text-sm text-ink/60">Recorded amount: <strong>{formatRWF(payment.amt)}</strong></p>
+        <p className="text-sm text-ink/60">Recorded amount: <strong>{formatMoney(payment.amt, order.currency)}</strong></p>
         <Field label="Transaction id(s) — two ids separated by a dash, e.g. 291516404175-29165859045 · cash: write CASH">
           <Input value={ref} onChange={(e) => setRef(e.target.value)} />
         </Field>
@@ -1001,7 +1096,7 @@ function ManualModal({
               <div key={idx} className="flex items-center justify-between gap-2">
                 <span className="truncate font-mono text-xs">{l.ref}</span>
                 {l.matches.length === 1 ? (
-                  <span className="shrink-0 text-green">found · {formatRWF(l.matches[0].amt)}</span>
+                  <span className="shrink-0 text-green">found · {formatMoney(l.matches[0].amt, order.currency)}</span>
                 ) : l.matches.length > 1 ? (
                   <span className="shrink-0 text-gold-dark">appears {l.matches.length}× · review</span>
                 ) : (
@@ -1011,7 +1106,7 @@ function ManualModal({
             ))}
             {allClean && bankTotal !== null && (
               <div className="flex items-center justify-between border-t border-line pt-1 font-semibold">
-                <span>Total from statement</span><span>{formatRWF(bankTotal)}</span>
+                <span>Total from statement</span><span>{formatMoney(bankTotal, order.currency)}</span>
               </div>
             )}
           </div>
@@ -1032,8 +1127,8 @@ function ManualModal({
         )}
         {action === "verify" && bankTotal !== payment.amt && (
           <div className="rounded-lg border border-gold bg-gold-bg/50 px-3 py-2 text-sm text-gold-dark">
-            Recorded <strong>{formatRWF(payment.amt)}</strong> but the statement total is <strong>{formatRWF(bankTotal!)}</strong>.
-            On confirm the amount will be set to <strong>{formatRWF(bankTotal!)}</strong>.
+            Recorded <strong>{formatMoney(payment.amt, order.currency)}</strong> but the statement total is <strong>{formatMoney(bankTotal!, order.currency)}</strong>.
+            On confirm the amount will be set to <strong>{formatMoney(bankTotal!, order.currency)}</strong>.
           </div>
         )}
         {(action === "verify" || action === "cash") && (() => {
@@ -1042,10 +1137,10 @@ function ManualModal({
           const paid = otherVerified + amt;
           const total = orderTotal(order);
           const cls = paid === total ? "text-green" : "text-gold-dark";
-          const state = paid > total ? `overpaid by ${formatRWF(paid - total)}` : paid === total ? "paid in full" : `still short ${formatRWF(total - paid)}`;
+          const state = paid > total ? `overpaid by ${formatMoney(paid - total, order.currency)}` : paid === total ? "paid in full" : `still short ${formatMoney(total - paid, order.currency)}`;
           return (
             <div className="rounded-lg border border-line bg-cream/40 px-3 py-2 text-sm">
-              After this the order will have <strong>{formatRWF(paid)}</strong> of <strong>{formatRWF(total)}</strong> owed — <strong className={cls}>{state}</strong>.
+              After this the order will have <strong>{formatMoney(paid, order.currency)}</strong> of <strong>{formatMoney(total, order.currency)}</strong> owed — <strong className={cls}>{state}</strong>.
             </div>
           );
         })()}

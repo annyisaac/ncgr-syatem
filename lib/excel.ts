@@ -36,6 +36,7 @@ const REF_HINTS = [
   "description",
 ];
 const AMT_HINTS = ["amount", "amt", "credit", "value", "paid", "deposit"];
+const DATE_HINTS = ["value date", "posting date", "transaction date", "trans date", "date", "posted", "time"];
 
 function guess(headers: string[], hints: string[]): string {
   const lower = headers.map((h) => ({ h, l: h.toLowerCase() }));
@@ -54,6 +55,16 @@ export function guessAmountColumn(headers: string[]): string {
   return guess(headers, AMT_HINTS);
 }
 
+/** Best guess for a date column — or "" if none looks like a date (date is optional). */
+export function guessDateColumn(headers: string[]): string {
+  const lower = headers.map((h) => ({ h, l: h.toLowerCase() }));
+  for (const hint of DATE_HINTS) {
+    const found = lower.find((x) => x.l.includes(hint));
+    if (found) return found.h;
+  }
+  return "";
+}
+
 /** Parse a numeric amount that may contain commas / currency text. */
 export function parseAmount(value: unknown): number {
   if (typeof value === "number") return value;
@@ -62,16 +73,24 @@ export function parseAmount(value: unknown): number {
   return isNaN(n) ? 0 : n;
 }
 
-/** Build normalized {ref, amt} rows from a parsed sheet using chosen columns. */
+/** Build normalized {ref, amt, date?} rows from a parsed sheet using chosen columns. */
 export function buildStatementRows(
   sheet: ParsedSheet,
   refColumn: string,
-  amtColumn: string
+  amtColumn: string,
+  dateColumn?: string
 ): StatementRow[] {
   return sheet.rows
-    .map((r) => ({
-      ref: String(r[refColumn] ?? "").trim(),
-      amt: parseAmount(r[amtColumn]),
-    }))
+    .map((r) => {
+      const row: StatementRow = {
+        ref: String(r[refColumn] ?? "").trim(),
+        amt: parseAmount(r[amtColumn]),
+      };
+      if (dateColumn) {
+        const d = String(r[dateColumn] ?? "").trim();
+        if (d) row.date = d;
+      }
+      return row;
+    })
     .filter((r) => r.ref !== "");
 }
