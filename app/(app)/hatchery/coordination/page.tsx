@@ -13,7 +13,8 @@ import { Pill } from "@/components/ui/Pill";
 import { Modal } from "@/components/ui/Modal";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
-import { StatTile } from "@/components/dashboard/DashKit";
+import { ActionsDropdown, type DropdownAction } from "@/components/ui/Dropdown";
+import { cn } from "@/lib/cn";
 
 import { visibleOrders } from "@/lib/permissions";
 import { smartMatch } from "@/lib/search";
@@ -116,7 +117,7 @@ export default function CoordinationPage() {
   }, [allocations]);
 
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: 0, confirmed: 0, ready: 0, delivered: 0, cancelled: 0 };
+    const c: Record<string, number> = { all: 0, pending: 0, confirmed: 0, ready: 0, delivered: 0, cancelled: 0 };
     for (const o of orderList) { c.all += 1; c[coordStatus(o)] = (c[coordStatus(o)] ?? 0) + 1; }
     return c;
   }, [orderList]);
@@ -322,44 +323,145 @@ export default function CoordinationPage() {
     setSelectedId(null);
   }
 
-  const dueToAllocate = awaiting.filter((o) => isFullyPaid(o) && o.date <= todayISO() && (allocByOrder.get(o.id) ?? 0) < toDeliver(o)).length;
+  const dueOrders = awaiting.filter((o) => isFullyPaid(o) && o.date <= todayISO() && (allocByOrder.get(o.id) ?? 0) < toDeliver(o));
+  const dueToAllocate = dueOrders.length;
+  const paidCount = orderList.filter((o) => isFullyPaid(o) && coordStatus(o) !== "cancelled").length;
+  const neededChicks = kpis.ross + kpis.tetra;
+  const inventoryShort = kpis.inStock < neededChicks;
+  function resetFilters() { setDateF(""); setProductF("all"); setPayF("all"); setSalesF("all"); setQ(""); }
+
+  // Row action menu (kebab) — reuses the same handlers as the detail modal.
+  function rowActions(o: Order): DropdownAction[] {
+    const st = coordStatus(o);
+    const need = toDeliver(o);
+    const alloc = allocByOrder.get(o.id) ?? 0;
+    const closed = st === "cancelled" || st === "delivered";
+    return [
+      { label: "View details", onClick: () => setSelectedId(o.id) },
+      { label: "Payment details", onClick: () => setPayFor(o) },
+      { label: "Allocate chicks", onClick: () => setAllocFor(o), hidden: !canManage || closed, disabled: alloc >= need, disabledReason: "Already fully allocated" },
+      { label: "Mark as ready", onClick: () => markReady(o), hidden: !canManage || closed || o.allocatedOk, disabled: alloc < need, disabledReason: "Allocate all chicks first" },
+      { label: "Mark as delivered", onClick: () => markDelivered(o), hidden: !canManage || closed || !o.allocatedOk },
+      { label: "Cancel order", onClick: () => setCancelFor(o), danger: true, hidden: !canManage || closed },
+    ];
+  }
+
+  const payTone = (o: Order) => { const t = payState(o).tone; return t === "green" ? "fulfilled" : t === "info" ? "info" : t === "red" ? "red" : "gold"; };
+  const statTone = (o: Order) => { const t = STATUS_TONE[coordStatus(o)]; return t === "neutral" ? "pending" : t === "red" ? "red" : t === "green" ? "fulfilled" : t; };
 
   return (
     <div className="space-y-5">
-      {/* Filters + search — compact row at the top of the page */}
-      <div className="flex flex-wrap items-center gap-2 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
-        <div className="w-full sm:w-44"><Select value={dateF} onChange={(e) => setDateF(e.target.value)} options={[{ value: "", label: "All delivery dates" }, ...deliveryDates.map((d) => ({ value: d, label: formatDate(d) }))]} /></div>
-        <div className="w-full sm:w-40"><Select value={productF} onChange={(e) => setProductF(e.target.value)} options={[{ value: "all", label: "All products" }, ...PRODUCTS.map((p) => ({ value: p, label: p }))]} /></div>
-        <div className="w-full sm:w-36"><Select value={payF} onChange={(e) => setPayF(e.target.value)} options={[{ value: "all", label: "All payment" }, { value: "paid", label: "Paid" }, { value: "partial", label: "Partial" }, { value: "unpaid", label: "Unpaid" }, { value: "on debt", label: "On debt" }]} /></div>
-        <div className="w-full sm:w-44"><Select value={salesF} onChange={(e) => setSalesF(e.target.value)} options={[{ value: "all", label: "All salespeople" }, ...salespeople.map((s) => ({ value: s, label: nameOf(s) }))]} /></div>
-        <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client name or phone…" className="w-full sm:w-56" />
+      {/* Filters */}
+      <Card>
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-[0.72rem] font-bold uppercase tracking-[0.09em] text-muted"><IcoFilter />Filters</p>
+          <Button size="sm" variant="ghost" className="gap-1.5" onClick={resetFilters}><IcoReset />Reset filters</Button>
+        </div>
+        <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+          <FilterChip icon={<IcoCal />} label="Delivery date">
+            <select value={dateF} onChange={(e) => setDateF(e.target.value)} className={CHIP_SELECT}>
+              <option value="">All dates</option>
+              {deliveryDates.map((d) => <option key={d} value={d}>{formatDate(d)}</option>)}
+            </select>
+          </FilterChip>
+          <FilterChip icon={<IcoTag />} label="Product">
+            <select value={productF} onChange={(e) => setProductF(e.target.value)} className={CHIP_SELECT}>
+              <option value="all">All products</option>
+              {PRODUCTS.map((p) => <option key={p} value={p}>{p}</option>)}
+            </select>
+          </FilterChip>
+          <FilterChip icon={<IcoCard />} label="Payment status">
+            <select value={payF} onChange={(e) => setPayF(e.target.value)} className={CHIP_SELECT}>
+              <option value="all">All payment</option>
+              <option value="paid">Paid</option>
+              <option value="partial">Partial</option>
+              <option value="unpaid">Unpaid</option>
+              <option value="on debt">On debt</option>
+            </select>
+          </FilterChip>
+          <FilterChip icon={<IcoUser />} label="Salesperson">
+            <select value={salesF} onChange={(e) => setSalesF(e.target.value)} className={CHIP_SELECT}>
+              <option value="all">All salespeople</option>
+              {salespeople.map((s) => <option key={s} value={s}>{nameOf(s)}</option>)}
+            </select>
+          </FilterChip>
+          <div className="flex items-center gap-2 rounded-xl border border-line bg-paper px-3">
+            <span className="shrink-0 text-muted"><IcoSearch /></span>
+            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search client name or phone…" className="w-full bg-transparent py-2.5 text-sm text-ink outline-none" />
+          </div>
+        </div>
+      </Card>
+
+      {/* Big KPI cards */}
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <BigStat icon={<IcoHen />} tone="gold" label="Ross 308 to deliver" value={kpis.ross.toLocaleString()} unit="chicks" />
+        <BigStat icon={<IcoChick />} tone="green" label="Tetra Super Harco to deliver" value={kpis.tetra.toLocaleString()} unit="chicks" />
+        <BigStat icon={<IcoBox />} tone="blue" label="Orders awaiting delivery" value={String(kpis.awaiting)} unit="orders" />
+        <BigStat icon={<IcoInv />} tone="purple" label="Chicks in inventory" value={kpis.inStock.toLocaleString()} unit="chicks" note={inventoryShort ? "Insufficient inventory" : undefined} />
       </div>
 
+      {/* Secondary KPI cards */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <StatTile label="Tetra Super Harco to deliver" value={kpis.tetra.toLocaleString()} tone="gold" />
-        <StatTile label="Ross 308 to deliver" value={kpis.ross.toLocaleString()} tone="gold" />
-        <StatTile label="Orders awaiting delivery" value={String(kpis.awaiting)} />
-        <StatTile label="Chicks in inventory" value={kpis.inStock.toLocaleString()} tone={kpis.inStock ? "green" : "default"} />
+        <SmallStat icon={<IcoCheck2 />} tone="green" label="Paid orders" value={String(paidCount)} />
+        <SmallStat icon={<IcoClock />} tone="gold" label="Ready for delivery" value={String(counts.ready ?? 0)} />
+        <SmallStat icon={<IcoTruck />} tone="blue" label="Delivered" value={String(counts.delivered ?? 0)} />
+        <SmallStat icon={<IcoX />} tone="red" label="Cancelled" value={String(counts.cancelled ?? 0)} />
       </div>
 
       {canManage && dueToAllocate > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-gold/40 bg-gold-bg/30 px-3.5 py-2.5">
-          <span className="text-sm text-ink"><strong>{dueToAllocate}</strong> fully-paid order(s) due on/before {formatDate(todayISO())} are awaiting chick allocation.</span>
-          <Button size="sm" onClick={autoAllocate}>Auto-allocate from inventory</Button>
+        <div className="flex flex-col gap-3 rounded-2xl border border-gold/40 bg-gold-bg/40 p-4 shadow-card sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex items-start gap-3">
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-gold-bg text-gold-dark"><IcoWarn /></span>
+            <div>
+              <p className="text-[0.66rem] font-bold uppercase tracking-[0.09em] text-gold-dark">Action required</p>
+              <p className="mt-0.5 text-sm text-ink"><strong>{dueToAllocate}</strong> fully-paid order(s) due on/before <strong>{formatDate(todayISO())}</strong> are awaiting chick allocation.</p>
+            </div>
+          </div>
+          <div className="sm:text-right">
+            {inventoryShort && (
+              <>
+                <p className="text-sm font-bold text-red">Inventory insufficient</p>
+                <p className="mb-2 text-xs text-muted">Please allocate chicks to these paid orders.</p>
+              </>
+            )}
+            <div className="flex flex-wrap gap-2 sm:justify-end">
+              <Button size="sm" onClick={() => dueOrders[0] && setAllocFor(dueOrders[0])}>Allocate Chicks</Button>
+              <Button size="sm" variant="secondary" className="gap-1.5" onClick={autoAllocate}><IcoInv />Auto-allocate from inventory</Button>
+            </div>
+          </div>
         </div>
       )}
 
-      {/* Delivery routes + manifests — shown on demand */}
-      <div>
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <h2 className="text-[0.95rem] font-bold text-ink">Delivery routes &amp; manifests <span className="text-muted">({routeRows.length})</span></h2>
-          <Button size="sm" variant="secondary" onClick={() => setShowRoutes((v) => !v)}>{showRoutes ? "Hide" : "Show routes & manifests"}</Button>
+      {/* Delivery routes & manifests */}
+      <Card>
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+          <p className="flex items-center gap-2 text-[0.95rem] font-bold text-ink"><span className="text-gold-dark"><IcoTruck /></span>Delivery routes &amp; manifests <span className="ml-1 rounded-full bg-grey-bg px-2 py-0.5 text-xs font-bold text-muted">{routeRows.length}</span></p>
+          {routeRows.length > 0 && <Button size="sm" variant="secondary" onClick={() => setShowRoutes((v) => !v)}>{showRoutes ? "Hide details" : "View all routes & manifests"}</Button>}
         </div>
-        {showRoutes && (
-          routeRows.length === 0 ? (
-            <Card className="mt-2"><p className="text-sm text-muted">No routes with orders {dateF ? "on this date" : "yet"}.</p></Card>
-          ) : (
-            <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {routeRows.length === 0 ? (
+          <p className="text-sm text-muted">No routes with orders {dateF ? "on this date" : "yet"}.</p>
+        ) : !showRoutes ? (
+          <div className="space-y-2">
+            {routeRows.map(({ r, list, chicks, date }, i) => {
+              const confirmed = !!r.pickupConfirmed;
+              return (
+                <button key={r.id} type="button" onClick={() => setViewRoute({ r, list, date })} className="flex w-full items-center gap-3 rounded-xl border border-line bg-paper px-3 py-2.5 text-left transition hover:border-gold">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gold-bg text-xs font-extrabold tabular-nums text-gold-dark">{String(i + 1).padStart(2, "0")}</span>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-bold text-ink">{r.name}</p>
+                    <p className="text-xs text-muted">{list.length} client(s)</p>
+                  </div>
+                  <div className="hidden text-right sm:block"><p className="text-sm font-extrabold tabular-nums text-ink">{chicks.toLocaleString()}</p><p className="text-[0.58rem] uppercase text-muted">chicks</p></div>
+                  <span className="hidden items-center gap-1.5 text-xs text-muted md:inline-flex"><IcoCal />{date ? formatDate(date) : "—"}</span>
+                  <span className="hidden items-center gap-1.5 text-xs text-muted md:inline-flex"><IcoUser />{r.driver || "—"}</span>
+                  <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[0.6rem] font-bold", confirmed ? "bg-green-bg text-green" : "bg-gold-bg text-gold-dark")}>{confirmed ? "Confirmed" : "On schedule"}</span>
+                  <span className="shrink-0 text-muted"><IcoChevron /></span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
               {routeRows.map(({ r, list, chicks, delivered, byProduct, date }) => {
                 const confirmed = !!r.pickupConfirmed;
                 const shared = sharedRoutes.has(r.id);
@@ -424,16 +526,16 @@ export default function CoordinationPage() {
                   </div>
                 );
               })}
-            </div>
-          )
+          </div>
         )}
-      </div>
+      </Card>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[1fr_360px]">
-        <div className="space-y-4">
-          {/* Tabs */}
+      {/* Orders */}
+      <div>
+        <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-2">
+          <h2 className="text-lg font-extrabold tracking-tight text-ink">Orders</h2>
           <div className="flex flex-wrap gap-1.5">
-            {([["all", "All Orders"], ["confirmed", "Payment Confirmed"], ["ready", "Ready for Delivery"], ["delivered", "Delivered"], ["cancelled", "Cancelled"]] as const).map(([key, label]) => (
+            {([["all", "All Orders"], ["pending", "Awaiting Payment"], ["confirmed", "Payment Confirmed"], ["ready", "Ready for Delivery"], ["delivered", "Delivered"], ["cancelled", "Cancelled"]] as const).map(([key, label]) => (
               <button
                 key={key}
                 type="button"
@@ -444,13 +546,16 @@ export default function CoordinationPage() {
               </button>
             ))}
           </div>
+        </div>
 
-          <Card>
+        <Card>
+          {/* Desktop table */}
+          <div className="hidden sm:block">
             <TableWrap>
               <thead>
                 <tr>
-                  <Th>Delivery date</Th><Th>Client</Th><Th>Product</Th><Th className="text-right">Chicks</Th>
-                  <Th>Payment</Th><Th className="text-right">Balance</Th><Th className="text-right">Allocated</Th><Th>Status</Th>
+                  <Th>Delivery date</Th><Th>Client</Th><Th>Product</Th><Th className="text-right">Qty (chicks)</Th>
+                  <Th>Payment</Th><Th>Status</Th><Th>Salesperson</Th><Th className="text-right">Action</Th>
                 </tr>
               </thead>
               <tbody>
@@ -459,54 +564,84 @@ export default function CoordinationPage() {
                 ) : rows.map((o) => {
                   const ps = payState(o);
                   const st = coordStatus(o);
-                  const bal = balance(o);
-                  const alloc = allocByOrder.get(o.id) ?? 0;
                   return (
-                    <tr
-                      key={o.id}
-                      onClick={() => setSelectedId(o.id)}
-                      className={`cursor-pointer ${selectedId === o.id ? "bg-gold-bg/40" : "hover:bg-cream/40"}`}
-                    >
-                      <Td>{formatDate(o.date)}</Td>
-                      <Td className="font-medium">{o.name}</Td>
+                    <tr key={o.id} className="hover:bg-cream/40">
+                      <Td className="whitespace-nowrap">{formatDate(o.date)}</Td>
+                      <Td className="font-medium"><button type="button" onClick={() => setSelectedId(o.id)} className="text-gold-dark hover:text-gold">{o.name}</button><div className="text-xs text-muted">{o.phone}</div></Td>
                       <Td>{o.product}</Td>
-                      <Td className="text-right">{o.chicks.toLocaleString()}</Td>
-                      <Td><Pill tone={ps.tone === "green" ? "fulfilled" : ps.tone === "info" ? "info" : ps.tone === "red" ? "red" : "gold"}>{ps.label}</Pill></Td>
-                      <Td className="text-right">{bal > 0 ? `${bal.toLocaleString()} RWF` : "—"}</Td>
-                      <Td className="text-right tabular-nums">{alloc.toLocaleString()}/{toDeliver(o).toLocaleString()}</Td>
-                      <Td><Pill tone={STATUS_TONE[st] === "neutral" ? "pending" : STATUS_TONE[st] === "red" ? "red" : STATUS_TONE[st] === "green" ? "fulfilled" : STATUS_TONE[st]}>{STATUS_LABEL[st]}</Pill></Td>
+                      <Td className="text-right tabular-nums">{o.chicks.toLocaleString()}</Td>
+                      <Td><Pill tone={payTone(o)}>{ps.label}</Pill></Td>
+                      <Td><Pill tone={statTone(o)}>{STATUS_LABEL[st]}</Pill></Td>
+                      <Td className="whitespace-nowrap text-muted">{nameOf(o.by)}</Td>
+                      <Td>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button size="sm" variant="ghost" onClick={() => setSelectedId(o.id)}>View</Button>
+                          <ActionsDropdown label="⋮" actions={rowActions(o)} />
+                        </div>
+                      </Td>
                     </tr>
                   );
                 })}
               </tbody>
             </TableWrap>
-          </Card>
-        </div>
+          </div>
 
-        {/* Detail panel */}
-        <div className="lg:sticky lg:top-4 lg:self-start">
-          {selected ? (
-            <DetailPanel
-              order={selected}
-              allocated={allocByOrder.get(selected.id) ?? 0}
-              batchName={(() => {
-                const a = allocations.find((x) => x.orderId === selected.id && x.status !== "cancelled");
-                return a ? batchNo(a.batchId) : "—";
-              })()}
-              nameOf={nameOf}
-              canManage={canManage}
-              onClose={() => setSelectedId(null)}
-              onAllocate={() => setAllocFor(selected)}
-              onReady={() => markReady(selected)}
-              onDelivered={() => markDelivered(selected)}
-              onCancel={() => setCancelFor(selected)}
-              onPayment={() => setPayFor(selected)}
-            />
-          ) : (
-            <Card><p className="text-sm text-muted">Select an order to see its details and actions.</p></Card>
-          )}
-        </div>
+          {/* Mobile cards */}
+          <div className="space-y-2.5 sm:hidden">
+            {rows.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">No orders match these filters.</p>
+            ) : rows.map((o) => {
+              const ps = payState(o);
+              const st = coordStatus(o);
+              return (
+                <div key={o.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <button type="button" onClick={() => setSelectedId(o.id)} className="block truncate font-semibold text-gold-dark">{o.name}</button>
+                      <div className="text-xs text-muted">{o.phone}</div>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Pill tone={statTone(o)}>{STATUS_LABEL[st]}</Pill>
+                      <Pill tone={payTone(o)}>{ps.label}</Pill>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Delivery</p><p className="font-medium text-ink">{formatDate(o.date)}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Product</p><p className="font-medium text-ink">{o.product}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Qty (chicks)</p><p className="font-medium tabular-nums text-ink">{o.chicks.toLocaleString()}</p></div>
+                    <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Salesperson</p><p className="truncate font-medium text-ink">{nameOf(o.by)}</p></div>
+                  </div>
+                  <div className="mt-2.5 flex items-center justify-end gap-1 border-t border-line pt-2.5">
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedId(o.id)}>View</Button>
+                    <ActionsDropdown label="⋮" actions={rowActions(o)} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
       </div>
+
+      {/* Order detail modal */}
+      {selected && (
+        <Modal open onClose={() => setSelectedId(null)} title={`Order — ${selected.name}`} className="max-w-md">
+          <DetailPanel
+            order={selected}
+            allocated={allocByOrder.get(selected.id) ?? 0}
+            batchName={(() => {
+              const a = allocations.find((x) => x.orderId === selected.id && x.status !== "cancelled");
+              return a ? batchNo(a.batchId) : "—";
+            })()}
+            nameOf={nameOf}
+            canManage={canManage}
+            onAllocate={() => setAllocFor(selected)}
+            onReady={() => markReady(selected)}
+            onDelivered={() => markDelivered(selected)}
+            onCancel={() => setCancelFor(selected)}
+            onPayment={() => setPayFor(selected)}
+          />
+        </Modal>
+      )}
 
       {allocFor && (
         <AllocateModal
@@ -582,25 +717,18 @@ const IcoHen = () => <svg width="20" height="20" viewBox="0 0 24 24" fill="none"
 
 function DetailPanel({
   order: o, allocated, batchName, nameOf, canManage,
-  onClose, onAllocate, onReady, onDelivered, onCancel, onPayment,
+  onAllocate, onReady, onDelivered, onCancel, onPayment,
 }: {
   order: Order; allocated: number; batchName: string; nameOf: (e: string) => string; canManage: boolean;
-  onClose: () => void; onAllocate: () => void; onReady: () => void; onDelivered: () => void; onCancel: () => void; onPayment: () => void;
+  onAllocate: () => void; onReady: () => void; onDelivered: () => void; onCancel: () => void; onPayment: () => void;
 }) {
   const st = coordStatus(o);
   const need = toDeliver(o);
   const pay = mainPayment(o);
   const closed = st === "cancelled" || st === "delivered";
   return (
-    <Card>
-      <div className="mb-3 flex items-start justify-between gap-2">
-        <div>
-          <p className="text-xs text-muted">Order</p>
-          <p className="font-bold text-ink">{o.name}</p>
-          <span className="mt-1 inline-block"><Pill tone={STATUS_TONE[st] === "neutral" ? "pending" : STATUS_TONE[st] === "red" ? "red" : STATUS_TONE[st] === "green" ? "fulfilled" : STATUS_TONE[st]}>{STATUS_LABEL[st]}</Pill></span>
-        </div>
-        <button type="button" onClick={onClose} className="text-muted hover:text-ink">✕</button>
-      </div>
+    <div>
+      <span className="mb-1 inline-block"><Pill tone={STATUS_TONE[st] === "neutral" ? "pending" : STATUS_TONE[st] === "red" ? "red" : STATUS_TONE[st] === "green" ? "fulfilled" : STATUS_TONE[st]}>{STATUS_LABEL[st]}</Pill></span>
 
       <Section title="Client">
         <Row k="Name" v={o.name} />
@@ -641,7 +769,7 @@ function DetailPanel({
         </div>
       )}
       <Button variant="ghost" className="mt-2 w-full" onClick={onPayment}>View payment details</Button>
-    </Card>
+    </div>
   );
 }
 
@@ -741,3 +869,73 @@ function PaymentModal({ order, nameOf, onClose }: { order: Order; nameOf: (e: st
     </Modal>
   );
 }
+
+// ---- redesign helpers: filter chips + stat cards --------------------------
+
+const CHIP_SELECT = "w-full cursor-pointer bg-transparent text-sm font-medium text-ink outline-none";
+
+const TONE_CHIP: Record<string, string> = {
+  gold: "bg-gold-bg text-gold-dark",
+  green: "bg-green-bg text-green",
+  blue: "bg-blue-bg text-blue",
+  purple: "bg-[#efe7fb] text-[#7c3aed]",
+  red: "bg-red-bg text-red",
+};
+const TONE_VAL: Record<string, string> = {
+  gold: "text-gold-dark", green: "text-green", blue: "text-blue", purple: "text-[#7c3aed]", red: "text-red",
+};
+
+function FilterChip({ icon, label, children }: { icon: React.ReactNode; label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex items-center gap-2 rounded-xl border border-line bg-paper px-3 py-1.5">
+      <span className="shrink-0 text-muted">{icon}</span>
+      <div className="min-w-0 flex-1">
+        <p className="text-[0.54rem] font-bold uppercase tracking-wide text-muted">{label}</p>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function BigStat({ icon, tone, label, value, unit, note }: { icon: React.ReactNode; tone: string; label: string; value: string; unit: string; note?: string }) {
+  return (
+    <div className="rounded-2xl border border-line bg-paper p-4 shadow-card">
+      <div className="flex items-start gap-3">
+        <span className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-full", TONE_CHIP[tone])}>{icon}</span>
+        <p className="mt-0.5 text-[0.6rem] font-bold uppercase leading-tight tracking-[0.08em] text-muted">{label}</p>
+      </div>
+      <p className={cn("mt-3 text-[1.9rem] font-extrabold leading-none tabular-nums", TONE_VAL[tone])}>{value}</p>
+      <p className="mt-1 text-xs text-muted">{unit}</p>
+      {note && <p className="mt-1 text-xs font-semibold text-red">{note}</p>}
+    </div>
+  );
+}
+
+function SmallStat({ icon, tone, label, value }: { icon: React.ReactNode; tone: string; label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-line bg-paper p-4 shadow-card">
+      <span className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-full", TONE_CHIP[tone])}>{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[0.6rem] font-bold uppercase tracking-wide text-muted">{label}</p>
+        <p className="text-2xl font-extrabold leading-none tabular-nums text-ink">{value}</p>
+      </div>
+    </div>
+  );
+}
+
+const cic = (children: React.ReactNode, size = 18) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{children}</svg>
+);
+const IcoFilter = () => cic(<path d="M3 5h18l-7 8v5l-4 2v-7z" />, 15);
+const IcoReset = () => cic(<><path d="M4 10a8 8 0 1 1 1 4" /><path d="M4 5v5h5" /></>, 14);
+const IcoTag = () => cic(<><path d="M4 6.5 10 4l6 2.5v7L10 16l-6-2.5z" /><path d="M4 6.5 10 9l6-2.5M10 9v7" /></>);
+const IcoCard = () => cic(<><rect x="3" y="6" width="18" height="12" rx="2" /><path d="M3 10h18" /></>);
+const IcoSearch = () => cic(<><circle cx="10.5" cy="10.5" r="6" /><path d="m20 20-4.5-4.5" /></>, 15);
+const IcoChevron = () => cic(<path d="m9 6 6 6-6 6" />, 16);
+const IcoBox = () => cic(<><path d="M4 8l8-4 8 4-8 4-8-4Z" /><path d="M4 8v8l8 4 8-4V8" /></>);
+const IcoInv = () => cic(<><rect x="4" y="7" width="16" height="13" rx="2" /><path d="M9 7V5a3 3 0 0 1 6 0v2" /></>, 15);
+const IcoCheck2 = () => cic(<><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></>);
+const IcoClock = () => cic(<><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>);
+const IcoTruck = () => cic(<><path d="M3 7h11v9H3zM14 10h4l3 3v3h-7z" /><circle cx="7" cy="18" r="1.6" /><circle cx="17" cy="18" r="1.6" /></>);
+const IcoX = () => cic(<><circle cx="12" cy="12" r="9" /><path d="m9 9 6 6M15 9l-6 6" /></>);
+const IcoWarn = () => cic(<><path d="M12 4 3 19h18z" /><path d="M12 10v4M12 17h.01" /></>);
