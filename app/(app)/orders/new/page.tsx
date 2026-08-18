@@ -607,6 +607,13 @@ export default function NewOrderPage() {
                 <Field label="Compensated (free) chicks">
                   <Input type="number" min={0} value={comp} onChange={(e) => setComp(e.target.value)} />
                 </Field>
+                <Field label="Currency" hint="Applies to the whole order — price & payments">
+                  <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[
+                    { value: "RWF", label: "RWF — Rwandan Franc" },
+                    { value: "USD", label: "USD — US Dollar" },
+                    { value: "EUR", label: "EUR — Euro" },
+                  ]} />
+                </Field>
                 <Field label={`Unit price (${currency})`} required>
                   <Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} />
                 </Field>
@@ -643,15 +650,6 @@ export default function NewOrderPage() {
               <p className="mb-3 text-xs text-ink/60">
                 You can record the first payment now, or add payments later.
               </p>
-              <div className="mb-4">
-                <Field label="Currency (the whole order is in this currency)">
-                  <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[
-                    { value: "RWF", label: "RWF — Rwandan Franc" },
-                    { value: "USD", label: "USD — US Dollar" },
-                    { value: "EUR", label: "EUR — Euro" },
-                  ]} />
-                </Field>
-              </div>
               <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                 <Field label="Payment method">
                   <Select

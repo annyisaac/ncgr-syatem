@@ -197,6 +197,7 @@ export default function DsrOrderPage() {
             <Field label="District" required hint={`Your zone (${myDsr.zone}) only`}><Select value={district} placeholder="Select district" options={myZoneDistricts.map((d) => ({ value: d, label: d }))} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} /></Field>
             <Field label="Sector" required><Select value={sector} placeholder={district ? "Select sector" : "Choose district first"} options={sectorOptions} disabled={!district} onChange={(e) => setSector(e.target.value)} /></Field>
             <Field label="Chicks ordered" required><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
+            <Field label="Currency" hint="Applies to the whole order — price & payments"><Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[{ value: "RWF", label: "RWF — Rwandan Franc" }, { value: "USD", label: "USD — US Dollar" }, { value: "EUR", label: "EUR — Euro" }]} /></Field>
             <Field label={`Unit price (${currency})`} required><Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
           </div>
           <div className="mt-4 grid grid-cols-3 gap-3 rounded-md bg-ink/5 p-3 text-sm">
@@ -208,15 +209,6 @@ export default function DsrOrderPage() {
 
         <Card>
           <CardHeader title="First payment (optional)" />
-          <div className="mb-4">
-            <Field label="Currency (the whole order is in this currency)">
-              <Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[
-                { value: "RWF", label: "RWF — Rwandan Franc" },
-                { value: "USD", label: "USD — US Dollar" },
-                { value: "EUR", label: "EUR — Euro" },
-              ]} />
-            </Field>
-          </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label={`Amount (${currency})`}><Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} /></Field>
             <Field label="Transaction ID"><Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder="MTN / bank ref" /></Field>
