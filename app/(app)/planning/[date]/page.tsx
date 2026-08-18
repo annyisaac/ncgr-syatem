@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useParams } from "next/navigation";
-import Link from "next/link";
 import QRCode from "qrcode";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -345,18 +344,7 @@ export default function DayPlanPage() {
       <datalist id="fleet-vehicles">{vehiclePlates.map((p) => <option key={p} value={p} />)}</datalist>
 
       {/* Header */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <Link href="/planning" className="text-sm text-gold-dark underline">← Back to calendar</Link>
-          <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-ink">Delivery Planning &amp; Coordination</h1>
-          <p className="text-sm text-muted">
-            {dateLabel} · <span className="font-semibold text-ink">{kpi.chicks.toLocaleString()}</span> chicks · {kpi.total} stop(s)
-            {" · "}<span className="font-semibold text-ink">{kpi.allocPct}%</span> allocated
-            {kpi.delivered > 0 && <span className="text-green"> · {kpi.delivered} delivered</span>}
-            {kpi.failed > 0 && <span className="text-red"> · {kpi.failed} failed</span>}
-            {kpi.balanceToCollect > 0 && <> · <span className="text-red">{formatRWF(kpi.balanceToCollect)}</span> to collect</>}
-          </p>
-        </div>
+      <div className="flex justify-end">
         <Pill tone={canEdit ? "gold" : "neutral"}>{canEdit ? "Full access" : "View only"}</Pill>
       </div>
 
@@ -483,6 +471,7 @@ export default function DayPlanPage() {
       {/* Ready to allocate */}
       <Card>
         <CardHeader title={`Orders waiting for allocation (${ready.length})`} />
+        <div className="hidden sm:block">
         <TableWrap>
           <thead><tr><Th>Customer</Th><Th>Product</Th><Th>District / Sector</Th><Th className="text-right">Chicks</Th><Th className="text-right">Balance</Th><Th>Payment</Th><Th>Action</Th></tr></thead>
           <tbody>
@@ -523,6 +512,53 @@ export default function DayPlanPage() {
             );})}
           </tbody>
         </TableWrap>
+        </div>
+
+        {/* Mobile: waiting orders as cards (the wide table can't fit a phone). */}
+        <div className="space-y-2.5 sm:hidden">
+          {ready.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">Nothing waiting to be allocated for this day.</p>
+          ) : ready.map((o) => {
+            const allocBlock = canAllocate(o);
+            return (
+              <div key={o.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <div className="font-semibold text-ink">{o.name}</div>
+                    <div className="text-xs text-muted">{o.phone}</div>
+                    {(o.debtOk || o.splitOf) && (
+                      <div className="mt-1 flex flex-wrap gap-1">
+                        {o.debtOk && <Pill tone="info">On debt</Pill>}
+                        {o.splitOf && <Pill tone="purple">Split</Pill>}
+                      </div>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    <a href={`tel:${o.phone}`} title="Call" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><IcoPhone /></a>
+                    <a href={waHref(o.phone)} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><IcoChat /></a>
+                  </div>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Product</p><p className="font-medium text-ink">{o.product}</p></div>
+                  <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">District / Sector</p><p className="truncate font-medium text-ink">{custDistrict(o)}</p><p className="truncate text-xs text-muted">{custSector(o)}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Chicks</p><p className="font-medium tabular-nums text-ink">{toDeliver(o).toLocaleString()}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Balance</p><p className="font-medium tabular-nums text-ink">{formatRWF(Math.max(0, balance(o)))}</p></div>
+                </div>
+                <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2.5">
+                  {paymentCleared(o) ? <Pill tone="green">Cleared</Pill> : <Pill tone="red">Not verified</Pill>}
+                  {canEdit && (
+                    <div className="flex flex-wrap justify-end gap-1">
+                      <Button size="sm" disabled={!!allocBlock} title={allocBlock ?? undefined} onClick={() => setAllocFor(o)}>Allocate</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setSplitFor(o)} disabled={o.chicks <= 1} title={o.chicks <= 1 ? "Nothing to split" : "Split across trucks"}>Split</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
+                    </div>
+                  )}
+                </div>
+                {canEdit && allocBlock && <p className="mt-1.5 text-[11px] text-status-refunded">Payment verification required before allocation.</p>}
+              </div>
+            );
+          })}
+        </div>
       </Card>
 
       {/* Route cards */}
@@ -569,6 +605,7 @@ export default function DayPlanPage() {
                 <button type="button" onClick={() => makeDriverLink(route)} className="shrink-0 font-semibold text-gold-dark underline">Copy</button>
               </div>
             )}
+            <div className="hidden sm:block">
             <TableWrap>
               <thead><tr><Th>Customer</Th><Th>Product</Th><Th>Contact</Th><Th>Pickup</Th><Th>Sector</Th><Th className="text-right">Chicks</Th><Th>Hatchery</Th>{canEdit && <Th></Th>}</tr></thead>
               <tbody>
@@ -611,6 +648,50 @@ export default function DayPlanPage() {
                 ))}
               </tbody>
             </TableWrap>
+            </div>
+
+            {/* Mobile: route stops as cards. */}
+            <div className="space-y-2.5 sm:hidden">
+              {list.length === 0 ? (
+                <p className="py-6 text-center text-sm text-muted">No stops on this route for this day.</p>
+              ) : list.map((o) => (
+                <div key={o.id} className={cn("rounded-2xl border p-3.5 shadow-card", o.deliverOk ? "border-green/40 bg-green-bg" : "border-line bg-paper")}>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-semibold text-ink">{o.name}</div>
+                      {(o.deliverOk || (o.deliveryFail && !o.deliverOk)) && (
+                        <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                          {o.deliverOk && <Pill tone="green">Delivered ✓</Pill>}
+                          {o.deliverOk && o.hasProof && <button type="button" onClick={() => viewProof(o)} className="text-xs font-semibold text-blue underline">View proof</button>}
+                          {o.deliveryFail && !o.deliverOk && <Pill tone="red">Not delivered</Pill>}
+                        </div>
+                      )}
+                      {o.deliveryFail && !o.deliverOk && <div className="mt-0.5 text-xs text-muted">{o.deliveryFail.reason}</div>}
+                    </div>
+                    <Pill tone={o.product === "Ross 308" ? "info" : "gold"}>{o.product === "Ross 308" ? "Ross" : "Tetra"}</Pill>
+                  </div>
+                  <div className="mt-2 flex items-center gap-1.5">
+                    <a href={`tel:${o.phone}`} title="Call" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><IcoPhone /></a>
+                    <a href={waHref(o.phone)} target="_blank" rel="noopener noreferrer" title="WhatsApp" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-green hover:bg-green-bg"><IcoChat /></a>
+                    <a href={mapHref(o)} target="_blank" rel="noopener noreferrer" title="Directions" className="flex h-8 w-8 items-center justify-center rounded-lg border border-line text-blue hover:bg-blue-bg"><IcoPin /></a>
+                    <span className="ml-1 text-xs text-muted">{o.phone}</span>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Pickup</p><p className="truncate font-medium text-ink">{o.pickupLocation ?? "—"}</p></div>
+                    <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Sector</p><p className="truncate font-medium text-ink">{custSector(o)}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Chicks</p><p className="font-medium tabular-nums text-ink">{deliverChicks(o).toLocaleString()}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Hatchery</p>{o.allocatedOk ? <Pill tone="green">Allocated</Pill> : <Pill tone="amber">Awaiting</Pill>}</div>
+                  </div>
+                  {canEdit && !o.deliverOk && (
+                    <div className="mt-2.5 flex flex-wrap justify-end gap-1 border-t border-line pt-2.5">
+                      <Button size="sm" disabled={!o.allocatedOk} title={o.allocatedOk ? undefined : "Waiting for hatchery chick allocation"} onClick={() => markDelivered(o)}>Delivered</Button>
+                      <Button size="sm" variant="ghost" onClick={() => setRescheduleFor(o)}>Reschedule</Button>
+                      <Button size="sm" variant="ghost" onClick={() => unallocate(o)}>Remove</Button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
           </Card>
         );
       })}

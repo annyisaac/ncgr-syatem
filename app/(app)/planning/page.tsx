@@ -86,14 +86,14 @@ export default function DeliveryPlanningCalendar() {
           ))}
         </div>
 
-        <div className="mt-3 overflow-x-auto">
-          <div className="min-w-[560px]">
+        <div className="mt-3 sm:overflow-x-auto">
+          <div className="sm:min-w-[560px]">
             <div className="grid grid-cols-7 gap-1 text-center text-xs font-medium text-muted">
               {WEEKDAYS.map((w) => <div key={w} className="py-1">{w}</div>)}
             </div>
             <div className="grid grid-cols-7 gap-1">
               {cells.map((iso, i) => {
-                if (!iso) return <div key={i} className="h-24 rounded bg-transparent" />;
+                if (!iso) return <div key={i} className="h-16 sm:h-24 rounded bg-transparent" />;
                 const g = countsByDate.get(iso);
                 const has = !!g;
                 const allRouted = has && g!.routed === g!.orders;
@@ -121,7 +121,7 @@ export default function DeliveryPlanningCalendar() {
                     type="button"
                     onClick={() => router.push(`/planning/${iso}`)}
                     className={cn(
-                      "h-24 cursor-pointer rounded-[10px] border p-1.5 text-left transition hover:border-gold hover:shadow-[0_3px_12px_rgba(150,115,20,.22)]",
+                      "h-16 sm:h-24 cursor-pointer rounded-[10px] border p-1 sm:p-1.5 text-left transition hover:border-gold hover:shadow-[0_3px_12px_rgba(150,115,20,.22)]",
                       !has && "border-line bg-paper",
                       tone === "green" && "border-green bg-green-bg",
                       tone === "red" && "border-red bg-red-bg",
@@ -135,10 +135,14 @@ export default function DeliveryPlanningCalendar() {
                       {has && <span className={cn("rounded-full px-1.5 text-[10px] font-bold", tone === "green" ? "bg-green text-white" : tone === "red" ? "bg-red text-white" : "bg-onyx text-[#f3e9c9]")}>{g!.orders}</span>}
                     </div>
                     {has && (
-                      <div className="mt-1 space-y-0.5">
-                        <div className="text-[10px] font-semibold leading-tight text-gold-dark">{g!.chicks.toLocaleString()} chicks</div>
-                        <div className={cn("text-[9px] font-semibold leading-tight", tone === "green" ? "text-green" : tone === "red" ? "text-red" : "text-muted")}>{status}</div>
-                      </div>
+                      <>
+                        {/* Mobile: compact chicks count only (cells are small); full detail on sm+. */}
+                        <div className="mt-0.5 text-[9px] font-bold leading-tight text-gold-dark sm:hidden">{g!.chicks.toLocaleString()}</div>
+                        <div className="mt-1 space-y-0.5 hidden sm:block">
+                          <div className="text-[10px] font-semibold leading-tight text-gold-dark">{g!.chicks.toLocaleString()} chicks</div>
+                          <div className={cn("text-[9px] font-semibold leading-tight", tone === "green" ? "text-green" : tone === "red" ? "text-red" : "text-muted")}>{status}</div>
+                        </div>
+                      </>
                     )}
                   </button>
                 );
