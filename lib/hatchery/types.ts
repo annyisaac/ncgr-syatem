@@ -89,6 +89,7 @@ export interface Reception {
   crackedOnSet: number;
   misshapen: number;
   dirty: number;
+  others?: number; // other rejected eggs (not settable) — optional on legacy records
   productType: Product;
   location?: ReceptionLocation; // chosen after intake: egg store room, or ready to set
   fumigatedEggs?: number; // running total fumigated across trolleys

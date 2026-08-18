@@ -21,11 +21,11 @@ import {
 // Receptions
 // ---------------------------------------------------------------------------
 
-/** Settable eggs = received − cracked (farm+set) − misshapen − dirty. */
+/** Settable eggs = received − cracked (farm+set) − misshapen − dirty − others. */
 export function settableEggs(r: Reception): number {
   return Math.max(
     0,
-    r.eggsReceived - r.crackedOnFarm - r.crackedOnSet - r.misshapen - r.dirty
+    r.eggsReceived - r.crackedOnFarm - r.crackedOnSet - r.misshapen - r.dirty - (r.others ?? 0)
   );
 }
 

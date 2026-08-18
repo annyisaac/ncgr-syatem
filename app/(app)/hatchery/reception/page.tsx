@@ -38,7 +38,7 @@ export default function ReceptionPage() {
   const [editing, setEditing] = useState<Reception | null>(null);
   const [f, setF] = useState({
     flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "",
-    crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "", date: todayISO(),
+    crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "", others: "", date: todayISO(),
   });
   const [err, setErr] = useState<string | null>(null);
 
@@ -102,12 +102,12 @@ export default function ReceptionPage() {
   const pageRows = filtered.slice(start, start + perPage);
 
   function resetForm() {
-    setF({ flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "", crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "", date: todayISO() });
+    setF({ flock: "", ageOfFlock: "", eggsReceived: "", ageOfEggs: "", crackedOnFarm: "", crackedOnSet: "", misshapen: "", dirty: "", others: "", date: todayISO() });
   }
   function openNew() { setEditing(null); resetForm(); setErr(null); setShowFarms(false); setShow(true); }
   function startEdit(r: Reception) {
     setEditing(r);
-    setF({ flock: "", ageOfFlock: String(r.ageOfFlock), eggsReceived: String(r.eggsReceived), ageOfEggs: String(r.ageOfEggs), crackedOnFarm: String(r.crackedOnFarm), crackedOnSet: String(r.crackedOnSet), misshapen: String(r.misshapen), dirty: String(r.dirty), date: r.date });
+    setF({ flock: "", ageOfFlock: String(r.ageOfFlock), eggsReceived: String(r.eggsReceived), ageOfEggs: String(r.ageOfEggs), crackedOnFarm: String(r.crackedOnFarm), crackedOnSet: String(r.crackedOnSet), misshapen: String(r.misshapen), dirty: String(r.dirty), others: String(r.others ?? 0), date: r.date });
     setErr(null); setShow(true);
   }
   function cancelForm() { setShow(false); setEditing(null); resetForm(); }
@@ -117,7 +117,7 @@ export default function ReceptionPage() {
     setErr(null);
     if (num(f.eggsReceived) <= 0) return setErr("Enter eggs received.");
     if (editing) {
-      const rec: Reception = { ...editing, date: f.date, ageOfFlock: num(f.ageOfFlock), eggsReceived: num(f.eggsReceived), ageOfEggs: num(f.ageOfEggs), crackedOnFarm: num(f.crackedOnFarm), crackedOnSet: num(f.crackedOnSet), misshapen: num(f.misshapen), dirty: num(f.dirty) };
+      const rec: Reception = { ...editing, date: f.date, ageOfFlock: num(f.ageOfFlock), eggsReceived: num(f.eggsReceived), ageOfEggs: num(f.ageOfEggs), crackedOnFarm: num(f.crackedOnFarm), crackedOnSet: num(f.crackedOnSet), misshapen: num(f.misshapen), dirty: num(f.dirty), others: num(f.others) };
       upsertReception(rec);
       toast(`Updated reception — ${settableEggs(rec).toLocaleString()} settable.`);
       cancelForm();
@@ -129,7 +129,7 @@ export default function ReceptionPage() {
     const rec: Reception = {
       id: newId("rec"), date: f.date, farm, flockId: flock.code, ageOfFlock: num(f.ageOfFlock),
       eggsReceived: num(f.eggsReceived), ageOfEggs: num(f.ageOfEggs), crackedOnFarm: num(f.crackedOnFarm),
-      crackedOnSet: num(f.crackedOnSet), misshapen: num(f.misshapen), dirty: num(f.dirty),
+      crackedOnSet: num(f.crackedOnSet), misshapen: num(f.misshapen), dirty: num(f.dirty), others: num(f.others),
       productType: flock.productType, by: user!.email, on: nowISO(),
     };
     upsertReception(rec);
@@ -153,10 +153,10 @@ export default function ReceptionPage() {
   }
 
   function exportCsv() {
-    const header = ["Date", "Farm", "Location", "Flock", "Product", "Received", "Cracked", "Misshapen", "Dirty", "Settable", "Where", "Batch"];
+    const header = ["Date", "Farm", "Location", "Flock", "Product", "Received", "Cracked", "Misshapen", "Dirty", "Others", "Settable", "Where", "Batch"];
     const body = filtered.map((r) => [
       formatDate(r.date), r.farm, farmLoc(r.farm), r.flockId, r.productType,
-      String(r.eggsReceived), String(crackedOf(r)), String(r.misshapen), String(r.dirty), String(settableEggs(r)),
+      String(r.eggsReceived), String(crackedOf(r)), String(r.misshapen), String(r.dirty), String(r.others ?? 0), String(settableEggs(r)),
       r.batchId ? "Set" : r.location ?? "Pending", batchNo(r.batchId) ?? "",
     ]);
     const blob = new Blob([[header, ...body].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
@@ -204,10 +204,11 @@ export default function ReceptionPage() {
             <Field label="Cracked on set"><Input type="number" value={f.crackedOnSet} onChange={(e) => setF({ ...f, crackedOnSet: e.target.value })} /></Field>
             <Field label="Misshapen eggs"><Input type="number" value={f.misshapen} onChange={(e) => setF({ ...f, misshapen: e.target.value })} /></Field>
             <Field label="Dirty eggs"><Input type="number" value={f.dirty} onChange={(e) => setF({ ...f, dirty: e.target.value })} /></Field>
+            <Field label="Other rejected eggs"><Input type="number" value={f.others} onChange={(e) => setF({ ...f, others: e.target.value })} /></Field>
             <Field label="Date received"><Input type="date" value={f.date} onChange={(e) => setF({ ...f, date: e.target.value })} /></Field>
             <div className="sm:col-span-3 rounded-md border border-line bg-cream/40 px-3 py-3 text-center">
               <p className="text-xs text-muted">Settable eggs</p>
-              <p className="text-2xl font-bold text-green">{Math.max(0, num(f.eggsReceived) - num(f.crackedOnFarm) - num(f.crackedOnSet) - num(f.misshapen) - num(f.dirty)).toLocaleString()}</p>
+              <p className="text-2xl font-bold text-green">{Math.max(0, num(f.eggsReceived) - num(f.crackedOnFarm) - num(f.crackedOnSet) - num(f.misshapen) - num(f.dirty) - num(f.others)).toLocaleString()}</p>
             </div>
             {err && <p className="sm:col-span-3 text-sm text-status-refunded">{err}</p>}
             <div className="sm:col-span-3 flex justify-end gap-2">
@@ -254,7 +255,7 @@ export default function ReceptionPage() {
               <th rowSpan={2} className={HG}>Farm</th>
               <th rowSpan={2} className={HG}>Flock</th>
               <th rowSpan={2} className={HG}>Product</th>
-              <th colSpan={4} className={`${HG} border-l border-white/15 text-center`}>Eggs received</th>
+              <th colSpan={5} className={`${HG} border-l border-white/15 text-center`}>Eggs received</th>
               <th rowSpan={2} className={`${HG} border-l border-white/15 text-right`}>Settable</th>
               <th rowSpan={2} className={HG}>Where</th>
               <th rowSpan={2} className={HG}>Batch</th>
@@ -265,11 +266,12 @@ export default function ReceptionPage() {
               <th className={`${HG} text-right`}>Cracked</th>
               <th className={`${HG} text-right`}>Misshapen</th>
               <th className={`${HG} text-right`}>Dirty</th>
+              <th className={`${HG} text-right`}>Others</th>
             </tr>
           </thead>
           <tbody>
             {pageRows.length === 0 ? (
-              <EmptyRow colSpan={canEdit ? 12 : 11} text="No receptions match these filters." />
+              <EmptyRow colSpan={canEdit ? 13 : 12} text="No receptions match these filters." />
             ) : pageRows.map((r) => (
               <tr key={r.id}>
                 <Td className="whitespace-nowrap">{formatDate(r.date)}</Td>
@@ -280,6 +282,7 @@ export default function ReceptionPage() {
                 <Td className="text-right tabular-nums text-red">{crackedOf(r).toLocaleString()}</Td>
                 <Td className="text-right tabular-nums">{r.misshapen.toLocaleString()}</Td>
                 <Td className="text-right tabular-nums text-gold-dark">{r.dirty.toLocaleString()}</Td>
+                <Td className="text-right tabular-nums">{(r.others ?? 0).toLocaleString()}</Td>
                 <Td className="text-right font-semibold tabular-nums text-green">
                   {settableEggs(r).toLocaleString()}
                   {(r.eggsSet ?? 0) > 0 && remainingSettable(r) > 0 && <div className="text-[11px] font-normal text-gold-dark">{(r.eggsSet ?? 0).toLocaleString()} set · {remainingSettable(r).toLocaleString()} left</div>}
