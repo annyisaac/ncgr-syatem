@@ -19,7 +19,7 @@ import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
 import type { Order, BankStatement, User, Availability } from "@/lib/types";
 import { PRODUCTS } from "@/lib/types";
 import { availableFor, balance, orderTotal, paidAmount, toDeliver } from "@/lib/types";
-import { formatRWF } from "@/lib/config";
+import { formatRWF, formatMoney } from "@/lib/config";
 import { provinceOfDistrict } from "@/lib/config";
 import { formatDate, todayISO, nowISO } from "@/lib/format";
 import { withHistory } from "@/lib/orders";
@@ -331,6 +331,25 @@ function outstanding(orders: Order[]): number {
     .reduce((s, o) => s + Math.max(0, balance(o)), 0);
 }
 
+/** Verified money collected on one order. */
+const verifiedPaidOf = (o: Order) => o.payments.filter((p) => p.verified).reduce((a, p) => a + p.amt, 0);
+
+/**
+ * Sum a per-order amount grouped by the order's currency, formatted with NO
+ * conversion — e.g. "12,000,000 RWF · $500 · €200". Only currencies present show.
+ */
+function moneyByCurrency(orders: Order[], amt: (o: Order) => number): string {
+  const sums: Record<string, number> = {};
+  for (const o of orders) {
+    const v = amt(o);
+    if (!v) continue;
+    const c = o.currency ?? "RWF";
+    sums[c] = (sums[c] ?? 0) + v;
+  }
+  const parts = (["RWF", "USD", "EUR"] as const).filter((c) => sums[c]).map((c) => formatMoney(sums[c], c));
+  return parts.length ? parts.join(" · ") : "0 RWF";
+}
+
 function chicksPerDate(orders: Order[]) {
   const map = new Map<string, number>();
   for (const o of orders) {
@@ -461,8 +480,6 @@ function AdminDashboard({
   const fulfilled = scoped.filter((o) => o.status === "fulfilled").length;
   const refunded = scoped.filter((o) => o.status === "refunded").length;
   const rejected = scoped.filter((o) => o.status === "rejected").length;
-  const collected = verifiedCollected(active);
-  const owed = outstanding(active);
   const sold = chicksSold(scoped);
   const statusMax = Math.max(pending, fulfilled, refunded, rejected, 1);
 
@@ -544,8 +561,8 @@ function AdminDashboard({
         <StatTile label="Pending" value={String(pending)} onClick={() => go("pending")} />
         <StatTile label="Fulfilled" value={String(fulfilled)} onClick={() => go("fulfilled")} />
         <StatTile label="Chicks sold" value={sold.toLocaleString()} onClick={() => go("all")} />
-        <StatTile label="Collected" value={formatRWF(collected)} onClick={() => go("collected")} />
-        <StatTile label="Outstanding" value={formatRWF(owed)} onClick={() => go("outstanding")} />
+        <StatTile label="Collected" value={moneyByCurrency(active, verifiedPaidOf)} onClick={() => go("collected")} />
+        <StatTile label="Outstanding" value={moneyByCurrency(active, (o) => Math.max(0, balance(o)))} onClick={() => go("outstanding")} />
       </div>
 
       <AvailabilityPanel availability={db.availability} orders={db.orders} focus="both" />
@@ -724,7 +741,6 @@ function SalesOverview({
   const active = useMemo(() => scoped.filter((o) => !isClosed(o)), [scoped]);
 
   const chicks = active.reduce((s, o) => s + o.chicks, 0);
-  const totalValue = active.reduce((s, o) => s + orderTotal(o), 0);
   const collected = verifiedCollected(active);
   const owed = outstanding(active);
   const recordedPaid = scoped.reduce((s, o) => s + paidAmount(o), 0);
@@ -772,8 +788,8 @@ function SalesOverview({
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <StatTile label="Total orders" value={String(scoped.length)} />
         <StatTile label="Total chicks" value={chicks.toLocaleString()} />
-        <StatTile label="Total value" value={formatRWF(totalValue)} />
-        <StatTile label="Collected (verified)" value={formatRWF(collected)} />
+        <StatTile label="Total value" value={moneyByCurrency(active, orderTotal)} />
+        <StatTile label="Collected (verified)" value={moneyByCurrency(active, verifiedPaidOf)} />
         <StatTile label="Pending orders" value={String(pendingNew + inProgress)} />
       </div>
 
@@ -853,9 +869,9 @@ function SalesOverview({
         <Card>
           <SectionTitle label="Revenue metrics" />
           <div className="space-y-4 pt-1">
-            <MetricBar label="Total paid (recorded)" display={formatRWF(recordedPaid)} value={recordedPaid} max={moneyMax} color="#d97706" />
-            <MetricBar label="Collected (verified)" display={formatRWF(collected)} value={collected} max={moneyMax} color="#15803d" />
-            <MetricBar label="Outstanding" display={formatRWF(owed)} value={owed} max={moneyMax} color="#b91c1c" />
+            <MetricBar label="Total paid (recorded)" display={moneyByCurrency(scoped, paidAmount)} value={recordedPaid} max={moneyMax} color="#d97706" />
+            <MetricBar label="Collected (verified)" display={moneyByCurrency(active, verifiedPaidOf)} value={collected} max={moneyMax} color="#15803d" />
+            <MetricBar label="Outstanding" display={moneyByCurrency(active, (o) => Math.max(0, balance(o)))} value={owed} max={moneyMax} color="#b91c1c" />
           </div>
         </Card>
       </div>
@@ -1219,9 +1235,9 @@ function CheckerDashboard({ orders, statements, availability, user }: { orders: 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <StatTile label="Total orders" value={String(scoped.length)} />
         <StatTile label="Paid orders" value={String(receivedOrders)} />
-        <StatTile label="Amount received" value={formatRWF(amountReceived)} />
-        <StatTile label="Amount pending" value={formatRWF(amountPending)} />
-        <StatTile label="Total value" value={formatRWF(totalValue)} />
+        <StatTile label="Amount received" value={moneyByCurrency(active, verifiedPaidOf)} />
+        <StatTile label="Amount pending" value={moneyByCurrency(active, (o) => Math.max(0, balance(o)))} />
+        <StatTile label="Total value" value={moneyByCurrency(active, orderTotal)} />
       </div>
 
       <AvailabilityPanel availability={availability} orders={orders} focus={product} />

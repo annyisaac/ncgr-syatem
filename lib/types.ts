@@ -287,7 +287,12 @@ export interface Order {
   /** The customer registry id (clients table) this order belongs to. Stamped at
    *  creation; identity still falls back to phone+name for older orders. */
   clientId?: string;
+  /** Currency the order's price / total / balance / payments are in. Default RWF. */
+  currency?: Currency;
 }
+
+/** Currencies an order can be recorded in. */
+export type Currency = "RWF" | "USD" | "EUR";
 
 /**
  * A standing, unguessable public link a salesperson generates for a driver.
@@ -475,6 +480,9 @@ export interface CommissionRequest {
 export interface StatementRow {
   ref: string;
   amt: number;
+  /** The transaction date as it appears in the statement (raw text), when a
+   *  date column was mapped on upload. */
+  date?: string;
 }
 
 export interface BankStatement {
@@ -484,6 +492,11 @@ export interface BankStatement {
   uploadedOn: string; // ISO datetime
   refColumn: string;
   amtColumn: string;
+  /** The column mapped as the transaction date, when one was chosen. */
+  dateColumn?: string;
+  /** Currency of this statement's amounts. Payments only match a statement in
+   *  their own currency. Defaults to RWF for statements uploaded before this. */
+  currency?: Currency;
   rows: StatementRow[];
 }
 

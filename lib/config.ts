@@ -169,6 +169,14 @@ export function formatRWF(amount: number): string {
   return `${Math.round(amount).toLocaleString("en-US")} RWF`;
 }
 
+/** Format an amount in a given order currency (defaults to RWF). */
+export function formatMoney(amount: number, currency: "RWF" | "USD" | "EUR" = "RWF"): string {
+  const n = Math.round(amount).toLocaleString("en-US");
+  if (currency === "USD") return `$${n}`;
+  if (currency === "EUR") return `€${n}`;
+  return `${n} RWF`;
+}
+
 // ---------------------------------------------------------------------------
 // Districts -> sectors (official Rwandan administrative sectors, 416 total)
 // Source: ngabovictor/Rwanda dataset. Used to offer a sector dropdown when

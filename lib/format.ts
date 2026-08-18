@@ -72,6 +72,6 @@ export function nowISO(): string {
 export function normalizePhone(phone: string): string {
   let d = (phone || "").replace(/\D/g, "");
   if (d.startsWith("250")) d = d.slice(3);
-  if (d.length === 10 && d.startsWith("0")) d = d.slice(1);
+  if (d.startsWith("0")) d = d.slice(1);
   return d;
 }
