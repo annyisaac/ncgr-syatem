@@ -15,7 +15,6 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { uploadPaymentSlip } from "@/lib/db";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ActionsDropdown, type DropdownAction } from "@/components/ui/Dropdown";
-import { PageHeader } from "@/components/ui/PageHeader";
 import { Pagination } from "@/components/ui/Pagination";
 import { SearchTimeBar } from "@/components/dashboard/DashKit";
 import { Kpi } from "@/components/dashboard/Kpi";
@@ -91,7 +90,6 @@ const ico = {
 const DownloadIcon = () => <svg {...ico}><path d="M10 3v9m0 0 3-3m-3 3-3-3M4 15.5h12" /></svg>;
 const ListIcon = () => <svg {...ico}><path d="M7 6h9M7 10h9M7 14h9M3.5 6h.01M3.5 10h.01M3.5 14h.01" /></svg>;
 const PlusIcon = () => <svg {...ico}><path d="M10 4v12M4 10h12" /></svg>;
-const FilterIcon = () => <svg {...ico}><path d="M3.5 5h13l-5 6v4l-3 1.5V11l-5-6Z" /></svg>;
 const BoxIcon = () => <svg {...ico} width={14} height={14}><path d="M4 6.5 10 4l6 2.5v7L10 16l-6-2.5v-7Z M4 6.5 10 9l6-2.5M10 9v7" /></svg>;
 
 function OrdersInner() {
@@ -122,7 +120,6 @@ function OrdersInner() {
   // Admin bulk reschedule: selected order ids + the target delivery date.
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkDate, setBulkDate] = useState("");
-  const [showFilters, setShowFilters] = useState(true);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
 
@@ -604,35 +601,29 @@ function OrdersInner() {
 
   return (
     <div className="space-y-4">
-      <PageHeader
-        title="Orders"
-        subtitle="Manage and track all customer orders in one place."
-        actions={
-          <>
-            <Button
-              variant="secondary"
-              className="gap-2"
-              onClick={() => (rows.length ? ordersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
-            >
-              <DownloadIcon /> Download PDF
-            </Button>
-            {canDsrList && (
-              <Button
-                variant="secondary"
-                className="gap-2"
-                onClick={() => (rows.length ? dsrOrdersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
-              >
-                <ListIcon /> DSR list (PDF)
-              </Button>
-            )}
-            {canAct && (
-              <Link href="/orders/new">
-                <Button className="gap-2"><PlusIcon /> New Order</Button>
-              </Link>
-            )}
-          </>
-        }
-      />
+      <div className="flex flex-wrap items-center justify-end gap-2">
+        <Button
+          variant="secondary"
+          className="gap-2"
+          onClick={() => (rows.length ? ordersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
+        >
+          <DownloadIcon /> Download PDF
+        </Button>
+        {canDsrList && (
+          <Button
+            variant="secondary"
+            className="gap-2"
+            onClick={() => (rows.length ? dsrOrdersPDF(rows, filterLabel) : toast("Nothing to export.", "info"))}
+          >
+            <ListIcon /> DSR list (PDF)
+          </Button>
+        )}
+        {canAct && (
+          <Link href="/orders/new">
+            <Button className="gap-2"><PlusIcon /> New Order</Button>
+          </Link>
+        )}
+      </div>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
         <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub="All time" active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
@@ -695,56 +686,51 @@ function OrdersInner() {
         </div>
       )}
 
-      <div className="flex flex-wrap items-center gap-3 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
-        <div className="min-w-0 flex-1">
+      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 sticky top-16 z-20 -mx-4 md:-mx-8 border-b border-line bg-cream/95 px-4 md:px-8 py-2.5 backdrop-blur">
+        <div className="min-w-0 sm:flex-1">
           <SearchTimeBar q={query} setQ={setQuery} placeholder="Search — client, phone, district, or transaction ID…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} suggestions={searchSuggestions} />
         </div>
-        {showFilters && (
-          <>
-            {isAdmin && (
-              <div className="w-44">
-                <Select
-                  value={productFilter}
-                  onChange={(e) => setProductFilter(e.target.value)}
-                  options={[
-                    { value: "all", label: "All products" },
-                    { value: "Tetra Super Harco", label: "Tetra Super Harco" },
-                    { value: "Ross 308", label: "Ross 308" },
-                  ]}
-                />
-              </div>
-            )}
-            <div className="w-52">
+        <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+          {isAdmin && (
+            <div className="w-full sm:w-44">
               <Select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                value={productFilter}
+                onChange={(e) => setProductFilter(e.target.value)}
                 options={[
-                  { value: "all", label: "All statuses" },
-                  { value: "pending", label: "Pending" },
-                  { value: "fulfilled", label: "Fulfilled" },
-                  { value: "refunded", label: "Refunded" },
-                  { value: "rejected", label: "Rejected" },
-                  { value: "backorder", label: "Backorders" },
-                  { value: "paid", label: "Payment: Fully paid" },
-                  { value: "partial", label: "Payment: Partially paid" },
-                  { value: "unpaid", label: "Payment: Unpaid" },
-                  { value: "debt", label: "Payment: On debt" },
-                  { value: "payrejected", label: "Payment: Rejected" },
+                  { value: "all", label: "All products" },
+                  { value: "Tetra Super Harco", label: "Tetra Super Harco" },
+                  { value: "Ross 308", label: "Ross 308" },
                 ]}
               />
             </div>
-            <div className="w-48">
-              <Select
-                value={dateFilter}
-                onChange={(e) => setDateFilter(e.target.value)}
-                options={deliveryDateOptions}
-              />
-            </div>
-          </>
-        )}
-        <Button variant="ghost" className="gap-2" onClick={() => setShowFilters((v) => !v)}>
-          <FilterIcon /> Filters
-        </Button>
+          )}
+          <div className="w-full sm:w-52">
+            <Select
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              options={[
+                { value: "all", label: "All statuses" },
+                { value: "pending", label: "Pending" },
+                { value: "fulfilled", label: "Fulfilled" },
+                { value: "refunded", label: "Refunded" },
+                { value: "rejected", label: "Rejected" },
+                { value: "backorder", label: "Backorders" },
+                { value: "paid", label: "Payment: Fully paid" },
+                { value: "partial", label: "Payment: Partially paid" },
+                { value: "unpaid", label: "Payment: Unpaid" },
+                { value: "debt", label: "Payment: On debt" },
+                { value: "payrejected", label: "Payment: Rejected" },
+              ]}
+            />
+          </div>
+          <div className="w-full sm:w-48">
+            <Select
+              value={dateFilter}
+              onChange={(e) => setDateFilter(e.target.value)}
+              options={deliveryDateOptions}
+            />
+          </div>
+        </div>
       </div>
 
       <Card>
@@ -764,6 +750,7 @@ function OrdersInner() {
             <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>Clear</Button>
           </div>
         )}
+        <div className="hidden sm:block">
         <TableWrap>
           <thead>
             <tr>
@@ -901,6 +888,63 @@ function OrdersInner() {
             )}
           </tbody>
         </TableWrap>
+        </div>
+
+        {/* Mobile: each order as a compact card — the wide table can't fit a phone. */}
+        <div className="space-y-2.5 sm:hidden">
+          {pageRows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted">No orders match.</p>
+          ) : pageRows.map((o) => {
+            const cs = paymentCheckState(o);
+            const tone = o.status === "fulfilled" ? "fulfilled" : o.status === "refunded" ? "refunded" : o.status === "rejected" ? "red" : o.confirmedOk ? "gold" : "pending";
+            const label = o.status === "pending" && !o.confirmedOk ? "Not confirmed" : o.status === "pending" ? "Confirmed" : o.status;
+            return (
+              <div key={o.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-start gap-2">
+                    {isAdmin && (
+                      <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleSel(o.id)} aria-label={`Select ${o.name}`} className="mt-0.5 h-4 w-4 shrink-0 accent-gold" />
+                    )}
+                    <div className="min-w-0">
+                      <Link href={`/clients/${encodeURIComponent(clientKey(o))}`} className="block truncate font-semibold text-gold-dark">{o.name}</Link>
+                      <div className="text-xs text-ink/50">{o.phone}</div>
+                    </div>
+                  </div>
+                  <div className="flex shrink-0 flex-col items-end gap-1">
+                    <Pill tone={o.product === "Ross 308" ? "info" : "gold"}>{o.product === "Ross 308" ? "Ross" : "Tetra"}</Pill>
+                    <Pill tone={tone}>{label}</Pill>
+                  </div>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div>
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Delivery</p>
+                    <p className="font-medium text-ink">{formatDate(o.date)}</p>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">District / Sector</p>
+                    <p className="truncate font-medium text-ink">{o.clientDistrict || o.district}</p>
+                    <p className="truncate text-xs text-ink/50">{o.clientSector || o.sector}</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Chicks</p>
+                    <p className="font-medium tabular-nums text-ink">{o.chicks.toLocaleString()}</p>
+                    <p className="text-xs text-ink/50">→ {toDeliver(o).toLocaleString()} to deliver</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Amount</p>
+                    <p className={`font-medium tabular-nums ${isFullyPaid(o) ? "text-green" : "text-ink"}`}>{formatMoney(orderTotal(o), o.currency)}</p>
+                    <p className="text-xs text-ink/50">Bal <span className={balance(o) > 0 ? "font-semibold text-red" : ""}>{balance(o).toLocaleString()}</span></p>
+                  </div>
+                </div>
+                <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
+                  <span className="text-xs text-ink/50">Check: {CHECK_LABEL[cs.state]}{cs.state === "partial" && ` (${cs.verified}/${cs.total})`}</span>
+                  {canAct || isChecker ? <ActionsDropdown actions={buildActions(o)} /> : <span className="text-xs text-ink/40">View only</span>}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
         {rows.length > 0 && (
           <div className="mt-4 border-t border-line pt-4">
             <Pagination
