@@ -1071,6 +1071,7 @@ function OrdersInner() {
       {modal?.type === "edit" && (
         <EditModal
           order={modal.order}
+          isAdmin={isAdmin}
           onClose={() => setModal(null)}
           onSave={(patch) => {
             const o = modal.order;
@@ -1539,13 +1540,16 @@ function DeletePaymentModal({
 
 function EditModal({
   order,
+  isAdmin,
   onClose,
   onSave,
 }: {
   order: Order;
+  isAdmin: boolean;
   onClose: () => void;
   onSave: (patch: Partial<Order>) => void;
 }) {
+  const cur = order.currency ?? "RWF";
   const [name, setName] = useState(order.name);
   const [phone, setPhone] = useState(order.phone);
   const [chicks, setChicks] = useState(String(order.chicks));
@@ -1553,6 +1557,7 @@ function EditModal({
   const [price, setPrice] = useState(String(order.price));
   const [date, setDate] = useState(order.date);
   const [pickup, setPickup] = useState(order.pickupLocation ?? "");
+  const [pays, setPays] = useState<string[]>(order.payments.map((p) => String(p.amt)));
   return (
     <Modal
       open
@@ -1571,6 +1576,9 @@ function EditModal({
                 price: Number(price) || order.price,
                 date: date || order.date,
                 pickupLocation: pickup.trim() || undefined,
+                ...(isAdmin && order.payments.length > 0
+                  ? { payments: order.payments.map((p, i) => ({ ...p, amt: pays[i] !== undefined && pays[i] !== "" ? Number(pays[i]) : p.amt })) }
+                  : {}),
               })
             }
           >
@@ -1588,6 +1596,28 @@ function EditModal({
         <Field label={order.backorderOf ? "Backorder delivery date" : "Delivery date"}><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field label="Pickup location"><Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. Nyabugogo taxi park" /></Field>
       </div>
+      {isAdmin && order.payments.length > 0 && (
+        <div className="mt-4 border-t border-line pt-3">
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Payments — edit amount ({cur})</p>
+          <div className="space-y-2">
+            {order.payments.map((p, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm text-ink">{p.ref || "—"}</p>
+                  <p className="text-xs text-muted">
+                    {p.method ?? "—"}{p.bankName ? ` · ${p.bankName}` : ""}
+                    {p.voided ? " · Rejected" : p.verified ? " · Verified" : " · Unverified"}
+                  </p>
+                </div>
+                <div className="w-32 shrink-0">
+                  <Input type="number" min={0} step={cur === "RWF" ? "1" : "0.01"} value={pays[i] ?? ""} onChange={(e) => setPays((arr) => arr.map((v, j) => (j === i ? e.target.value : v)))} />
+                </div>
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-muted">Editing an amount corrects what was recorded — it does not change the customer&apos;s bank transaction.</p>
+        </div>
+      )}
     </Modal>
   );
 }
