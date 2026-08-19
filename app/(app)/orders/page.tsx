@@ -501,6 +501,11 @@ function OrdersInner() {
       }
     }
 
+    // Admin can still correct an already-delivered (fulfilled) order.
+    if (isAdmin && o.deliverOk && !isClosed(o)) {
+      acts.push({ label: "Edit order", onClick: () => setModal({ type: "edit", order: o }) });
+    }
+
     // Once delivered the date can't be changed outright — a reschedule goes
     // through Admin approval (one pending request at a time).
     if (o.deliverOk && !isClosed(o) && !o.request) {
