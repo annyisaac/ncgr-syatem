@@ -7,7 +7,6 @@ import Link from "next/link";
 import { useAuth } from "@/components/AuthProvider";
 import { useHatchery } from "@/components/HatcheryProvider";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Pill } from "@/components/ui/Pill";
 import { Button } from "@/components/ui/Button";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { MultiLineChartView } from "@/components/charts/Charts";
@@ -76,12 +75,6 @@ export default function MachineDetailPage() {
 
   return (
     <div className="space-y-5">
-      <Link href="/hatchery/machines" className="text-sm text-gold-dark underline">← Back to machines</Link>
-
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        {machine && <Pill tone={machine.type === "setter" ? "info" : "purple"}>{machine.type} · cap {machine.capacity.toLocaleString()}</Pill>}
-      </div>
-
       {!machine ? (
         <Card><p className="text-sm text-muted">Machine not found.</p></Card>
       ) : (

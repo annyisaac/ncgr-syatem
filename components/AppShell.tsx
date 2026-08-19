@@ -221,7 +221,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="mx-auto w-full max-w-[1440px] grow px-4 py-6 md:px-8">
           {/* Breadcrumb trail on nested (detail) pages so it's easy to get back.
               The client detail page has its own history-aware Back button instead. */}
-          {!isAttendant && isDeeper && !pathname.startsWith("/clients/") && !pathname.startsWith("/planning/") && (
+          {!isAttendant && isDeeper && !pathname.startsWith("/clients/") && !pathname.startsWith("/planning/") && !pathname.startsWith("/hatchery/machines/") && (
             <nav className="mb-4 flex items-center gap-1.5 text-[0.75rem] text-muted">
               <Link href={homeHref} className="transition hover:text-ink">Home</Link>
               <span className="text-line">/</span>
