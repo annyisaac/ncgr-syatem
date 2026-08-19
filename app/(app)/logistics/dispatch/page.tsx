@@ -114,6 +114,7 @@ export default function DispatchPage() {
 
       <Card>
         <CardHeader title={`${t("Dispatches")} (${dispatches.length})`} action={<Button size="sm" onClick={() => setPicking(true)} disabled={queue.length === 0}>{`＋ ${t("New dispatch")}`}</Button>} />
+        <div className="hidden sm:block">
         <TableWrap>
           <thead><tr><Th>{t("Ref")}</Th><Th>{t("Date")}</Th><Th>{t("Vehicle · Driver")}</Th><Th className="text-right">{t("Stops")}</Th><Th className="text-right">{t("Chicks")}</Th><Th>{t("Status")}</Th><Th></Th></tr></thead>
           <tbody>
@@ -133,6 +134,33 @@ export default function DispatchPage() {
             })}
           </tbody>
         </TableWrap>
+        </div>
+        <div className="space-y-2.5 sm:hidden">
+          {dispatches.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">{t("No dispatches yet — create one from the delivery queue.")}</p>
+          ) : dispatches.map((d) => {
+            const veh = vehicles.find((v) => v.id === d.vehicleId); const dr = drivers.find((x) => x.id === d.driverId);
+            return (
+              <div key={d.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{d.ref}</p>
+                    <p className="text-xs text-muted">{formatDate(d.date)}</p>
+                  </div>
+                  <Pill tone={stTone(d.status)}>{d.status}</Pill>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div className="col-span-2 min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Vehicle · Driver")}</p><p className="truncate font-medium text-ink">{veh?.plate ?? "—"}{dr ? ` · ${dr.name}` : ""}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Stops")}</p><p className="font-medium tabular-nums text-ink">{d.stops.length}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Chicks")}</p><p className="font-medium tabular-nums text-ink">{dispatchChicks(d).toLocaleString()}</p></div>
+                </div>
+                <div className="mt-2.5 flex justify-end border-t border-line pt-2.5">
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(d)}>{t("Open")}</Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </Card>
 
       {picking && (

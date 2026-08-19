@@ -90,6 +90,7 @@ export default function TripsPage() {
 
       <Card>
         <CardHeader title={`${tr("Trips")} (${trips.length})`} action={<Button size="sm" onClick={openNew}>＋ {tr("New trip")}</Button>} />
+        <div className="hidden sm:block">
         <TableWrap>
           <thead><tr><Th>{tr("Ref")}</Th><Th>{tr("Purpose")}</Th><Th>{tr("Vehicle")}</Th><Th className="text-right">{tr("Distance")}</Th><Th className="text-right">{tr("Total cost")}</Th><Th className="text-right">{tr("Cost/km")}</Th><Th>{tr("Status")}</Th><Th></Th></tr></thead>
           <tbody>
@@ -110,6 +111,34 @@ export default function TripsPage() {
             })}
           </tbody>
         </TableWrap>
+        </div>
+        <div className="space-y-2.5 sm:hidden">
+          {trips.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">{tr("No trips yet.")}</p>
+          ) : trips.map((t) => {
+            const km = tripDistance(t); const cost = tripTotalCost(t);
+            return (
+              <div key={t.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{t.ref}</p>
+                    <p className="truncate text-xs text-muted">{t.purpose}</p>
+                  </div>
+                  <Pill tone={stTone(t.status)}>{t.status}</Pill>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Vehicle")}</p><p className="font-medium text-ink">{t.vehicleId ? (vehiclePlate.get(t.vehicleId) ?? "—") : "—"}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Distance")}</p><p className="font-medium tabular-nums text-ink">{km ? `${km.toLocaleString()} km` : "—"}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Total cost")}</p><p className="font-medium tabular-nums text-ink">{formatRWF(cost)}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Cost/km")}</p><p className="font-medium tabular-nums text-ink">{km > 0 ? formatRWF(cost / km) : "—"}</p></div>
+                </div>
+                <div className="mt-2.5 flex justify-end border-t border-line pt-2.5">
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(t)}>{tr("Open")}</Button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
       </Card>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">

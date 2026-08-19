@@ -93,6 +93,7 @@ export default function TransfersPage() {
       {tab === "transfers" && (
         <Card>
           <CardHeader title={`${tr("Stock transfers")} (${transfers.length})`} action={<Button size="sm" onClick={() => setTfEdit({ id: newTransferId(), ref: nextRef("TRF", transfers), from: TRANSFER_LOCATIONS[0], to: TRANSFER_LOCATIONS[1], lines: [{ item: "", unit: "pcs", requested: 0 }], status: "Requested", requestedBy: user.email, on: nowISO(), history: [stamp(user.email, "requested")] })}>＋ {tr("New transfer")}</Button>} />
+          <div className="hidden sm:block">
           <TableWrap>
             <thead><tr><Th>{tr("Ref")}</Th><Th>{tr("From → To")}</Th><Th>{tr("Items")}</Th><Th>{tr("Status")}</Th><Th></Th></tr></thead>
             <tbody>
@@ -107,12 +108,33 @@ export default function TransfersPage() {
               ))}
             </tbody>
           </TableWrap>
+          </div>
+          <div className="space-y-2.5 sm:hidden">
+            {transfers.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">{tr("No stock transfers yet.")}</p>
+            ) : transfers.map((t) => (
+              <div key={t.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{t.ref}</p>
+                    <p className="truncate text-xs text-muted">{t.from} → {t.to}</p>
+                  </div>
+                  <Pill tone={tfTone(t.status)}>{t.status}</Pill>
+                </div>
+                <div className="mt-2"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Items")}</p><p className="text-sm text-ink">{t.lines.map((l) => `${l.requested} ${l.unit} ${l.item}`).join(", ")}</p></div>
+                <div className="mt-2.5 flex justify-end border-t border-line pt-2.5">
+                  <Button size="sm" variant="ghost" onClick={() => setTfEdit(t)}>{tr("Open")}</Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
       {tab === "returns" && (
         <Card>
           <CardHeader title={`${tr("Returns")} (${returns.length})`} action={<Button size="sm" onClick={() => setRetEdit({ id: newReturnId(), ref: nextRef("RET", returns), source: RETURN_SOURCES[0], quantity: 0, status: "Open", by: user.email, on: nowISO(), history: [stamp(user.email, "logged")] })}>＋ {tr("Log return")}</Button>} />
+          <div className="hidden sm:block">
           <TableWrap>
             <thead><tr><Th>{tr("Ref")}</Th><Th>{tr("Source")}</Th><Th>{tr("Who")}</Th><Th>{tr("Product")}</Th><Th className="text-right">{tr("Qty")}</Th><Th>{tr("Resolution")}</Th><Th>{tr("Status")}</Th><Th></Th></tr></thead>
             <tbody>
@@ -130,6 +152,30 @@ export default function TransfersPage() {
               ))}
             </tbody>
           </TableWrap>
+          </div>
+          <div className="space-y-2.5 sm:hidden">
+            {returns.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">{tr("No returns logged.")}</p>
+            ) : returns.map((r) => (
+              <div key={r.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{r.ref}</p>
+                    <p className="truncate text-xs text-muted">{r.source} · {r.customerName || r.supplierName || r.responsible || "—"}</p>
+                  </div>
+                  <Pill tone={retTone(r.status)}>{r.status}</Pill>
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Product")}</p><p className="font-medium text-ink">{r.product || "—"}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Qty")}</p><p className="font-medium tabular-nums text-ink">{r.quantity.toLocaleString()}</p></div>
+                  <div className="col-span-2 min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{tr("Resolution")}</p><p className="truncate font-medium text-ink">{r.resolution || "—"}</p></div>
+                </div>
+                <div className="mt-2.5 flex justify-end border-t border-line pt-2.5">
+                  <Button size="sm" variant="ghost" onClick={() => setRetEdit(r)}>{tr("Open")}</Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
