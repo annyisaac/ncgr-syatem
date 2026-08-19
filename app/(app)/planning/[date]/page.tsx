@@ -143,27 +143,25 @@ export default function DayPlanPage() {
       .filter((o) => !term || smartMatch(term, o.name, o.phone, custDistrict(o), custSector(o)))
       .sort((a, b) => a.plan - b.plan);
   }, [scoped, activeDate, q, activeProduct]);
-  // Routes shown for this day: this date's routes, undated legacy routes, and any
-  // route that actually carries one of this day's orders — so an allocated order
-  // always appears under its route and never vanishes from the plan.
+  // Routes are strictly per delivery date: only this date's routes show here (no
+  // undated/legacy routes, and a route is never reused across dates).
   const dayRoutes = useMemo(
-    () => routes.filter((r) => !r.date || r.date === activeDate || dayOrders.some((o) => o.routeId === r.id)),
-    [routes, activeDate, dayOrders]
+    () => routes.filter((r) => r.date === activeDate),
+    [routes, activeDate]
   );
-  // Every existing route id. An order stays "allocated" as long as its route
-  // still exists — it only returns to "waiting for allocation" when it has no
-  // route (i.e. it was removed from its route) or its route was deleted. It is
-  // never pushed back by date filtering.
-  const allRouteIds = useMemo(() => new Set(routes.map((r) => r.id)), [routes]);
+  // This date's route ids. An order is "waiting for allocation" until it's on one
+  // of THIS date's routes — so a stale link to a different-date route reads as
+  // unallocated (strict per-date), never stranded.
+  const dayRouteIds = useMemo(() => new Set(dayRoutes.map((r) => r.id)), [dayRoutes]);
   const ready = useMemo(
-    () => dayOrders.filter((o) => !o.deliverOk && (!o.routeId || !allRouteIds.has(o.routeId))),
-    [dayOrders, allRouteIds]
+    () => dayOrders.filter((o) => !o.deliverOk && (!o.routeId || !dayRouteIds.has(o.routeId))),
+    [dayOrders, dayRouteIds]
   );
 
   // KPI aggregates for the day.
   const kpi = useMemo(() => {
     const total = dayOrders.length;
-    const planned = dayOrders.filter((o) => o.routeId && allRouteIds.has(o.routeId)).length;
+    const planned = dayOrders.filter((o) => o.routeId && dayRouteIds.has(o.routeId)).length;
     const delivered = dayOrders.filter((o) => o.deliverOk).length;
     const failed = dayOrders.filter((o) => o.deliveryFail && !o.deliverOk).length;
     const chicks = dayOrders.reduce((s, o) => s + deliverChicks(o), 0);
@@ -184,7 +182,7 @@ export default function DayPlanPage() {
       drivers: new Set(activeRoutes.map((r) => r.driver).filter(Boolean)).size,
       vehicles: new Set(activeRoutes.map((r) => r.vehicle).filter(Boolean)).size,
     };
-  }, [dayOrders, ready, dayRoutes, allRouteIds]);
+  }, [dayOrders, ready, dayRoutes, dayRouteIds]);
 
   // Day pipeline (cumulative funnel).
   const flow = useMemo(() => {
