@@ -126,6 +126,7 @@ export default function LogisticsDashboard() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Card>
           <CardHeader title={t("Upcoming delivery days")} action={<Link href="/planning" className="text-sm font-semibold text-gold-dark underline">{t("Plan deliveries")}</Link>} />
+          <div className="hidden sm:block">
           <TableWrap>
             <thead><tr><Th>{t("Date")}</Th><Th className="text-right">{t("Orders")}</Th><Th className="text-right">{t("Chicks")}</Th><Th></Th></tr></thead>
             <tbody>
@@ -139,6 +140,20 @@ export default function LogisticsDashboard() {
               ))}
             </tbody>
           </TableWrap>
+          </div>
+          <div className="space-y-2 sm:hidden">
+            {upcoming.length === 0 ? (
+              <p className="py-4 text-center text-sm text-muted">{t("No upcoming deliveries scheduled.")}</p>
+            ) : upcoming.map(([date, g]) => (
+              <div key={date} className="flex items-center justify-between gap-3 rounded-xl border border-line bg-paper px-3.5 py-3 shadow-card">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">{formatDate(date)}{date === today && <Pill tone="info" className="ml-2">{t("Today")}</Pill>}</p>
+                  <p className="text-xs text-muted">{g.orders} {t("Orders")} · {g.chicks.toLocaleString()} {t("Chicks")}</p>
+                </div>
+                <Link href={`/planning?date=${date}`} className="shrink-0 text-sm font-semibold text-gold-dark underline">{t("Open")}</Link>
+              </div>
+            ))}
+          </div>
         </Card>
 
         <Card>
@@ -171,6 +186,7 @@ export default function LogisticsDashboard() {
       {overdue.length > 0 && (
         <Card className="border-red/40">
           <CardHeader title={`${t("Overdue deliveries")} (${overdue.length})`} />
+          <div className="hidden sm:block">
           <TableWrap>
             <thead><tr><Th>{t("Delivery date")}</Th><Th>{t("Customer")}</Th><Th>{t("Product")}</Th><Th className="text-right">{t("Chicks")}</Th><Th>{t("District")}</Th><Th></Th></tr></thead>
             <tbody>
@@ -186,6 +202,26 @@ export default function LogisticsDashboard() {
               ))}
             </tbody>
           </TableWrap>
+          </div>
+          <div className="space-y-2.5 sm:hidden">
+            {overdue.slice(0, 12).map((o) => (
+              <div key={o.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{o.name}</p>
+                    <p className="text-xs text-muted">{o.phone}</p>
+                  </div>
+                  <Link href={`/orders/${o.id}`} className="shrink-0 text-sm font-semibold text-gold-dark underline">{t("View")}</Link>
+                </div>
+                <div className="mt-2 grid grid-cols-2 gap-x-3 gap-y-1.5 text-sm">
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Delivery date")}</p><p className="font-medium text-red">{formatDate(o.date)}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Product")}</p><p className="font-medium text-ink">{o.product}</p></div>
+                  <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Chicks")}</p><p className="font-medium tabular-nums text-ink">{toDeliver(o).toLocaleString()}</p></div>
+                  <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("District")}</p><p className="truncate font-medium text-ink">{o.district}</p></div>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
