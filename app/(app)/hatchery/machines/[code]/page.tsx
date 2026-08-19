@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 
@@ -13,6 +13,8 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { MultiLineChartView } from "@/components/charts/Charts";
 import { formatDateTime } from "@/lib/format";
 import { eggsInMachine, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
+import { fetchMachineReadings } from "@/lib/hatchery/db";
+import type { MachineReading } from "@/lib/hatchery/types";
 
 const RANGES = [
   { key: "24h", label: "24 h", ms: 24 * 3600e3 },
@@ -25,18 +27,27 @@ export default function MachineDetailPage() {
   const params = useParams<{ code: string }>();
   const machineCode = decodeURIComponent(params.code);
   const { user } = useAuth();
-  const { machines, readings, batches } = useHatchery();
+  const { machines, batches } = useHatchery();
   const [range, setRange] = useState<(typeof RANGES)[number]["key"]>("7d");
+  const [windowed, setWindowed] = useState<MachineReading[]>([]);
+  const [loadingReadings, setLoadingReadings] = useState(true);
 
   const machine = machines.find((m) => m.code === machineCode);
 
-  const windowed = useMemo(() => {
+  // Fetch this machine's readings for the selected range on demand (server-side
+  // filtered). The global provider only holds a short recent window across every
+  // machine, so a machine's full history is loaded here instead.
+  useEffect(() => {
+    let active = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setLoadingReadings(true);
     const span = RANGES.find((r) => r.key === range)!.ms;
-    const cutoff = span === Infinity ? 0 : Date.now() - span;
-    return readings
-      .filter((r) => r.machineCode === machineCode && new Date(r.timestamp).getTime() >= cutoff)
-      .sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1));
-  }, [readings, machineCode, range]);
+    const sinceISO = span === Infinity ? undefined : new Date(Date.now() - span).toISOString();
+    fetchMachineReadings(machineCode, sinceISO)
+      .then((rows) => { if (active) { setWindowed(rows.sort((a, b) => (a.timestamp < b.timestamp ? -1 : 1))); setLoadingReadings(false); } })
+      .catch(() => { if (active) { setWindowed([]); setLoadingReadings(false); } });
+    return () => { active = false; };
+  }, [machineCode, range]);
 
   const data = useMemo(
     () => windowed.map((r) => ({
@@ -75,7 +86,7 @@ export default function MachineDetailPage() {
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <Stat label="Capacity" value={machine.capacity.toLocaleString()} />
             <Stat label="In use" value={eggsInMachine(batches, machine.code, machine.type === "setter" ? "setters" : "transfers").toLocaleString()} />
-            <Stat label="Readings (range)" value={String(windowed.length)} />
+            <Stat label="Readings (range)" value={loadingReadings ? "…" : String(windowed.length)} />
             <Stat label="Last reading" value={windowed.length ? formatDateTime(windowed[windowed.length - 1].timestamp) : "—"} />
           </div>
 
@@ -113,7 +124,7 @@ export default function MachineDetailPage() {
             <TableWrap>
               <thead><tr><Th>When</Th><Th className="text-right">Fan</Th><Th className="text-right">Dry°F</Th><Th className="text-right">Wet°F</Th><Th className="text-right">Digital°F</Th><Th className="text-right">Hum%</Th><Th>Operator</Th></tr></thead>
               <tbody>
-                {windowed.length === 0 ? <EmptyRow colSpan={7} text="No readings in this range." /> : windowed.slice().reverse().map((rd) => {
+                {windowed.length === 0 ? <EmptyRow colSpan={7} text={loadingReadings ? "Loading readings…" : "No readings in this range."} /> : windowed.slice().reverse().map((rd) => {
                   const hot = isMachineOverTemp(rd.dryF, rd.wetF, rd.digitalTempF);
                   return (
                     <tr key={rd.id}>

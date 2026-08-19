@@ -4,7 +4,7 @@
  */
 
 import { getSupabase } from "../supabase";
-import type { Batch, Machine, Reception } from "./types";
+import type { Batch, Machine, MachineReading, Reception } from "./types";
 
 const inBrowser = () => typeof window !== "undefined";
 
@@ -45,14 +45,36 @@ export async function fetchTable<T>(table: HatcheryTable): Promise<T[]> {
   if (!inBrowser()) return [];
   const sb = getSupabase();
   const all: T[] = [];
+  // machine_readings is high-volume (thousands of rows). Globally the app only
+  // needs recent readings (machines-list latest/last-5, dashboard over-temp); the
+  // machine detail page fetches a machine's full history on demand via
+  // fetchMachineReadings. Cap the global load to the last 7 days to keep every
+  // hatchery page fast and bound its growth.
+  const since = table === "machine_readings" ? new Date(Date.now() - 7 * 24 * 3600e3).toISOString() : null;
   for (let from = 0; ; from += PAGE) {
-    const { data, error } = await sb
-      .from(table)
-      .select("data")
-      .order("updated_at", { ascending: true })
-      .range(from, from + PAGE - 1);
+    let q = sb.from(table).select("data").order("updated_at", { ascending: true }).range(from, from + PAGE - 1);
+    if (since) q = q.gte("data->>timestamp", since);
+    const { data, error } = await q;
     if (error) throw new Error(`Could not load ${table}: ${error.message}`);
     const rows = (data ?? []).map((r) => r.data as T);
+    all.push(...rows);
+    if (rows.length < PAGE) break;
+  }
+  return all;
+}
+
+/** Every reading for ONE machine (optionally since an ISO timestamp), paged and
+ *  filtered server-side — so the machine detail page loads only what it graphs. */
+export async function fetchMachineReadings(machineCode: string, sinceISO?: string): Promise<MachineReading[]> {
+  if (!inBrowser()) return [];
+  const sb = getSupabase();
+  const all: MachineReading[] = [];
+  for (let from = 0; ; from += PAGE) {
+    let q = sb.from("machine_readings").select("data").eq("data->>machineCode", machineCode).order("updated_at", { ascending: true }).range(from, from + PAGE - 1);
+    if (sinceISO) q = q.gte("data->>timestamp", sinceISO);
+    const { data, error } = await q;
+    if (error) throw new Error(`Could not load machine readings: ${error.message}`);
+    const rows = (data ?? []).map((r) => r.data as MachineReading);
     all.push(...rows);
     if (rows.length < PAGE) break;
   }
