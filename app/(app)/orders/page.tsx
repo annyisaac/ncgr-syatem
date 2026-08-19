@@ -840,7 +840,7 @@ function OrdersInner() {
                       <div className="text-xs text-ink/50">
                         Paid {settledAmount(o).toLocaleString()} · Bal{" "}
                         <span className={balance(o) > 0 ? "font-semibold text-red" : ""}>
-                          {balance(o).toLocaleString()}
+                          {Math.max(0, balance(o)).toLocaleString()}
                         </span>
                       </div>
                       {!!o.creditApplied && (
@@ -938,9 +938,10 @@ function OrdersInner() {
                   <div>
                     <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Amount</p>
                     <p className={`font-medium tabular-nums ${isFullyPaid(o) ? "text-green" : "text-ink"}`}>{formatMoney(orderTotal(o), o.currency)}</p>
-                    <p className="text-xs text-ink/50">Bal <span className={balance(o) > 0 ? "font-semibold text-red" : ""}>{balance(o).toLocaleString()}</span></p>
+                    <p className="text-xs text-ink/50">Bal <span className={balance(o) > 0 ? "font-semibold text-red" : ""}>{Math.max(0, balance(o)).toLocaleString()}</span></p>
                   </div>
                 </div>
+                {(() => { const credit = customerCredit(orders, o); return credit > 0 ? <p className="mt-2 text-xs font-medium text-green">Customer credit: {formatRWF(credit)}</p> : null; })()}
                 <div className="mt-2.5 flex items-center justify-between border-t border-line pt-2.5">
                   <span className="text-xs text-ink/50">Check: {CHECK_LABEL[cs.state]}{cs.state === "partial" && ` (${cs.verified}/${cs.total})`}</span>
                   {canAct || isChecker ? <ActionsDropdown actions={buildActions(o)} /> : <span className="text-xs text-ink/40">View only</span>}
