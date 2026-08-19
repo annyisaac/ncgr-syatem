@@ -77,6 +77,7 @@ export default function DriversPage() {
       <Card>
         <CardHeader title={`${t("Drivers")} (${active.length})`} action={<Button size="sm" onClick={openNew}>＋ {t("Add driver")}</Button>} />
         <p className="-mt-1 mb-3 text-xs text-muted">{t("A driver whose licence has expired can't be assigned to a trip.")}</p>
+        <div className="hidden sm:block">
         <TableWrap>
           <thead><tr>
             <Th>{t("Name")}</Th><Th>{t("Phone")}</Th><Th>{t("Licence")}</Th><Th>{t("Category")}</Th><Th>{t("Licence expiry")}</Th><Th>{t("Vehicle")}</Th><Th>{t("Status")}</Th><Th></Th>
@@ -99,6 +100,31 @@ export default function DriversPage() {
             })}
           </tbody>
         </TableWrap>
+        </div>
+        <div className="space-y-2.5 sm:hidden">
+          {active.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">{t("No drivers yet — add your first.")}</p>
+          ) : active.map((d) => {
+            const state = expiryState(d.licenceExpiry, today);
+            return (
+              <div key={d.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{d.name}</p>
+                    <p className="text-xs text-muted">{t(d.employment)} · {d.phone || "—"}</p>
+                  </div>
+                  {driverAssignable(d, today) ? <Pill tone="green">{t("Assignable")}</Pill> : <Pill tone="red">{t("Blocked")}</Pill>}
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Licence")}</p><p className="truncate font-medium text-ink">{d.licenceNo || "—"}{d.licenceCategory ? ` · ${d.licenceCategory}` : ""}</p></div>
+                  <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Vehicle")}</p><p className="truncate font-medium text-ink">{d.assignedVehicleId ? (vehiclePlate.get(d.assignedVehicleId) ?? "—") : "—"}</p></div>
+                  <div className="col-span-2"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Licence expiry")}</p>{d.licenceExpiry ? <Pill tone={state === "expired" ? "red" : state === "soon" ? "amber" : "green"}>{formatDate(d.licenceExpiry)}{state === "expired" ? ` · ${t("expired")}` : state === "soon" ? ` · ${t("soon")}` : ""}</Pill> : <span className="text-muted">—</span>}</div>
+                </div>
+                <div className="mt-2.5 flex justify-end border-t border-line pt-2.5"><Button size="sm" variant="ghost" onClick={() => setEditing(d)}>{t("Edit")}</Button></div>
+              </div>
+            );
+          })}
+        </div>
       </Card>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={editing && drivers.some((d) => d.id === editing.id) ? t("Edit driver") : t("Add driver")}

@@ -90,6 +90,7 @@ export default function VehiclesPage() {
 
       <Card>
         <CardHeader title={`${t("Fleet")} (${vehicles.filter((v) => v.active).length})`} action={<Button size="sm" onClick={openNew}>＋ {t("Add vehicle")}</Button>} />
+        <div className="hidden sm:block">
         <TableWrap>
           <thead><tr>
             <Th>{t("Plate")}</Th><Th>{t("Type")}</Th><Th>{t("Ownership")}</Th><Th className="text-right">{t("Boxes")}</Th><Th>{t("Driver")}</Th>
@@ -111,6 +112,29 @@ export default function VehiclesPage() {
             ))}
           </tbody>
         </TableWrap>
+        </div>
+        <div className="space-y-2.5 sm:hidden">
+          {vehicles.filter((v) => v.active).length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">{t("No vehicles yet — add your first.")}</p>
+          ) : vehicles.filter((v) => v.active).map((v) => (
+            <div key={v.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">{v.plate}</p>
+                  <p className="text-xs text-muted">{v.type} · {v.ownership}</p>
+                </div>
+                {vehicleReady(v, today) ? <Pill tone="green">{t("Ready")}</Pill> : v.availability === "Under maintenance" ? <Pill tone="gold">{t("Maintenance")}</Pill> : v.availability === "On trip" ? <Pill tone="info">{t("On trip")}</Pill> : <Pill tone="neutral">{v.availability}</Pill>}
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Boxes")}</p><p className="font-medium tabular-nums text-ink">{v.capacityBoxes ? v.capacityBoxes.toLocaleString() : "—"}</p></div>
+                <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Driver")}</p><p className="truncate font-medium text-ink">{v.assignedDriverId ? (driverName.get(v.assignedDriverId) ?? "—") : "—"}</p></div>
+                <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Insurance")}</p><ExpiryCell date={v.insuranceExpiry} /></div>
+                <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Inspection")}</p><ExpiryCell date={v.inspectionExpiry} /></div>
+              </div>
+              <div className="mt-2.5 flex justify-end border-t border-line pt-2.5"><Button size="sm" variant="ghost" onClick={() => setEditing(v)}>{t("Edit")}</Button></div>
+            </div>
+          ))}
+        </div>
       </Card>
 
       <Modal open={!!editing} onClose={() => setEditing(null)} title={editing && vehicles.some((v) => v.id === editing.id) ? t("Edit vehicle") : t("Add vehicle")}
