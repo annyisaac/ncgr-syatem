@@ -127,6 +127,7 @@ export default function MaterialRequestsPage() {
 
       <Card>
         <CardHeader title={`${t("Material & spare-part requests")} (${rows.length})`} action={<Button size="sm" onClick={() => setCreating(true)}>＋ {t("New request")}</Button>} />
+        <div className="hidden sm:block">
         <TableWrap>
           <thead><tr><Th>{t("Ref")}</Th><Th>{t("Type")}</Th><Th>{t("Items")}</Th><Th>{t("For")}</Th><Th>{t("Requested by")}</Th><Th>{t("Status")}</Th><Th></Th></tr></thead>
           <tbody>
@@ -143,6 +144,27 @@ export default function MaterialRequestsPage() {
             ))}
           </tbody>
         </TableWrap>
+        </div>
+        <div className="space-y-2.5 sm:hidden">
+          {rows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">{t("No requests yet.")}</p>
+          ) : rows.map((r) => (
+            <div key={r.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">{r.ref}</p>
+                  <p className="truncate text-xs text-muted">{r.type} · {r.forItem || r.department || "—"}</p>
+                </div>
+                <Pill tone={tone(r.status)}>{r.status}</Pill>
+              </div>
+              <div className="mt-2"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Items")}</p><p className="text-sm text-ink">{r.items.map((i) => `${i.quantity} ${i.unit} ${i.name}`).join(", ")}</p></div>
+              <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2.5">
+                <span className="truncate text-xs text-muted">{r.requestedByName || r.requestedBy}</span>
+                <Button size="sm" variant="ghost" onClick={() => setView(r)}>{t("Open")}</Button>
+              </div>
+            </div>
+          ))}
+        </div>
         <p className="mt-2 text-xs text-muted">{t("Flow: Requested → Logistics → Admin → Finance authorises → Logistics confirms payment → Finance files.")}</p>
       </Card>
 

@@ -114,6 +114,7 @@ export default function ProcurementPage() {
       {tab === "requests" && (
         <Card>
           <CardHeader title={`${t("Purchase requests")} (${requests.length})`} action={<Button size="sm" onClick={() => setPrEdit(blankRequest(user.email, nextRef("PR", requests)))}>{t("＋ New request")}</Button>} />
+          <div className="hidden sm:block">
           <TableWrap>
             <thead><tr><Th>{t("Ref")}</Th><Th>{t("Department")}</Th><Th>{t("Items")}</Th><Th>{t("Priority")}</Th><Th>{t("Required")}</Th><Th>{t("Status")}</Th><Th></Th></tr></thead>
             <tbody>
@@ -130,12 +131,29 @@ export default function ProcurementPage() {
               ))}
             </tbody>
           </TableWrap>
+          </div>
+          <div className="space-y-2.5 sm:hidden">
+            {requests.length === 0 ? <p className="py-6 text-center text-sm text-muted">{t("No purchase requests yet.")}</p> : requests.map((r) => (
+              <div key={r.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0"><p className="font-semibold text-ink">{r.ref}</p><p className="truncate text-xs text-muted">{r.department} · {r.priority}</p></div>
+                  <Pill tone={prTone(r.status)}>{r.status}</Pill>
+                </div>
+                <div className="mt-2"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Items")}</p><p className="text-sm text-ink">{r.items.map((i) => `${i.quantity} ${i.unit} ${i.description}`).join(", ")}</p></div>
+                <div className="mt-2.5 flex items-center justify-between gap-2 border-t border-line pt-2.5">
+                  <span className="text-xs text-muted">{t("Required")}: {r.requiredDate ? formatDate(r.requiredDate) : "—"}</span>
+                  <Button size="sm" variant="ghost" onClick={() => setPrEdit(r)}>{t("Open")}</Button>
+                </div>
+              </div>
+            ))}
+          </div>
         </Card>
       )}
 
       {tab === "orders" && (
         <Card>
           <CardHeader title={`${t("Purchase orders")} (${orders.length})`} />
+          <div className="hidden sm:block">
           <TableWrap>
             <thead><tr><Th>{t("Ref")}</Th><Th>{t("Supplier")}</Th><Th className="text-right">{t("Total")}</Th><Th>{t("Received")}</Th><Th>{t("Delivery")}</Th><Th>{t("Status")}</Th><Th></Th></tr></thead>
             <tbody>
@@ -155,12 +173,33 @@ export default function ProcurementPage() {
               })}
             </tbody>
           </TableWrap>
+          </div>
+          <div className="space-y-2.5 sm:hidden">
+            {orders.length === 0 ? <p className="py-6 text-center text-sm text-muted">{t("No purchase orders yet — create one from an approved request.")}</p> : orders.map((o) => {
+              const rec = poReceivedQty(o.id, receipts); const ord = poOrderedQty(o);
+              return (
+                <div key={o.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0"><p className="font-semibold text-ink">{o.ref}</p><p className="truncate text-xs text-muted">{o.supplierName}{o.requestRef ? ` · ${t("from")} ${o.requestRef}` : ""}</p></div>
+                    <Pill tone={poTone(o.status)}>{o.status}</Pill>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Total")}</p><p className="font-medium tabular-nums text-ink">{formatRWF(poTotal(o))}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Received")}</p><p className="font-medium tabular-nums text-ink">{ord > 0 ? `${rec.toLocaleString()} / ${ord.toLocaleString()}` : "—"}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Delivery")}</p><p className="font-medium text-ink">{o.deliveryDate ? formatDate(o.deliveryDate) : "—"}</p></div>
+                  </div>
+                  <div className="mt-2.5 flex justify-end border-t border-line pt-2.5"><Button size="sm" variant="ghost" onClick={() => setPoEdit(o)}>{t("Open")}</Button></div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
 
       {tab === "grn" && (
         <Card>
           <CardHeader title={`${t("Goods received")} (${receipts.length})`} />
+          <div className="hidden sm:block">
           <TableWrap>
             <thead><tr><Th>{t("Ref")}</Th><Th>{t("PO")}</Th><Th>{t("Supplier")}</Th><Th>{t("Received")}</Th><Th className="text-right">{t("Accepted value")}</Th><Th>{t("Match")}</Th><Th>{t("Finance")}</Th><Th></Th></tr></thead>
             <tbody>
@@ -181,6 +220,26 @@ export default function ProcurementPage() {
               })}
             </tbody>
           </TableWrap>
+          </div>
+          <div className="space-y-2.5 sm:hidden">
+            {receipts.length === 0 ? <p className="py-6 text-center text-sm text-muted">{t("No goods received yet — record delivery against a purchase order.")}</p> : receipts.map((g) => {
+              const m = threeWayMatch(poById.get(g.poId), g);
+              return (
+                <div key={g.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0"><p className="font-semibold text-ink">{g.ref}</p><p className="truncate text-xs text-muted">{g.poRef} · {g.supplierName}</p></div>
+                    <Pill tone={m.state === "ok" ? "green" : m.state === "flag" ? "red" : "amber"}>{m.state === "ok" ? t("Matched") : m.state === "flag" ? t("Flagged") : t("Pending")}</Pill>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Received")}</p><p className="font-medium text-ink">{formatDate(g.receivedDate)}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Accepted value")}</p><p className="font-medium tabular-nums text-ink">{formatRWF(grnAcceptedValue(g))}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Finance")}</p>{g.handedToFinance ? <Pill tone="green">{t("Handed off")}</Pill> : <Pill tone="neutral">{t("Held")}</Pill>}</div>
+                  </div>
+                  <div className="mt-2.5 flex justify-end border-t border-line pt-2.5"><Button size="sm" variant="ghost" onClick={() => setGrnEdit(g)}>{t("Open")}</Button></div>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
 

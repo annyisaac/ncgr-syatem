@@ -76,6 +76,7 @@ export default function LogisticsExpensesPage() {
       <Card>
         <CardHeader title={`${t("Logistics expenses")} (${rows.length})`}
           action={(role === "Admin" || role === "Logistics Officer") && <Button size="sm" onClick={openNew}>＋ {t("New expense")}</Button>} />
+        <div className="hidden sm:block">
         <TableWrap>
           <thead><tr><Th>{t("Ref")}</Th><Th>{t("Date")}</Th><Th>{t("Category")}</Th><Th>{t("Payee")}</Th><Th className="text-right">{t("Amount")}</Th><Th>{t("Status")}</Th><Th>{t("Payment")}</Th><Th></Th></tr></thead>
           <tbody>
@@ -93,6 +94,30 @@ export default function LogisticsExpensesPage() {
             ))}
           </tbody>
         </TableWrap>
+        </div>
+        <div className="space-y-2.5 sm:hidden">
+          {rows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">{t("No logistics expenses yet.")}</p>
+          ) : rows.map((e) => (
+            <div key={e.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="font-semibold text-ink">{e.ref}</p>
+                  <p className="text-xs text-muted">{formatDate(e.date)} · {e.category}</p>
+                </div>
+                <Pill tone={stTone(e.status)}>{e.status}</Pill>
+              </div>
+              <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                <div className="min-w-0"><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Payee")}</p><p className="truncate font-medium text-ink">{e.payee || "—"}</p></div>
+                <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Amount")}</p><p className="font-medium tabular-nums text-ink">{formatRWF(e.amount)}</p></div>
+                <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{t("Payment")}</p>{e.status === "Posted" ? <Pill tone={e.paymentStatus === "Paid" ? "green" : e.paymentStatus === "Partially Paid" ? "gold" : "neutral"}>{e.paymentStatus}</Pill> : <span className="text-muted">—</span>}</div>
+              </div>
+              <div className="mt-2.5 flex justify-end border-t border-line pt-2.5">
+                <Button size="sm" variant="ghost" onClick={() => setEditing(e)}>{t("Open")}</Button>
+              </div>
+            </div>
+          ))}
+        </div>
       </Card>
 
       {editing && <ExpenseModal key={editing.id} initial={editing} email={user.email} role={role!} onClose={() => setEditing(null)} onSave={(e) => { void save(e); setEditing(null); toast(t("Expense saved.")); }} />}
