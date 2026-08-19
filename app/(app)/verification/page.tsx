@@ -719,6 +719,7 @@ export default function VerificationPage() {
           ))}
         </div>
 
+        <div className="hidden sm:block">
         <TableWrap>
           <thead>
             <tr>
@@ -790,6 +791,69 @@ export default function VerificationPage() {
             })}
           </tbody>
         </TableWrap>
+        </div>
+
+        {/* Mobile: each payment as a card — the wide table can't fit a phone. */}
+        <div className="space-y-2.5 sm:hidden">
+          {pageRows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">No payments match these filters.</p>
+          ) : pageRows.map(({ o, p, i }) => {
+            const initials = o.name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]).join("").toUpperCase() || "?";
+            const ross = o.product === "Ross 308";
+            const m = payMatch(o);
+            return (
+              <div key={`${o.id}-${i}`} className={"rounded-2xl border p-3.5 shadow-card " + (p.verified ? "border-green/40 bg-green-bg/40" : "border-line bg-paper")}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[0.65rem] font-extrabold ${ross ? "bg-blue-bg text-blue" : "bg-purple-bg text-purple"}`}>{initials}</span>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-ink">{o.name}</p>
+                      <p className="text-xs text-muted">{o.date}</p>
+                    </div>
+                  </div>
+                  <Pill tone={ross ? "ross" : "tetra"}>{ross ? "Ross" : "Tetra"}</Pill>
+                </div>
+                <div className="mt-2.5 flex items-end justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Reference</p>
+                    <p className="truncate text-sm tabular-nums text-ink">{p.ref}</p>
+                    {(p.method || p.bankName) && <p className="text-xs text-muted">{p.method}{p.bankName ? ` · ${p.bankName}` : ""}</p>}
+                    {p.slipPath && <button type="button" onClick={() => void openSlip(p.slipPath!)} className="text-xs text-gold-dark underline">View slip</button>}
+                    {p.flag && <p className="text-xs text-status-refunded">{p.flag}</p>}
+                  </div>
+                  <p className="shrink-0 text-right text-lg font-bold tabular-nums text-ink">{formatMoney(p.amt, o.currency)}</p>
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                  {p.voided ? <Pill tone="red">Rejected</Pill>
+                    : p.verified ? <Pill tone="fulfilled">Checked ✓</Pill>
+                    : p.pendingApproval ? <Pill tone="gold">Awaiting admin</Pill>
+                    : p.returnedForFix ? <Pill tone="gold">Returned</Pill>
+                    : p.flag ? <Pill tone="gold">Not in statement</Pill>
+                    : <Pill tone="pending">Unverified</Pill>}
+                  <Pill tone={m.tone === "green" ? "fulfilled" : m.tone === "blue" ? "info" : "gold"}>{m.label}</Pill>
+                </div>
+                <div className="mt-2.5 flex flex-wrap items-center justify-end gap-1.5 border-t border-line pt-2.5">
+                  {isDoubled(p) && <Button size="sm" variant="danger" onClick={() => void rejectDuplicate(o, i)}>Reject dup</Button>}
+                  {p.voided ? (
+                    <span className="text-xs text-muted">—</span>
+                  ) : p.verified ? (
+                    isDoubled(p) ? null : <span className="text-xs text-muted">—</span>
+                  ) : p.pendingApproval ? (
+                    isAdmin ? (
+                      <><Button size="sm" onClick={() => setApproveFor({ order: o, payIndex: i })}>Approve</Button><Button size="sm" variant="ghost" onClick={() => adminReject(o, i)}>Reject</Button></>
+                    ) : (
+                      <span className="text-xs text-muted">with admin</span>
+                    )
+                  ) : p.returnedForFix ? (
+                    <span className="text-xs text-muted">with seller</span>
+                  ) : (
+                    <Button size="sm" onClick={() => setManual({ order: o, payIndex: i })}>{p.flag ? "Find match" : "Review"}</Button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
 
         {shownPayRows.length > 0 && (
           <div className="mt-4 border-t border-line pt-4">
