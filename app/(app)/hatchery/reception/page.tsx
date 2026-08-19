@@ -248,6 +248,7 @@ export default function ReceptionPage() {
 
       {/* Table */}
       <Card>
+        <div className="hidden sm:block">
         <TableWrap>
           <thead>
             <tr>
@@ -315,6 +316,84 @@ export default function ReceptionPage() {
             ))}
           </tbody>
         </TableWrap>
+        </div>
+
+        {/* Mobile: each reception as a card. */}
+        <div className="space-y-3 sm:hidden">
+          {pageRows.length === 0 ? (
+            <p className="py-8 text-center text-sm text-muted">No receptions match these filters.</p>
+          ) : pageRows.map((r) => {
+            const isSet = !!r.batchId;
+            const eggsSet = r.eggsSet ?? 0;
+            const dt = new Date(r.date + "T00:00:00");
+            const day = String(dt.getDate()).padStart(2, "0");
+            const monYear = dt.toLocaleDateString("en-US", { month: "short", year: "numeric" }).toUpperCase();
+            const whereLabel = isSet ? "Set" : r.location === "store" ? "Store room" : r.location === "ready" ? (eggsSet > 0 ? "Partly set" : "Ready to set") : "Pending";
+            const hasWhereAction = !isSet && (r.location ? isAdmin : canAdd);
+            return (
+              <div key={r.id} className={"overflow-hidden rounded-2xl border border-line border-l-4 bg-paper shadow-card " + (isSet ? "border-l-green" : "border-l-blue")}>
+                <div className="p-3.5">
+                  {/* header */}
+                  <div className="grid grid-cols-2 gap-x-3 gap-y-3">
+                    <div className="flex items-center gap-2">
+                      <span className={"grid h-11 w-11 shrink-0 place-items-center rounded-xl " + (isSet ? "bg-green-bg text-green" : "bg-blue-bg text-blue")}><IcoCal /></span>
+                      <div><p className="text-xl font-extrabold leading-none tracking-tight text-ink">{day}</p><p className="mt-0.5 text-[0.58rem] font-semibold text-muted">{monYear}</p></div>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[0.53rem] font-bold uppercase tracking-wide text-muted">Product</p>
+                      <p className="mt-0.5 inline-flex items-center gap-1.5 text-sm font-medium text-ink"><span className="h-2 w-2 rounded-full" style={{ background: r.productType === "Ross 308" ? "#1565c0" : "#b8860b" }} />{r.productType}</p>
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[0.53rem] font-bold uppercase tracking-wide text-muted">Farm</p>
+                      <p className="truncate text-sm font-semibold text-ink">{r.farm}</p>
+                      {farmLoc(r.farm) && <p className="truncate text-[0.66rem] text-muted">{farmLoc(r.farm)}</p>}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[0.53rem] font-bold uppercase tracking-wide text-muted">Flock</p>
+                      <p className="truncate text-sm font-medium text-ink">{r.flockId}</p>
+                    </div>
+                  </div>
+
+                  {/* stats */}
+                  <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-3 border-t border-line pt-3">
+                    <RStat icon={<IcoEgg />} tone="green" label="Eggs received" value={r.eggsReceived.toLocaleString()} />
+                    <RStat icon={<IcoEgg />} tone="red" label="Settable" value={settableEggs(r).toLocaleString()} />
+                    <RStat icon={<IcoPin />} tone="blue" label="Where" value={whereLabel} />
+                    <RStat icon={<IcoBox />} tone="gold" label="Batch" value={(isSet ? batchNo(r.batchId!) : null) ?? "—"} />
+                  </div>
+
+                  <p className="mt-2 text-[0.66rem] text-muted">Cracked <b className="text-ink">{crackedOf(r).toLocaleString()}</b> · Misshapen <b className="text-ink">{r.misshapen.toLocaleString()}</b> · Dirty <b className="text-ink">{r.dirty.toLocaleString()}</b> · Others <b className="text-ink">{(r.others ?? 0).toLocaleString()}</b></p>
+
+                  {eggsSet > 0 && (
+                    <div className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-cream/70 px-3 py-2.5">
+                      <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-green-bg text-green"><IcoTrend /></span>
+                      <div className="min-w-0 flex-1"><p className="text-[0.53rem] font-bold uppercase tracking-wide text-muted">Total set</p><p className="text-base font-extrabold tabular-nums text-green">{eggsSet.toLocaleString()}</p></div>
+                      {isSet ? <><Pill tone="green">Set</Pill><Pill tone="gold">{batchNo(r.batchId!)}</Pill></> : remainingSettable(r) > 0 ? <Pill tone="gold">{remainingSettable(r).toLocaleString()} left</Pill> : null}
+                    </div>
+                  )}
+                </div>
+
+                {(canEdit || hasWhereAction) && (
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line px-3.5 py-2.5">
+                    <div className="flex flex-wrap items-center gap-1">
+                      {hasWhereAction && (r.location ? (
+                        <Button size="sm" variant="ghost" onClick={() => bringBack(r)}>Bring back</Button>
+                      ) : (
+                        <><Button size="sm" variant="ghost" onClick={() => setLocation(r, "store")}>Store</Button><Button size="sm" onClick={() => setLocation(r, "ready")}>Ready to set</Button></>
+                      ))}
+                    </div>
+                    {canEdit && (
+                      <div className="flex gap-1">
+                        <Button size="sm" variant="ghost" onClick={() => startEdit(r)}>Edit</Button>
+                        {isAdmin && <Button size="sm" variant="ghost" className="text-red hover:border-red" onClick={() => deleteReception(r)}>Delete</Button>}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
 
         {/* Pagination */}
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 text-sm text-muted">
@@ -365,3 +444,20 @@ const IcoCrack = () => rsvg(<><ellipse cx="12" cy="13" rx="6" ry="8" /><path d="
 const IcoDrop = () => rsvg(<path d="M12 3s6 6.5 6 10a6 6 0 0 1-12 0c0-3.5 6-10 6-10Z" />);
 const IcoBox = () => rsvg(<><path d="M4 8l8-4 8 4-8 4-8-4Z" /><path d="M4 8v8l8 4 8-4V8" /></>);
 const IcoCheck = () => rsvg(<><circle cx="12" cy="12" r="8" /><path d="M8.5 12l2.5 2.5 4.5-4.5" /></>);
+const IcoCal = () => rsvg(<><rect x="3.5" y="4.5" width="17" height="16" rx="2" /><path d="M3.5 9h17M8 3v3M16 3v3" /></>);
+const IcoPin = () => rsvg(<><path d="M12 21s7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 7 11 7 11z" /><circle cx="12" cy="10" r="2.4" /></>);
+const IcoTrend = () => rsvg(<><path d="M4 16l5-5 3 3 6-7" /><path d="M18 7h-3M18 7v3" /></>);
+
+// Reception mobile card stat cell.
+function RStat({ icon, tone, label, value }: { icon: ReactNode; tone: "green" | "red" | "blue" | "gold"; label: string; value: string }) {
+  const chip = tone === "green" ? "bg-green-bg text-green" : tone === "red" ? "bg-red-bg text-red" : tone === "blue" ? "bg-blue-bg text-blue" : "bg-gold-bg text-gold-dark";
+  return (
+    <div className="flex items-center gap-2">
+      <span className={"grid h-8 w-8 shrink-0 place-items-center rounded-full " + chip}>{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[0.53rem] font-bold uppercase tracking-wide text-muted">{label}</p>
+        <p className="truncate text-sm font-extrabold tabular-nums text-ink">{value}</p>
+      </div>
+    </div>
+  );
+}

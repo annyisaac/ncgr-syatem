@@ -441,6 +441,7 @@ export default function AvailabilityPage() {
         <Card>
           <CardHeader title="Projection accuracy" />
           <p className="-mt-1 mb-3 text-sm text-muted">How hatched batches compared to their projection — use it to calibrate the rate.</p>
+          <div className="hidden sm:block">
           <TableWrap>
             <thead>
               <tr>
@@ -473,6 +474,35 @@ export default function AvailabilityPage() {
               })}
             </tbody>
           </TableWrap>
+          </div>
+
+          {/* Mobile: each hatched batch as a card. */}
+          <div className="space-y-2.5 sm:hidden">
+            {hatched.slice(0, 12).map((h) => {
+              const vsProj = h.projected > 0 ? Math.round((h.actual / h.projected) * 100) : 0;
+              const realRate = h.batch.eggsSet > 0 ? Math.round((h.actual / h.batch.eggsSet) * 100) : 0;
+              return (
+                <div key={h.batch.id} className="rounded-2xl border border-line bg-paper p-3.5 shadow-card">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="font-semibold text-ink">{h.batch.batchNo}</p>
+                      <p className="text-xs text-muted">Hatched {formatDate(h.hatchDate)}</p>
+                    </div>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Pill tone={h.batch.productType === "Ross 308" ? "ross" : "tetra"}>{h.batch.productType}</Pill>
+                      <Pill tone={vsProj >= 100 ? "green" : vsProj >= 90 ? "amber" : "red"}>{vsProj}% vs proj</Pill>
+                    </div>
+                  </div>
+                  <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2 text-sm">
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Eggs set</p><p className="font-medium tabular-nums text-ink">{h.batch.eggsSet.toLocaleString()}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Projected</p><p className="font-medium tabular-nums text-ink">{h.projected.toLocaleString()}</p></div>
+                    <div><p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Actual</p><p className="font-medium tabular-nums text-ink">{h.actual.toLocaleString()}</p></div>
+                  </div>
+                  <p className="mt-1.5 text-xs text-muted">Real hatch rate <b className="text-ink">{realRate}%</b></p>
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
 
@@ -503,6 +533,7 @@ export default function AvailabilityPage() {
         <div id="dates-table" className="mb-4 scroll-mt-24">
           <h3 className="card-title">Delivery dates · {rows.length}</h3>
         </div>
+        <div className="hidden sm:block">
         <TableWrap>
           <thead>
             <tr>
@@ -567,6 +598,56 @@ export default function AvailabilityPage() {
             })}
           </tbody>
         </TableWrap>
+        </div>
+
+        {/* Mobile: each delivery date as a card. */}
+        <div className="space-y-2.5 sm:hidden">
+          {rows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted">No ordering dates opened yet.</p>
+          ) : rows.map((a) => {
+            const rossLeft = availableFor(a, "Ross 308", orders);
+            const tetraLeft = availableFor(a, "Tetra Super Harco", orders);
+            const rossOrd = orderedOn(a.id, "Ross 308");
+            const tetraOrd = orderedOn(a.id, "Tetra Super Harco");
+            const cap = a.ross + a.tetra;
+            const ord = rossOrd + tetraOrd;
+            const pct = cap > 0 ? Math.round((ord / cap) * 100) : 0;
+            const over = rossOrd > a.ross || tetraOrd > a.tetra;
+            const past = a.date < todayISO();
+            return (
+              <div key={a.id} className={"rounded-2xl border border-line bg-paper p-3.5 shadow-card " + (a.closed || past ? "opacity-60" : "")}>
+                <div className="flex items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-ink">{formatDate(a.date)}</p>
+                    <div className="mt-0.5">{a.fromBatch ? <Pill tone="green">Batches</Pill> : <span className="text-xs text-muted">Manual</span>}</div>
+                  </div>
+                  {past ? <Pill tone="neutral">Ended</Pill> : a.closed ? <Pill tone="neutral">Closed</Pill> : over ? <Pill tone="red">Oversold</Pill> : <Pill tone="green">Open</Pill>}
+                </div>
+                <div className="mt-2.5 grid grid-cols-2 gap-x-3 gap-y-2 text-sm">
+                  <div>
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Ross (left / avail)</p>
+                    {a.ross > 0 ? <p className="flex items-center gap-1.5"><Pill tone={rossLeft > 0 ? "green" : "red"}>{rossLeft.toLocaleString()}</Pill><span className="text-xs text-muted">/ {a.ross.toLocaleString()}</span></p> : <p className="text-muted">—</p>}
+                  </div>
+                  <div>
+                    <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Tetra (left / avail)</p>
+                    {a.tetra > 0 ? <p className="flex items-center gap-1.5"><Pill tone={tetraLeft > 0 ? "green" : "red"}>{tetraLeft.toLocaleString()}</Pill><span className="text-xs text-muted">/ {a.tetra.toLocaleString()}</span></p> : <p className="text-muted">—</p>}
+                  </div>
+                </div>
+                <div className="mt-2.5">
+                  <p className="mb-1 text-[0.6rem] font-semibold uppercase tracking-wide text-muted">Committed</p>
+                  <div className="flex items-center gap-2"><FillBar pct={pct} over={over} /><span className="text-xs text-muted tabular-nums">{pct}%</span></div>
+                </div>
+                {canManage && !past && (
+                  <div className="mt-2.5 flex flex-wrap items-center justify-end gap-2 border-t border-line pt-2.5">
+                    <Button size="sm" variant="ghost" onClick={() => toggleClose(a)}>{a.closed ? "Reopen" : "Close"}</Button>
+                    {!a.fromBatch && <Button size="sm" variant="ghost" onClick={() => editRow(a)}>Edit</Button>}
+                    {a.fromBatch && <span className="self-center text-xs text-muted">auto</span>}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </Card>
     </div>
   );
