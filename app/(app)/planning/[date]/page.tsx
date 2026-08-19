@@ -127,6 +127,9 @@ export default function DayPlanPage() {
 
   const role = user?.role;
   const canEdit = !!role && CAN_EDIT.includes(role);
+  // Only an Admin creates/edits/deletes routes; everyone with edit access then
+  // allocates orders onto the routes an Admin has set up.
+  const isAdmin = role === "Admin";
   const scoped = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
   // Product picker only helps roles that see more than one product (Admin, etc.).
   const showProductFilter = useMemo(() => new Set(scoped.map((o) => o.product)).size > 1, [scoped]);
@@ -429,10 +432,10 @@ export default function DayPlanPage() {
       <Card>
         <div className="flex flex-wrap items-center justify-between gap-2">
           <CardHeader title={`Routes for ${dateLabel} (${dayRoutes.length})`} />
-          {canEdit && <Button size="sm" onClick={() => setShowRouteForm((v) => !v)}>{showRouteForm ? "Cancel" : "＋ Add route"}</Button>}
+          {isAdmin && <Button size="sm" onClick={() => setShowRouteForm((v) => !v)}>{showRouteForm ? "Cancel" : "＋ Add route"}</Button>}
         </div>
         <p className="-mt-1 mb-3 text-xs text-muted">Routes you add here belong to this delivery date.</p>
-        {canEdit && showRouteForm && (
+        {isAdmin && showRouteForm && (
           <form onSubmit={createRoute} className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-line p-3">
             <Field label="Route name"><Input value={rName} onChange={(e) => setRName(e.target.value)} placeholder="e.g. Kigali East" /></Field>
             <Field label="Driver" hint={driverNames.length ? "Pick from the fleet or type a name" : undefined}><Input list="fleet-drivers" value={rDriver} onChange={(e) => setRDriver(e.target.value)} placeholder="Driver name" /></Field>
@@ -442,7 +445,7 @@ export default function DayPlanPage() {
             {rErr && <p className="w-full text-sm text-status-refunded">{rErr}</p>}
           </form>
         )}
-        {dayRoutes.length === 0 && <p className="text-sm text-muted">No routes for this day yet.{canEdit ? " Add one above." : ""}</p>}
+        {dayRoutes.length === 0 && <p className="text-sm text-muted">No routes for this day yet.{isAdmin ? " Add one above." : " An Admin needs to add routes before orders can be allocated."}</p>}
       </Card>
 
       {/* Search + product filter (sticks below the app top bar so it stays reachable) */}
@@ -594,8 +597,8 @@ export default function DayPlanPage() {
                 <Button variant="ghost" size="sm" onClick={() => downloadCsv(route, dateLabel, list)} disabled={list.length === 0}>CSV</Button>
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => makeDriverLink(route)}>Driver link</Button>}
                 {canEdit && <Button variant="ghost" size="sm" onClick={() => void showQr(route)}>QR</Button>}
-                {canEdit && <Button variant="ghost" size="sm" onClick={() => setEditRoute(route)}>Edit</Button>}
-                {canEdit && <Button variant="ghost" size="sm" onClick={() => deleteRoute(route)}>Delete</Button>}
+                {isAdmin && <Button variant="ghost" size="sm" onClick={() => setEditRoute(route)}>Edit</Button>}
+                {isAdmin && <Button variant="ghost" size="sm" onClick={() => deleteRoute(route)}>Delete</Button>}
               </div>
             </div>
             {driverLinks[route.id] && (
