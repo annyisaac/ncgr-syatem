@@ -130,6 +130,15 @@ const ALL_TABLES: HatcheryTable[] = [
 ];
 const HATCHERY_TABLES = new Set<string>(ALL_TABLES);
 
+// Tables loaded once on mount but NOT refetched on realtime. machine_readings is
+// the highest-churn table (~500 new rows/day, one every few minutes). Refetching
+// its multi-thousand-row global window on every insert would pull ~2 MB every few
+// minutes for every hatchery user, for data that isn't time-critical on the list/
+// dashboard. The recorder still sees their own reading immediately (optimistic
+// write), the list/dashboard refresh on next load, and the machine detail page
+// always fetches fresh — so nothing meaningful is lost.
+const REALTIME_SKIP = new Set<string>(["machine_readings"]);
+
 // Instant-paint cache of the last session's hatchery data (per browser). The
 // high-volume append-only tables are skipped — they can be large and aren't
 // needed for the first paint; they stream in on the background refresh.
@@ -313,7 +322,8 @@ export function HatcheryProvider({ children }: { children: ReactNode }) {
     const channel = sb
       .channel("hatchery-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
-        if (HATCHERY_TABLES.has(payload.table ?? "")) bump(payload.table!);
+        const t = payload.table ?? "";
+        if (HATCHERY_TABLES.has(t) && !REALTIME_SKIP.has(t)) bump(t);
       })
       .subscribe();
     return () => {

@@ -49,15 +49,18 @@ export default function MachineDetailPage() {
     return () => { active = false; };
   }, [machineCode, range]);
 
-  const data = useMemo(
-    () => windowed.map((r) => ({
+  // Charts stay smooth on phones by plotting at most ~300 points — long ranges
+  // are evenly downsampled (the shape is preserved; the table below has detail).
+  const data = useMemo(() => {
+    const step = windowed.length > 300 ? Math.ceil(windowed.length / 300) : 1;
+    const sampled = step === 1 ? windowed : windowed.filter((_, i) => i % step === 0);
+    return sampled.map((r) => ({
       label: r.timestamp.slice(5, 16).replace("T", " "),
       dry: r.dryF, digitalTemp: r.digitalTempF,
       wet: r.wetF, digitalHumidity: r.digitalHumidityF,
       fan: r.fanSpeed,
-    })),
-    [windowed]
-  );
+    }));
+  }, [windowed]);
 
   if (!user) return null;
 
@@ -120,11 +123,11 @@ export default function MachineDetailPage() {
           </Card>
 
           <Card>
-            <CardHeader title="Readings in range" />
+            <CardHeader title={windowed.length > 150 ? `Readings — latest 150 of ${windowed.length.toLocaleString()}` : "Readings in range"} />
             <TableWrap>
               <thead><tr><Th>When</Th><Th className="text-right">Fan</Th><Th className="text-right">Dry°F</Th><Th className="text-right">Wet°F</Th><Th className="text-right">Digital°F</Th><Th className="text-right">Hum%</Th><Th>Operator</Th></tr></thead>
               <tbody>
-                {windowed.length === 0 ? <EmptyRow colSpan={7} text={loadingReadings ? "Loading readings…" : "No readings in this range."} /> : windowed.slice().reverse().map((rd) => {
+                {windowed.length === 0 ? <EmptyRow colSpan={7} text={loadingReadings ? "Loading readings…" : "No readings in this range."} /> : windowed.slice().reverse().slice(0, 150).map((rd) => {
                   const hot = isMachineOverTemp(rd.dryF, rd.wetF, rd.digitalTempF);
                   return (
                     <tr key={rd.id}>

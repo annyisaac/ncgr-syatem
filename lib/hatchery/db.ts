@@ -45,12 +45,13 @@ export async function fetchTable<T>(table: HatcheryTable): Promise<T[]> {
   if (!inBrowser()) return [];
   const sb = getSupabase();
   const all: T[] = [];
-  // machine_readings is high-volume (thousands of rows). Globally the app only
-  // needs recent readings (machines-list latest/last-5, dashboard over-temp); the
-  // machine detail page fetches a machine's full history on demand via
-  // fetchMachineReadings. Cap the global load to the last 7 days to keep every
-  // hatchery page fast and bound its growth.
-  const since = table === "machine_readings" ? new Date(Date.now() - 7 * 24 * 3600e3).toISOString() : null;
+  // machine_readings is high-volume (~500 rows/day across 29 machines). Globally
+  // the app only needs recent readings (machines-list latest/last-5, dashboard
+  // over-temp); the machine detail page fetches a machine's full history on
+  // demand via fetchMachineReadings. Each machine is read ~17×/day, so a 2-day
+  // window comfortably covers "latest + last 5 per machine" while keeping the
+  // global load small (~1k rows) and every hatchery page fast.
+  const since = table === "machine_readings" ? new Date(Date.now() - 2 * 24 * 3600e3).toISOString() : null;
   for (let from = 0; ; from += PAGE) {
     let q = sb.from(table).select("data").order("updated_at", { ascending: true }).range(from, from + PAGE - 1);
     if (since) q = q.gte("data->>timestamp", since);
