@@ -61,6 +61,8 @@ export default function FinancePage() {
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
   const [pickedDate, setPickedDate] = useState(""); // one real delivery day, overrides the period
   const [tab, setTab] = useState<Tab>("overview");
+  const [q, setQ] = useState(""); // page-wide search — filters rows in every tab
+  const query = q.trim().toLowerCase();
 
   const canUse = user?.role === "Admin" || user?.role === "Accountant";
 
@@ -110,9 +112,16 @@ export default function FinancePage() {
   return (
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
+          <div className="relative max-w-sm">
+            <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted"><SearchIcon /></span>
+            <Input aria-label="Search this page" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search expenses, customers, products…" className="pl-9" />
+            {q && (
+              <button type="button" onClick={() => setQ("")} aria-label="Clear search" className="absolute right-2 top-1/2 -translate-y-1/2 rounded px-1.5 text-muted hover:text-ink">✕</button>
+            )}
+          </div>
           {pickedDate && (
-            <p className="text-xs text-muted">Showing the delivery day <strong className="font-semibold">{formatDate(pickedDate)}</strong> only. Pick “All delivery dates” to go back to filtering by period.</p>
+            <p className="mt-1 text-xs text-muted">Showing the delivery day <strong className="font-semibold">{formatDate(pickedDate)}</strong> only. Pick “All delivery dates” to go back to filtering by period.</p>
           )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -158,25 +167,36 @@ export default function FinancePage() {
       </div>
 
       {tab === "overview" && (
-        <Overview summary={summary} periodLabel={periodLabel} shownExpenses={shownExpenses}
+        <Overview summary={summary} periodLabel={periodLabel} shownExpenses={shownExpenses} query={query}
           onAdd={async (exp) => { setExpenses((p) => [exp, ...p]); try { await upsertExpense(exp); toast("Expense recorded."); } catch { toast("Could not save the expense.", "error"); void load(); } }}
           onDelete={async (id) => { if (!confirm("Delete this expense?")) return; setExpenses((p) => p.filter((e) => e.id !== id)); try { await removeExpense(id); toast("Expense deleted."); } catch { toast("Could not delete.", "error"); void load(); } }}
           email={user.email} />
       )}
-      {tab === "pnl" && <PnLView pnl={pnl} periodLabel={periodLabel} />}
-      {tab === "receivables" && <Receivables debtors={debtors} orders={orders} />}
-      {tab === "cashflow" && <CashFlow series={series} shownExpenses={shownExpenses} periodLabel={periodLabel} />}
+      {tab === "pnl" && <PnLView pnl={pnl} periodLabel={periodLabel} query={query} />}
+      {tab === "receivables" && <Receivables debtors={debtors} orders={orders} query={query} />}
+      {tab === "cashflow" && <CashFlow series={series} shownExpenses={shownExpenses} periodLabel={periodLabel} query={query} />}
       {tab === "vat" && <VatView revenue={summary.revenue} collected={summary.collected} periodLabel={periodLabel} />}
     </div>
   );
 }
 
+// A small magnifier for the search box.
+const SearchIcon = () => (
+  <svg width={15} height={15} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="9" r="6" /><path d="m14 14 3.5 3.5" /></svg>
+);
+
+// Case-insensitive "does any of these fields contain the query" test.
+const matches = (query: string, ...fields: (string | number | undefined)[]) =>
+  !query || fields.some((f) => f != null && String(f).toLowerCase().includes(query));
+
 // --------------------------------------------------------------------------- Overview
 
-function Overview({ summary, periodLabel, shownExpenses, onAdd, onDelete, email }: {
-  summary: ReturnType<typeof financeSummary>; periodLabel: string; shownExpenses: Expense[];
+function Overview({ summary, periodLabel, shownExpenses, query, onAdd, onDelete, email }: {
+  summary: ReturnType<typeof financeSummary>; periodLabel: string; shownExpenses: Expense[]; query: string;
   onAdd: (e: Expense) => void; onDelete: (id: string) => void; email: string;
 }) {
+  const products = summary.byProduct.filter((p) => matches(query, p.product));
+  const expenses = shownExpenses.filter((e) => matches(query, formatDate(e.date), e.category, e.note, e.by));
   const [cat, setCat] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [amt, setAmt] = useState("");
   const [date, setDate] = useState(todayISO());
@@ -200,7 +220,7 @@ function Overview({ summary, periodLabel, shownExpenses, onAdd, onDelete, email 
         <TableWrap>
           <thead><tr><Th>Product</Th><Th className="text-right">Orders</Th><Th className="text-right">Revenue</Th><Th className="text-right">Collected</Th><Th className="text-right">Receivable</Th></tr></thead>
           <tbody>
-            {summary.byProduct.map((p) => (
+            {products.length === 0 ? <EmptyRow colSpan={5} text={query ? "No products match your search." : "No revenue in this period."} /> : products.map((p) => (
               <tr key={p.product}>
                 <Td className="font-medium">{p.product}</Td>
                 <Td className="text-right">{p.orders.toLocaleString()}</Td>
@@ -209,12 +229,14 @@ function Overview({ summary, periodLabel, shownExpenses, onAdd, onDelete, email 
                 <Td className="text-right">{p.receivable > 0 ? <span className="text-red">{formatRWF(p.receivable)}</span> : formatRWF(0)}</Td>
               </tr>
             ))}
-            <tr className="border-t border-line font-semibold">
-              <Td>Total</Td><Td className="text-right">{summary.orders.toLocaleString()}</Td>
-              <Td className="text-right">{formatRWF(summary.revenue)}</Td>
-              <Td className="text-right text-green">{formatRWF(summary.collected)}</Td>
-              <Td className="text-right">{formatRWF(summary.receivable)}</Td>
-            </tr>
+            {!query && (
+              <tr className="border-t border-line font-semibold">
+                <Td>Total</Td><Td className="text-right">{summary.orders.toLocaleString()}</Td>
+                <Td className="text-right">{formatRWF(summary.revenue)}</Td>
+                <Td className="text-right text-green">{formatRWF(summary.collected)}</Td>
+                <Td className="text-right">{formatRWF(summary.receivable)}</Td>
+              </tr>
+            )}
           </tbody>
         </TableWrap>
       </Card>
@@ -236,7 +258,7 @@ function Overview({ summary, periodLabel, shownExpenses, onAdd, onDelete, email 
         <TableWrap>
           <thead><tr><Th>Date</Th><Th>Category</Th><Th>Note</Th><Th className="text-right">Amount</Th><Th></Th></tr></thead>
           <tbody>
-            {shownExpenses.length === 0 ? <EmptyRow colSpan={5} text="No expenses in this period." /> : shownExpenses.map((e) => (
+            {expenses.length === 0 ? <EmptyRow colSpan={5} text={query ? "No expenses match your search." : "No expenses in this period."} /> : expenses.map((e) => (
               <tr key={e.id}>
                 <Td>{formatDate(e.date)}</Td><Td>{e.category}</Td>
                 <Td className="max-w-[20rem] truncate">{e.note || "—"}<div className="text-xs text-muted">by {e.by} · {formatDateTime(e.on)}</div></Td>
@@ -261,8 +283,9 @@ function PnLRow({ label, value, strong, indent }: { label: string; value: number
   );
 }
 
-function PnLView({ pnl, periodLabel }: { pnl: ReturnType<typeof profitAndLoss>; periodLabel: string }) {
+function PnLView({ pnl, periodLabel, query }: { pnl: ReturnType<typeof profitAndLoss>; periodLabel: string; query: string }) {
   const Row = PnLRow;
+  const expenseLines = pnl.expenseLines.filter((l) => matches(query, l.category));
   return (
     <Card>
       <CardHeader title={`Profit & Loss — ${periodLabel}`} />
@@ -271,7 +294,7 @@ function PnLView({ pnl, periodLabel }: { pnl: ReturnType<typeof profitAndLoss>; 
         <Row label="Less: DSR commissions" value={-pnl.commissions} indent />
         <Row label="Gross profit" value={pnl.grossProfit} strong />
         <div className="mt-3 mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Operating expenses</div>
-        {pnl.expenseLines.length === 0 ? <p className="pl-4 text-sm text-muted">No expenses recorded this period.</p> : pnl.expenseLines.map((l) => <Row key={l.category} label={l.category} value={-l.amount} indent />)}
+        {expenseLines.length === 0 ? <p className="pl-4 text-sm text-muted">{query ? "No expense lines match your search." : "No expenses recorded this period."}</p> : expenseLines.map((l) => <Row key={l.category} label={l.category} value={-l.amount} indent />)}
         <Row label="Total expenses" value={-pnl.totalExpenses} />
         <Row label="Net profit" value={pnl.netProfit} strong />
       </div>
@@ -281,18 +304,19 @@ function PnLView({ pnl, periodLabel }: { pnl: ReturnType<typeof profitAndLoss>; 
 
 // --------------------------------------------------------------------------- Receivables
 
-function Receivables({ debtors, orders }: { debtors: ReturnType<typeof agedReceivables>; orders: ReturnType<typeof useData>["orders"] }) {
-  const { rows, totals } = debtors;
+function Receivables({ debtors, orders, query }: { debtors: ReturnType<typeof agedReceivables>; orders: ReturnType<typeof useData>["orders"]; query: string }) {
+  const { totals } = debtors;
+  const rows = debtors.rows.filter((d) => matches(query, d.name, d.phone));
   return (
     <Card>
-      <CardHeader title={`Aged receivables — ${formatRWF(totals.total)} owed by ${rows.length} customer(s)`} />
+      <CardHeader title={`Aged receivables — ${formatRWF(totals.total)} owed by ${debtors.rows.length} customer(s)`} />
       <p className="-mt-1 mb-2 text-xs text-muted">Outstanding balances bucketed by how long overdue (from delivery date).</p>
       <TableWrap>
         <thead><tr>
           <Th>Customer</Th><Th className="text-right">Total</Th><Th className="text-right">0–30d</Th><Th className="text-right">31–60d</Th><Th className="text-right">61–90d</Th><Th className="text-right">90+d</Th><Th></Th>
         </tr></thead>
         <tbody>
-          {rows.length === 0 ? <EmptyRow colSpan={7} text="No outstanding balances — all paid up." /> : rows.map((d) => (
+          {rows.length === 0 ? <EmptyRow colSpan={7} text={query ? "No customers match your search." : "No outstanding balances — all paid up."} /> : rows.map((d) => (
             <tr key={`${d.name}-${d.phone}`}>
               <Td className="font-medium">{d.name}<div className="text-xs text-muted">{d.phone} · oldest {d.oldestDays}d</div></Td>
               <Td className="text-right font-semibold text-red">{formatRWF(d.total)}</Td>
@@ -303,7 +327,7 @@ function Receivables({ debtors, orders }: { debtors: ReturnType<typeof agedRecei
               <Td><Button size="sm" variant="ghost" onClick={() => void customerStatementPDF(customerStatement(orders, d))}>Statement</Button></Td>
             </tr>
           ))}
-          {rows.length > 0 && (
+          {!query && rows.length > 0 && (
             <tr className="border-t border-line font-semibold">
               <Td>Total</Td><Td className="text-right text-red">{formatRWF(totals.total)}</Td>
               <Td className="text-right">{formatRWF(totals.d0_30)}</Td><Td className="text-right">{formatRWF(totals.d31_60)}</Td>
@@ -318,13 +342,13 @@ function Receivables({ debtors, orders }: { debtors: ReturnType<typeof agedRecei
 
 // --------------------------------------------------------------------------- Cash flow
 
-function CashFlow({ series, shownExpenses, periodLabel }: { series: ReturnType<typeof monthlySeries>; shownExpenses: Expense[]; periodLabel: string }) {
+function CashFlow({ series, shownExpenses, periodLabel, query }: { series: ReturnType<typeof monthlySeries>; shownExpenses: Expense[]; periodLabel: string; query: string }) {
   const max = Math.max(1, ...series.map((m) => Math.max(m.moneyIn, m.moneyOut)));
   const byCat = useMemo(() => {
     const map = new Map<string, number>();
     for (const e of shownExpenses) map.set(e.category, (map.get(e.category) ?? 0) + e.amount);
-    return [...map.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount);
-  }, [shownExpenses]);
+    return [...map.entries()].map(([category, amount]) => ({ category, amount })).sort((a, b) => b.amount - a.amount).filter((c) => matches(query, c.category));
+  }, [shownExpenses, query]);
   const catMax = Math.max(1, ...byCat.map((c) => c.amount));
 
   return (
@@ -348,7 +372,7 @@ function CashFlow({ series, shownExpenses, periodLabel }: { series: ReturnType<t
 
       <Card>
         <CardHeader title={`Expenses by category — ${periodLabel}`} />
-        {byCat.length === 0 ? <p className="text-sm text-muted">No expenses in this period.</p> : (
+        {byCat.length === 0 ? <p className="text-sm text-muted">{query ? "No categories match your search." : "No expenses in this period."}</p> : (
           <div className="space-y-2">
             {byCat.map((c) => (
               <div key={c.category} className="flex items-center gap-3">
