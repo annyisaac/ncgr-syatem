@@ -30,6 +30,9 @@ export default function TeamDetailPage() {
   const [children, setChildren] = useState<Child[]>([]);
 
   const married = maritalStatus === "Married";
+  // A single person doesn't record children/spouse — children only apply to a
+  // current or former marriage (Married / Divorced / Widowed).
+  const canHaveChildren = maritalStatus !== "" && maritalStatus !== "Single";
 
   const addChild = () => setChildren((c) => [...c, { name: "", nationalId: "", birthDate: "" }]);
   const removeChild = (i: number) => setChildren((c) => c.filter((_, idx) => idx !== i));
@@ -124,7 +127,12 @@ export default function TeamDetailPage() {
 
               <Section>Family</Section>
               <Field label="Marital status" required>
-                <select value={maritalStatus} onChange={(e) => setMaritalStatus(e.target.value)} className={INPUT}>
+                <select value={maritalStatus} onChange={(e) => {
+                  const v = e.target.value;
+                  setMaritalStatus(v);
+                  if (v === "Single") setChildren([]);       // single → no children
+                  if (v !== "Married") { setSpouseName(""); setSpouseId(""); }
+                }} className={INPUT}>
                   <option value="">Select status</option>
                   {MARITAL.map((m) => <option key={m} value={m}>{m}</option>)}
                 </select>
@@ -141,6 +149,7 @@ export default function TeamDetailPage() {
                 </div>
               )}
 
+              {canHaveChildren && (
               <div>
                 <div className="mb-2 flex items-center justify-between">
                   <label className="block text-[0.7rem] font-bold uppercase tracking-wider text-muted">Children</label>
@@ -168,6 +177,7 @@ export default function TeamDetailPage() {
                   </div>
                 )}
               </div>
+              )}
 
               {err && <p className="rounded-xl border border-red/20 bg-red-bg px-4 py-3 text-sm font-semibold text-red">{err}</p>}
 
