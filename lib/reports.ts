@@ -452,32 +452,53 @@ export async function teamDetailsPDF(records: TeamDetail[]): Promise<void> {
   const { doc, autoTable, startY, logo } = await brandedDoc("Team Member Details — Confidential", [
     `Members: ${records.length}`,
     `Generated: ${formatDateTime(nowISO())}`,
-  ]);
+  ], "portrait");
 
-  const kids = (r: TeamDetail) =>
-    (r.children ?? [])
-      .map((c) => `${c.name}${c.nationalId ? ` (ID ${c.nationalId})` : ""}${c.birthDate ? ` — ${formatDate(c.birthDate)}` : ""}`)
-      .join("\n");
+  const GOLD_BG: [number, number, number] = [246, 236, 210];
+  const MUTED: [number, number, number] = [110, 104, 88];
 
-  const body = records.map((r) => [
-    r.fullName,
-    r.nationalId ?? "",
-    r.phone ?? "",
-    r.position ?? "",
-    r.maritalStatus ?? "",
-    r.spouseName ?? "",
-    r.spouseId ?? "",
-    kids(r),
-    formatDateTime(r.on),
-  ]);
+  // One section per member: a shaded summary row, then the member's own
+  // National ID / marital status / spouse, then each child on its own row
+  // (numbered, with National ID and date of birth in their own columns).
+  const body: (string | { content: string; colSpan?: number; styles?: Record<string, unknown> })[][] = [];
+  for (const r of records) {
+    body.push([{
+      content: `${r.fullName}${r.position ? `  —  ${r.position}` : ""}`,
+      colSpan: 3,
+      styles: { fillColor: GOLD_BG, textColor: INK, fontStyle: "bold", fontSize: 9.5 },
+    }]);
+    body.push([
+      { content: `National ID: ${r.nationalId || "—"}` },
+      { content: `Phone: ${r.phone || "—"}` },
+      { content: `Marital: ${r.maritalStatus || "—"}` },
+    ]);
+    if (r.maritalStatus === "Married") {
+      body.push([{ content: `Spouse: ${r.spouseName || "—"}${r.spouseId ? `   (National ID: ${r.spouseId})` : ""}`, colSpan: 3 }]);
+    }
+    const kids = r.children ?? [];
+    body.push([{ content: `Children (${kids.length})`, colSpan: 3, styles: { fontStyle: "bold", textColor: MUTED } }]);
+    if (kids.length === 0) {
+      body.push([{ content: "No children recorded", colSpan: 3, styles: { textColor: MUTED } }]);
+    } else {
+      body.push([
+        { content: "Name", styles: { fontStyle: "bold", textColor: MUTED } },
+        { content: "National ID", styles: { fontStyle: "bold", textColor: MUTED } },
+        { content: "Date of birth", styles: { fontStyle: "bold", textColor: MUTED } },
+      ]);
+      kids.forEach((c, i) => body.push([
+        `${i + 1}.  ${c.name}`,
+        c.nationalId || "—",
+        c.birthDate ? formatDate(c.birthDate) : "—",
+      ]));
+    }
+    body.push([{ content: "", colSpan: 3, styles: { minCellHeight: 6, fillColor: [255, 255, 255] } }]);
+  }
 
   autoTable(doc, {
     startY,
-    head: [["Name", "National ID", "Phone", "Position", "Marital", "Spouse", "Spouse ID", "Children (name · ID · DOB)", "Submitted"]],
     body,
-    styles: { fontSize: 7.5, cellPadding: 2.5, valign: "top" },
-    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
-    columnStyles: { 7: { cellWidth: 150 } },
+    styles: { fontSize: 8.5, cellPadding: 3, lineColor: [231, 227, 216], lineWidth: 0.5 },
+    columnStyles: { 1: { cellWidth: 150 }, 2: { cellWidth: 110 } },
     theme: "grid",
   });
 
