@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 
-import { Card, CardHeader } from "@/components/ui/Card";
+import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { Modal } from "@/components/ui/Modal";
 import { Pill } from "@/components/ui/Pill";
 import { Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td } from "@/components/ui/Table";
@@ -186,8 +187,15 @@ export function ProductBatchesView({ product }: { product: Product }) {
         </div>
       </Card>
 
-      {/* Details */}
-      {batch && <BatchDetails batch={batch} available={availByBatch.get(batch.id) ?? 0} />}
+      {/* Details — opens over the cards */}
+      <Modal
+        open={!!batch}
+        onClose={() => setSelected(null)}
+        title={batch ? `${batch.batchNo} — everything on this batch` : ""}
+        className="max-w-3xl"
+      >
+        {batch && <BatchDetails batch={batch} available={availByBatch.get(batch.id) ?? 0} />}
+      </Modal>
     </div>
   );
 }
@@ -218,9 +226,7 @@ function BatchDetails({ batch, available }: { batch: Batch; available: number })
   const transferred = (batch.transfers ?? []).reduce((s, t) => s + (t.eggs || 0), 0);
 
   return (
-    <Card>
-      <CardHeader title={`${batch.batchNo} — everything on this batch`} />
-
+    <div>
       {/* Overview */}
       <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
         <Info label="Set date" value={batch.setDate ? formatDate(batch.setDate) : "—"} />
@@ -326,7 +332,7 @@ function BatchDetails({ batch, available }: { batch: Batch; available: number })
           })}
         </ol>
       </div>
-    </Card>
+    </div>
   );
 }
 
