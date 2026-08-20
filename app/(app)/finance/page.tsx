@@ -111,12 +111,9 @@ export default function FinancePage() {
     <div className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="min-w-0">
-          <p className="text-sm text-muted">Financial overview — revenue, cash, receivables, commissions, expenses and tax.</p>
-          <p className="mt-0.5 text-xs text-muted">
-            {pickedDate
-              ? <>Showing the delivery day <strong className="font-semibold">{formatDate(pickedDate)}</strong> only. Pick “All delivery dates” to go back to filtering by period.</>
-              : <>Orders are filtered by <strong className="font-semibold">delivery date</strong>; commissions and expenses by their own dates.</>}
-          </p>
+          {pickedDate && (
+            <p className="text-xs text-muted">Showing the delivery day <strong className="font-semibold">{formatDate(pickedDate)}</strong> only. Pick “All delivery dates” to go back to filtering by period.</p>
+          )}
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="w-52">
