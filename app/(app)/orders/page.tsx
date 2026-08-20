@@ -33,7 +33,7 @@ import {
   toDeliver,
 } from "@/lib/types";
 import { formatRWF, formatMoney } from "@/lib/config";
-import { formatDate, formatDateTime, nowISO, todayISO, isValidMomoRef } from "@/lib/format";
+import { formatDate, formatDateTime, nowISO, todayISO, isValidMomoRef, normalizePhone } from "@/lib/format";
 import { visibleOrders, productForRole, dateHasProduct } from "@/lib/permissions";
 import { smartMatch, suggest } from "@/lib/search";
 import { clientKey } from "@/lib/clients";
@@ -54,6 +54,7 @@ import {
   paymentCheckState,
   refundOrder,
   rejectOrder,
+  reverseRejection,
   reorderPlan,
   rescheduleOrder,
   shortDeliver,
@@ -70,6 +71,7 @@ type ModalState =
   | { type: "edit"; order: Order }
   | { type: "refund"; order: Order }
   | { type: "reject"; order: Order }
+  | { type: "reverseReject"; order: Order }
   | { type: "request"; order: Order }
   | { type: "requestDebt"; order: Order }
   | { type: "approveReq"; order: Order }
@@ -522,6 +524,14 @@ function OrdersInner() {
           onClick: () => setModal({ type: "reject", order: o }),
         });
       }
+    }
+
+    // Admin can undo a rejection — restore the order to the live (pending) list.
+    if (isAdmin && o.status === "rejected") {
+      acts.push({
+        label: "Reverse rejection",
+        onClick: () => setModal({ type: "reverseReject", order: o }),
+      });
     }
 
     // Refund stays for open orders and for fulfilled orders that still owe
@@ -1108,6 +1118,37 @@ function OrdersInner() {
           onClose={() => setModal(null)}
           onSave={(reason) => {
             act(rejectOrder(modal.order, reason, user), "Order rejected.");
+            setModal(null);
+          }}
+        />
+      )}
+
+      {modal?.type === "reverseReject" && (
+        <ReasonModal
+          title="Reverse rejection"
+          label="Reason for restoring this order"
+          confirmLabel="Restore order"
+          onClose={() => setModal(null)}
+          onSave={(reason) => {
+            const o = modal.order;
+            // Restoring re-enters the one-live-order-per-customer-per-date rule,
+            // so block if another live order already holds this customer's slot
+            // for that date (the DB guard would reject it anyway).
+            const key = normalizePhone(o.phone);
+            const clash = orders.find(
+              (x) =>
+                x.id !== o.id &&
+                x.date === o.date &&
+                !isClosed(x) &&
+                (key
+                  ? normalizePhone(x.phone) === key
+                  : o.name.trim() !== "" && x.name.trim().toLowerCase() === o.name.trim().toLowerCase())
+            );
+            if (clash) {
+              toast(`${o.name} already has a live order for ${formatDate(o.date)}. Cancel or reschedule it before restoring this one.`, "error");
+              return;
+            }
+            act(reverseRejection(o, reason, user), "Rejection reversed — order restored.");
             setModal(null);
           }}
         />

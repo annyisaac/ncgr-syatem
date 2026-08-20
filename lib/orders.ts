@@ -445,6 +445,20 @@ export function rejectOrder(order: Order, reason: string, actor: User): Order {
   );
 }
 
+/**
+ * Reverse a rejection: an Admin restores a rejected order to the live "pending"
+ * status. Rejection never cleared the lifecycle flags or payments, so the order
+ * simply resumes where it was. The one-live-order-per-customer-per-date rule
+ * applies again, so the caller must check no other live order holds the slot.
+ */
+export function reverseRejection(order: Order, reason: string, actor: User): Order {
+  return withHistory(
+    { ...order, status: "pending" },
+    actor,
+    `Rejection reversed — restored to pending — ${reason}`
+  );
+}
+
 /** Move an order up (-1) or down (+1) within its delivery-date plan group. */
 export function reorderPlan(
   orders: Order[],
