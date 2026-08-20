@@ -24,6 +24,7 @@ import { doubleCountedAmount, type OrderIssue } from "./duplicates";
 import type { DSRCommissionRow } from "./commission";
 import type { ClientRecord } from "./clients";
 import type { EventRegistration } from "./events";
+import type { TeamDetail } from "./team";
 import type { CustomerStatement, DebtorRow, Expense, FinanceSummary } from "./finance";
 
 /** "2026-08" → "Aug 2026". Empty/invalid → "". */
@@ -441,6 +442,46 @@ export async function visitorsPDF(
   });
 
   finalizeAndSave(doc, logo, `NCGR-Visitors-${filterLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
+// PDF: Team member details (personal & family) — Confidential
+// ---------------------------------------------------------------------------
+
+export async function teamDetailsPDF(records: TeamDetail[]): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc("Team Member Details — Confidential", [
+    `Members: ${records.length}`,
+    `Generated: ${formatDateTime(nowISO())}`,
+  ]);
+
+  const kids = (r: TeamDetail) =>
+    (r.children ?? [])
+      .map((c) => `${c.name}${c.nationalId ? ` (ID ${c.nationalId})` : ""}${c.birthDate ? ` — ${formatDate(c.birthDate)}` : ""}`)
+      .join("\n");
+
+  const body = records.map((r) => [
+    r.fullName,
+    r.nationalId ?? "",
+    r.phone ?? "",
+    r.position ?? "",
+    r.maritalStatus ?? "",
+    r.spouseName ?? "",
+    r.spouseId ?? "",
+    kids(r),
+    formatDateTime(r.on),
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [["Name", "National ID", "Phone", "Position", "Marital", "Spouse", "Spouse ID", "Children (name · ID · DOB)", "Submitted"]],
+    body,
+    styles: { fontSize: 7.5, cellPadding: 2.5, valign: "top" },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    columnStyles: { 7: { cellWidth: 150 } },
+    theme: "grid",
+  });
+
+  finalizeAndSave(doc, logo, "NCGR-Team-Details.pdf");
 }
 
 // ---------------------------------------------------------------------------

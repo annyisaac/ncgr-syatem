@@ -15,7 +15,7 @@ import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRang
 import { getSupabase } from "@/lib/supabase";
 import { formatDate, formatDateTime, todayISO } from "@/lib/format";
 import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
-import { visitorsPDF } from "@/lib/reports";
+import { visitorsPDF, teamDetailsPDF } from "@/lib/reports";
 import {
   createEventLink,
   listEventLinks,
@@ -483,6 +483,7 @@ export default function AgrishowPage() {
           <div className="flex flex-wrap items-center gap-2">
             <div className="w-56"><Input value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)} placeholder="Search name, ID, child…" /></div>
             <Button variant="secondary" onClick={downloadTeamCsv}>CSV</Button>
+            <Button variant="secondary" onClick={() => { if (shownTeam.length === 0) return toast("No team records to download.", "info"); void teamDetailsPDF(shownTeam); }}>PDF</Button>
           </div>
         </div>
         <TableWrap>
