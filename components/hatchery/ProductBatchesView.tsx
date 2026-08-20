@@ -223,6 +223,11 @@ function BatchDetails({ batch, available }: { batch: Batch; available: number })
   const doneCount = !!batch.steps?.["counting"];
   const c1 = removedInStage(batch, 1);
   const c2 = removedInStage(batch, 2);
+  // Fertile eggs still in the batch after each candling — always shown, so the
+  // count carried forward is visible even before a stage is reached (removals
+  // are 0 until then, so remaining simply equals eggs set).
+  const remainingAfterC1 = Math.max(0, batch.eggsSet - c1);
+  const remainingAfterC2 = Math.max(0, batch.eggsSet - c1 - c2);
   const transferred = (batch.transfers ?? []).reduce((s, t) => s + (t.eggs || 0), 0);
 
   return (
@@ -238,10 +243,12 @@ function BatchDetails({ batch, available }: { batch: Batch; available: number })
       {/* Eggs through the stages */}
       <div className="mt-4">
         <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Eggs through the stages</p>
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <Info label="Eggs set" value={num(batch.eggsSet)} />
           <Info label="Removed · Candling I" value={doneC1 ? `−${num(c1)}` : "—"} />
+          <Info label="Remaining after Candling I" value={num(remainingAfterC1)} />
           <Info label="Removed · Candling II" value={doneC2 ? `−${num(c2)}` : "—"} />
+          <Info label="Remaining after Candling II" value={num(remainingAfterC2)} />
           <Info label="Transferred to hatcher" value={doneTransfer ? num(transferred) : "—"} />
         </div>
       </div>
