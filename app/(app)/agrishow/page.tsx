@@ -9,10 +9,11 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
+import { Modal } from "@/components/ui/Modal";
 import { StatTile } from "@/components/dashboard/DashKit";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { getSupabase } from "@/lib/supabase";
-import { formatDateTime, todayISO } from "@/lib/format";
+import { formatDate, formatDateTime, todayISO } from "@/lib/format";
 import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
 import { visitorsPDF } from "@/lib/reports";
 import {
@@ -23,6 +24,15 @@ import {
   type EventLink,
   type EventRegistration,
 } from "@/lib/events";
+import {
+  createTeamLink,
+  deleteTeamDetail,
+  listTeamDetails,
+  listTeamLinks,
+  setTeamLinkActive,
+  type TeamDetail,
+  type TeamDetailLink,
+} from "@/lib/team";
 
 /** "2026-08" → "Aug 2026". Empty/invalid → "". */
 function monthLabel(m?: string): string {
@@ -46,15 +56,28 @@ export default function AgrishowPage() {
   const [productFilter, setProductFilter] = useState("all");
   const [preset, setPreset] = useState<PeriodPreset>("all");
 
+  // Team member self-service details
+  const [teamLinks, setTeamLinks] = useState<TeamDetailLink[]>([]);
+  const [teamDetails, setTeamDetails] = useState<TeamDetail[]>([]);
+  const [teamTitle, setTeamTitle] = useState("Team details 2026");
+  const [showCreateTeam, setShowCreateTeam] = useState(false);
+  const [creatingTeam, setCreatingTeam] = useState(false);
+  const [teamSearch, setTeamSearch] = useState("");
+  const [viewRec, setViewRec] = useState<TeamDetail | null>(null);
+
   const isAdmin = user?.role === "Admin" || user?.role === "Ross Payment Checker";
   // Only a true Admin manages existing links (copy / close / reopen).
   const canManageLinks = user?.role === "Admin";
 
   const load = useCallback(async () => {
     try {
-      const [l, r] = await Promise.all([listEventLinks(), listEventRegistrations()]);
+      const [l, r, tl, td] = await Promise.all([
+        listEventLinks(), listEventRegistrations(), listTeamLinks(), listTeamDetails(),
+      ]);
       setLinks(l);
       setRegs(r);
+      setTeamLinks(tl);
+      setTeamDetails(td);
     } catch {
       /* keep whatever we have */
     } finally {
@@ -77,7 +100,7 @@ export default function AgrishowPage() {
     const channel = sb
       .channel("agrishow-live")
       .on("postgres_changes", { event: "*", schema: "public" }, (payload: { table?: string }) => {
-        if (payload.table === "event_registrations" || payload.table === "event_links") bump();
+        if (["event_registrations", "event_links", "team_details", "team_detail_links"].includes(payload.table ?? "")) bump();
       })
       .subscribe();
     return () => {
@@ -173,6 +196,67 @@ export default function AgrishowPage() {
     if (shownRegs.length === 0) return toast("No registrations to download.", "info");
     const label = eventFilter === "all" ? "All events" : eventFilter;
     void visitorsPDF(shownRegs, label);
+  }
+
+  const activeTeamLinks = teamLinks.filter((l) => l.active);
+  const shownTeam = teamDetails.filter((r) => {
+    const q = teamSearch.trim().toLowerCase();
+    if (!q) return true;
+    return [r.fullName, r.nationalId, r.phone, r.position, r.spouseName, ...r.children.map((c) => c.name)]
+      .some((v) => (v ?? "").toLowerCase().includes(q));
+  });
+
+  async function createTeam() {
+    if (!teamTitle.trim()) return toast("Enter a title.", "info");
+    setCreatingTeam(true);
+    try {
+      await createTeamLink(teamTitle, user!.email);
+      toast("Team details link created.");
+      setShowCreateTeam(false);
+      await load();
+    } catch {
+      toast("Could not create the link.", "error");
+    } finally {
+      setCreatingTeam(false);
+    }
+  }
+
+  async function toggleTeam(link: TeamDetailLink) {
+    try {
+      await setTeamLinkActive(link, !link.active);
+      toast(link.active ? "Link closed." : "Link reopened.");
+      await load();
+    } catch {
+      toast("Could not update the link.", "error");
+    }
+  }
+
+  async function removeRecord(rec: TeamDetail) {
+    if (!confirm(`Delete ${rec.fullName}'s record? This cannot be undone.`)) return;
+    setTeamDetails((p) => p.filter((x) => x.id !== rec.id));
+    try { await deleteTeamDetail(rec.id); toast("Record deleted."); }
+    catch { toast("Could not delete.", "error"); void load(); }
+  }
+
+  function downloadTeamCsv() {
+    if (shownTeam.length === 0) return toast("No team records to download.", "info");
+    const head = ["Full Name", "National ID", "Phone", "Position", "Marital Status", "Spouse", "Spouse ID", "Children", "Submitted"];
+    const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
+    const kids = (r: TeamDetail) => r.children.map((c) => `${c.name}${c.nationalId ? ` (ID ${c.nationalId})` : ""}${c.birthDate ? ` — ${c.birthDate}` : ""}`).join("; ");
+    const lines = [head.map(esc).join(",")];
+    for (const r of shownTeam) {
+      lines.push([
+        r.fullName, r.nationalId ?? "", r.phone ?? "", r.position ?? "", r.maritalStatus ?? "",
+        r.spouseName ?? "", r.spouseId ?? "", kids(r), formatDateTime(r.on),
+      ].map((v) => esc(String(v))).join(","));
+    }
+    const blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "team-details.csv";
+    a.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
@@ -278,6 +362,145 @@ export default function AgrishowPage() {
           </tbody>
         </TableWrap>
       </Card>
+
+      {/* ------------------------------------------ Team member details (Admin only — sensitive HR data) */}
+      {canManageLinks && (<>
+      <div className="flex items-center gap-3 pt-2">
+        <span className="h-3 w-3 rounded-sm bg-gold" />
+        <h2 className="text-[0.8rem] font-bold uppercase tracking-wide text-ink">Team member details</h2>
+        <span className="text-xs text-muted">Personal &amp; family details, corrected by each team member</span>
+      </div>
+
+      <Card>
+        <CardHeader title="Team details link" />
+        <p className="-mt-1 mb-3 text-xs text-muted">Create a link and share it with your team. Each member opens it to submit and correct their own details — name, marital status, spouse and children (with IDs and birth dates). Re-opening the link updates their record.</p>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button onClick={() => setShowCreateTeam((v) => !v)}>{showCreateTeam ? "Cancel" : "＋ Create link"}</Button>
+          {activeTeamLinks.map((l) => (
+            <Button key={l.id} variant="secondary" onClick={() => window.open(`${origin}/team/${l.token}`, "_blank", "noopener,noreferrer")}>
+              {l.title} · open form
+            </Button>
+          ))}
+          {!loading && activeTeamLinks.length === 0 && <span className="text-sm text-muted">No active links yet — create one.</span>}
+        </div>
+        {showCreateTeam && (
+          <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-line p-3 sm:grid-cols-3">
+            <Field label="Title"><Input value={teamTitle} onChange={(e) => setTeamTitle(e.target.value)} placeholder="e.g. Team details 2026" /></Field>
+            <div className="flex items-end"><Button onClick={createTeam} disabled={creatingTeam}>{creatingTeam ? "Creating…" : "Create link"}</Button></div>
+          </div>
+        )}
+      </Card>
+
+      {canManageLinks && teamLinks.length > 0 && (
+        <Card>
+          <CardHeader title={`Manage team links (${teamLinks.length})`} />
+          <TableWrap>
+            <thead><tr><Th>Title</Th><Th>Link</Th><Th>Status</Th><Th className="text-right">Submitted</Th><Th></Th></tr></thead>
+            <tbody>
+              {teamLinks.map((l) => {
+                const count = teamDetails.filter((r) => r.token === l.token).length;
+                return (
+                  <tr key={l.id}>
+                    <Td className="font-medium">{l.title}</Td>
+                    <Td>
+                      <div className="flex items-center gap-2">
+                        <code className="max-w-[280px] truncate rounded bg-ink/5 px-2 py-1 text-xs">{`${origin}/team/${l.token}`}</code>
+                        <Button size="sm" variant="ghost" onClick={() => copy(`${origin}/team/${l.token}`)}>Copy</Button>
+                      </div>
+                    </Td>
+                    <Td>{l.active ? <Pill tone="green">Active</Pill> : <Pill tone="neutral">Closed</Pill>}</Td>
+                    <Td className="text-right font-medium">{count.toLocaleString()}</Td>
+                    <Td><Button size="sm" variant="ghost" onClick={() => toggleTeam(l)}>{l.active ? "Close" : "Reopen"}</Button></Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </TableWrap>
+        </Card>
+      )}
+
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <CardHeader title={`Team records (${shownTeam.length})`} />
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="w-56"><Input value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)} placeholder="Search name, ID, child…" /></div>
+            <Button variant="secondary" onClick={downloadTeamCsv}>CSV</Button>
+          </div>
+        </div>
+        <TableWrap>
+          <thead><tr>
+            <Th>Name</Th><Th>National ID</Th><Th>Phone</Th><Th>Position</Th><Th>Marital status</Th><Th>Spouse</Th><Th className="text-right">Children</Th><Th>Submitted</Th><Th></Th>
+          </tr></thead>
+          <tbody>
+            {shownTeam.length === 0 ? (
+              <EmptyRow colSpan={9} text={loading ? "" : "No team records yet — share the link with your team."} />
+            ) : shownTeam.map((r) => (
+              <tr key={r.id}>
+                <Td className="font-medium">{r.fullName}</Td>
+                <Td>{r.nationalId || "—"}</Td>
+                <Td>{r.phone || "—"}</Td>
+                <Td>{r.position || "—"}</Td>
+                <Td>{r.maritalStatus || "—"}</Td>
+                <Td>{r.spouseName || "—"}</Td>
+                <Td className="text-right">{r.children.length || "—"}</Td>
+                <Td>{formatDateTime(r.on)}</Td>
+                <Td>
+                  <div className="flex justify-end gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => setViewRec(r)}>View</Button>
+                    <Button size="sm" variant="ghost" onClick={() => removeRecord(r)}>Delete</Button>
+                  </div>
+                </Td>
+              </tr>
+            ))}
+          </tbody>
+        </TableWrap>
+      </Card>
+
+      <Modal open={!!viewRec} onClose={() => setViewRec(null)} title={viewRec ? viewRec.fullName : ""} className="max-w-lg">
+        {viewRec && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              <Info label="National ID" value={viewRec.nationalId || "—"} />
+              <Info label="Phone" value={viewRec.phone || "—"} />
+              <Info label="Position / department" value={viewRec.position || "—"} />
+              <Info label="Marital status" value={viewRec.maritalStatus || "—"} />
+              {viewRec.maritalStatus === "Married" && <>
+                <Info label="Spouse" value={viewRec.spouseName || "—"} />
+                <Info label="Spouse National ID" value={viewRec.spouseId || "—"} />
+              </>}
+              <Info label="Submitted" value={formatDateTime(viewRec.on)} />
+            </div>
+            <div>
+              <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Children ({viewRec.children.length})</p>
+              {viewRec.children.length === 0 ? (
+                <p className="text-sm text-muted">No children recorded.</p>
+              ) : (
+                <div className="space-y-2">
+                  {viewRec.children.map((c, i) => (
+                    <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+                      <span className="font-medium text-ink">{c.name}</span>
+                      <span className="flex flex-wrap gap-x-3 text-xs text-muted">
+                        <span>ID: {c.nationalId || "—"}</span>
+                        <span>Born: {c.birthDate ? formatDate(c.birthDate) : "—"}</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+      </Modal>
+      </>)}
+    </div>
+  );
+}
+
+function Info({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="font-medium text-ink">{value}</p>
     </div>
   );
 }
