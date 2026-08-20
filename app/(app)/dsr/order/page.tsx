@@ -205,7 +205,7 @@ export default function DsrOrderPage() {
               {openDates.length === 0 ? (
                 <p className="text-sm text-status-refunded">No ordering dates are open yet. Check back later.</p>
               ) : (
-                <Select value={date} placeholder="Select an open delivery date" options={openDates.map((a) => ({ value: a.id, label: formatDate(a.date) }))} onChange={(e) => setDate(e.target.value)} />
+                <Select value={date} placeholder="Select an open delivery date" options={openDates.map((a) => ({ value: a.id, label: formatDate(a.date) + (product ? ` · ${availableFor(a, product as Product, orders).toLocaleString()} left` : "") }))} onChange={(e) => setDate(e.target.value)} />
               )}
             </Field>
           </div>
