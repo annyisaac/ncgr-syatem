@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import Image from "next/image";
 
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
-import { Modal } from "@/components/ui/Modal";
 import { Pill } from "@/components/ui/Pill";
 import { Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td } from "@/components/ui/Table";
@@ -14,6 +14,7 @@ import { CANDLING_1_CATEGORIES, CANDLING_2_CATEGORIES, LIFECYCLE_STEPS, type Bat
 import { flockRemoved, flockTransferred, removedInStage, stepLabel } from "@/lib/hatchery/lifecycle";
 import { deliveryDateOf, projectedChicksOf } from "@/lib/projection";
 import { formatDate, formatDateTime } from "@/lib/format";
+import { COMPANY } from "@/lib/config";
 import type { Product } from "@/lib/types";
 
 /**
@@ -188,14 +189,13 @@ export function ProductBatchesView({ product }: { product: Product }) {
       </Card>
 
       {/* Details — opens over the cards */}
-      <Modal
-        open={!!batch}
-        onClose={() => setSelected(null)}
-        title={batch ? `${batch.batchNo} — everything on this batch` : ""}
-        className="max-w-3xl"
-      >
-        {batch && <BatchDetails batch={batch} available={availByBatch.get(batch.id) ?? 0} />}
-      </Modal>
+      {batch && (
+        <BatchDetailsModal
+          batch={batch}
+          available={availByBatch.get(batch.id) ?? 0}
+          onClose={() => setSelected(null)}
+        />
+      )}
     </div>
   );
 }
@@ -209,13 +209,20 @@ const candLabel = (key: string) => CAND_LABELS[key] ?? key;
 const num = (n: number | undefined) => (n ?? 0).toLocaleString();
 
 /**
- * Everything recorded on a batch, stage by stage: eggs set, eggs removed at
- * Candling I and II (with the category breakdown), eggs transferred to the
- * hatcher, then the chick numbers — hatched, culls, unhatched, counted,
- * saleable and available. A number reads "—" until its stage is reached, so a
- * not-yet-candled batch never looks like "0 removed".
+ * Full "everything on this batch" overlay, styled to the batch-lifecycle
+ * design: a branded header, an icon-tiled stat grid (eggs set → candling
+ * removals & remaining → transfer → chicks → counting), the candling category
+ * breakdown, a per-flock row and a connected progress timeline. A number reads
+ * "—" until its stage is reached, so a not-yet-candled batch never looks like
+ * "0 removed"; the two "remaining after candling" figures always show.
  */
-function BatchDetails({ batch, available }: { batch: Batch; available: number }) {
+function BatchDetailsModal({ batch, available, onClose }: { batch: Batch; available: number; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
   const doneC1 = !!batch.steps?.["candling-1"];
   const doneC2 = !!batch.steps?.["candling-2"];
   const doneTransfer = !!batch.steps?.["transfer"];
@@ -230,115 +237,166 @@ function BatchDetails({ batch, available }: { batch: Batch; available: number })
   const remainingAfterC2 = Math.max(0, batch.eggsSet - c1 - c2);
   const transferred = (batch.transfers ?? []).reduce((s, t) => s + (t.eggs || 0), 0);
 
+  const tiles: { label: string; value: ReactNode; icon: ReactNode }[] = [
+    { label: "Set date", icon: <IcoCal2 />, value: batch.setDate ? formatDate(batch.setDate) : "—" },
+    { label: "Delivery date", icon: <IcoCal2 />, value: batch.setDate ? formatDate(deliveryDateOf(batch.setDate)) : "—" },
+    { label: "Expected chicks", icon: <IcoChick />, value: num(projectedChicksOf(batch)) },
+    { label: "Status", icon: <IcoShield />, value: <Pill tone={statusTone(batch.status)}>{batch.status}</Pill> },
+    { label: "Eggs through the stages", icon: <IcoEgg />, value: num(batch.eggsSet) },
+    { label: "Removed · Candling I", icon: <IcoTrash />, value: doneC1 ? `−${num(c1)}` : "—" },
+    { label: "Remaining after Candling I", icon: <IcoTrend />, value: num(remainingAfterC1) },
+    { label: "Transferred to hatcher", icon: <IcoTruck />, value: doneTransfer ? num(transferred) : "—" },
+    { label: "Removed · Candling II", icon: <IcoTrash />, value: doneC2 ? `−${num(c2)}` : "—" },
+    { label: "Remaining after Candling II", icon: <IcoTrend />, value: num(remainingAfterC2) },
+    { label: "Hatched", icon: <IcoChick />, value: doneHatch ? num(batch.hatchedCount) : "—" },
+    { label: "Unhatched", icon: <IcoEgg />, value: doneHatch ? num(batch.unhatchedCount) : "—" },
+    { label: "Counted", icon: <IcoBox />, value: doneCount ? num(batch.countedTotal) : "—" },
+    { label: "Saleable", icon: <IcoEgg />, value: num(batch.saleableCount) },
+    { label: "Available now", icon: <IcoCheck />, value: num(available) },
+  ];
+  // Pad to a multiple of 4 (also a multiple of 2) so the cell dividers stay
+  // square at both the 2- and 4-column breakpoints.
+  const fillers = (4 - (tiles.length % 4)) % 4;
+
   return (
-    <div>
-      {/* Overview */}
-      <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-        <Info label="Set date" value={batch.setDate ? formatDate(batch.setDate) : "—"} />
-        <Info label="Delivery date" value={batch.setDate ? formatDate(deliveryDateOf(batch.setDate)) : "—"} />
-        <Info label="Expected chicks" value={num(projectedChicksOf(batch))} />
-        <Info label="Status" value={batch.status} />
-      </div>
-
-      {/* Eggs through the stages */}
-      <div className="mt-4">
-        <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Eggs through the stages</p>
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
-          <Info label="Eggs set" value={num(batch.eggsSet)} />
-          <Info label="Removed · Candling I" value={doneC1 ? `−${num(c1)}` : "—"} />
-          <Info label="Remaining after Candling I" value={num(remainingAfterC1)} />
-          <Info label="Removed · Candling II" value={doneC2 ? `−${num(c2)}` : "—"} />
-          <Info label="Remaining after Candling II" value={num(remainingAfterC2)} />
-          <Info label="Transferred to hatcher" value={doneTransfer ? num(transferred) : "—"} />
-        </div>
-      </div>
-
-      {/* Chicks & counting */}
-      <div className="mt-4">
-        <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Chicks &amp; counting</p>
-        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-          <Info label="Hatched" value={doneHatch ? num(batch.hatchedCount) : "—"} />
-          <Info label="Culls (dead / weak)" value={doneHatch ? num(batch.culls) : "—"} />
-          <Info label="Unhatched" value={doneHatch ? num(batch.unhatchedCount) : "—"} />
-          <Info label="Counted" value={doneCount ? num(batch.countedTotal) : "—"} />
-          <Info label="Saleable" value={num(batch.saleableCount)} />
-          <Info label="Available now" value={num(available)} />
-        </div>
-      </div>
-
-      {/* Candling breakdown by category */}
-      {batch.candlings && batch.candlings.length > 0 && (
-        <div className="mt-4">
-          <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">What was removed at candling</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            {([1, 2] as const).map((stage) => {
-              const recs = batch.candlings.filter((c) => c.stage === stage);
-              if (recs.length === 0) return null;
-              const cats: Record<string, number> = {};
-              let total = 0;
-              for (const rec of recs) {
-                total += rec.totalRemoved || 0;
-                for (const [k, v] of Object.entries(rec.categories ?? {})) cats[k] = (cats[k] ?? 0) + (v || 0);
-              }
-              const entries = Object.entries(cats).filter(([, v]) => v > 0);
-              return (
-                <div key={stage} className="rounded-lg border border-line p-3">
-                  <div className="mb-2 flex items-center justify-between">
-                    <p className="text-sm font-semibold text-ink">Candling {stage === 1 ? "I" : "II"}</p>
-                    <p className="text-sm font-bold text-ink">−{num(total)}</p>
-                  </div>
-                  {entries.length === 0 ? (
-                    <p className="text-xs text-muted">No eggs removed.</p>
-                  ) : (
-                    <div className="flex flex-wrap gap-1.5">
-                      {entries.map(([k, v]) => (
-                        <span key={k} className="rounded-full bg-grey-bg px-2 py-0.5 text-xs text-ink">{candLabel(k)} {num(v)}</span>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6" role="dialog" aria-modal="true" aria-label={`${batch.batchNo} details`}>
+      <div className="absolute inset-0 bg-ink/50" onClick={onClose} aria-hidden="true" />
+      <div className="relative z-10 flex max-h-[94vh] w-full max-w-4xl flex-col overflow-hidden rounded-3xl border border-line bg-paper shadow-pop">
+        {/* Header */}
+        <div className="flex shrink-0 items-center justify-between gap-3 border-b border-line px-4 py-3.5 sm:px-6">
+          <div className="flex min-w-0 items-center gap-3 sm:gap-4">
+            <Image src={COMPANY.logoPath} alt={`${COMPANY.name} logo`} width={132} height={44} className="brand-logo hidden h-10 w-auto shrink-0 object-contain sm:block" unoptimized />
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="truncate text-lg font-extrabold tracking-tight text-ink sm:text-xl">{batch.batchNo}</h3>
+                <Pill tone={statusTone(batch.status)}>{batch.status}</Pill>
+              </div>
+              <p className="text-xs text-muted">Everything on this batch</p>
+            </div>
           </div>
+          <Button variant="ghost" size="sm" onClick={onClose}>✕ Close</Button>
         </div>
-      )}
 
-      {/* Per-flock breakdown */}
-      {batch.flocks && batch.flocks.length > 0 && (
-        <div className="mt-4">
-          <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Flocks in this batch</p>
-          <div className="space-y-1.5 text-sm">
-            {batch.flocks.map((f) => (
-              <div key={f.flockId + f.farm} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md border border-line px-3 py-2">
-                <span className="font-medium text-ink">{f.farm ? `${f.farm} · ` : ""}flock {f.flockId}</span>
-                <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
-                  <span>set {num(f.eggsSet)}</span>
-                  <span>C1 −{num(flockRemoved(f, 1))}</span>
-                  <span>C2 −{num(flockRemoved(f, 2))}</span>
-                  <span>transferred {num(flockTransferred(f))}</span>
-                </span>
+        {/* Body */}
+        <div className="grow space-y-6 overflow-y-auto bg-cream px-4 py-5 sm:px-6">
+          {/* Stat grid */}
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
+            {tiles.map((t) => (
+              <div key={t.label} className="flex items-start gap-3 bg-paper p-3.5">
+                <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-green-bg text-green">{t.icon}</span>
+                <div className="min-w-0">
+                  <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">{t.label}</p>
+                  <div className="mt-0.5 text-lg font-bold leading-tight text-ink">{t.value}</div>
+                </div>
               </div>
             ))}
+            {Array.from({ length: fillers }).map((_, i) => <div key={`f${i}`} className="bg-paper" />)}
+          </div>
+
+          {/* Candling breakdown */}
+          {batch.candlings && batch.candlings.length > 0 && (
+            <div>
+              <SectionTitle>What was removed at candling</SectionTitle>
+              <div className="grid gap-3 sm:grid-cols-2">
+                {([1, 2] as const).map((stage) => {
+                  const recs = batch.candlings.filter((c) => c.stage === stage);
+                  if (recs.length === 0) return null;
+                  const cats: Record<string, number> = {};
+                  let total = 0;
+                  for (const rec of recs) {
+                    total += rec.totalRemoved || 0;
+                    for (const [k, v] of Object.entries(rec.categories ?? {})) cats[k] = (cats[k] ?? 0) + (v || 0);
+                  }
+                  const entries = Object.entries(cats).filter(([, v]) => v > 0);
+                  return (
+                    <div key={stage} className="rounded-2xl border border-line bg-paper p-4">
+                      <div className="mb-2.5 flex items-center justify-between">
+                        <div className="flex items-center gap-2.5">
+                          <span className="grid h-9 w-9 place-items-center rounded-xl bg-green-bg text-green"><IcoSearch /></span>
+                          <p className="text-base font-bold text-ink">Candling {stage === 1 ? "I" : "II"}</p>
+                        </div>
+                        <p className="text-lg font-bold text-red">−{num(total)}</p>
+                      </div>
+                      {entries.length === 0 ? (
+                        <p className="text-xs text-muted">No eggs removed.</p>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5">
+                          {entries.map(([k, v]) => (
+                            <span key={k} className="rounded-full bg-grey-bg px-2.5 py-1 text-xs font-medium text-ink">{candLabel(k)} {num(v)}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Flocks */}
+          {batch.flocks && batch.flocks.length > 0 && (
+            <div>
+              <SectionTitle>Flocks in this batch</SectionTitle>
+              <div className="space-y-2.5">
+                {batch.flocks.map((f) => (
+                  <div key={f.flockId + f.farm} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-paper p-3.5">
+                    <div className="flex items-center gap-2.5">
+                      <span className="grid h-9 w-9 place-items-center rounded-xl bg-green-bg text-green"><IcoHen /></span>
+                      <p className="font-bold text-ink">{f.farm ? `${f.farm} · ` : ""}flock {f.flockId}</p>
+                    </div>
+                    <div className="flex gap-5 sm:gap-8">
+                      <FlockNum label="Set" value={num(f.eggsSet)} />
+                      <FlockNum label="C1" value={`−${num(flockRemoved(f, 1))}`} />
+                      <FlockNum label="C2" value={`−${num(flockRemoved(f, 2))}`} />
+                      <FlockNum label="Transferred" value={num(flockTransferred(f))} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Progress timeline */}
+          <div>
+            <SectionTitle>Progress</SectionTitle>
+            <ol className="relative">
+              {LIFECYCLE_STEPS.map((s, i) => {
+                const mark = batch.steps?.[s.key];
+                const isNext = !mark && LIFECYCLE_STEPS.find((x) => !batch.steps?.[x.key])?.key === s.key;
+                const last = i === LIFECYCLE_STEPS.length - 1;
+                return (
+                  <li key={s.key} className="relative flex gap-3 pb-2">
+                    {!last && <span className="absolute bottom-0 left-[13px] top-7 w-0.5 bg-line" aria-hidden="true" />}
+                    <span className={`relative z-10 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full text-xs font-bold ${mark ? "bg-green text-white" : isNext ? "bg-gold text-[#231b04]" : "border-2 border-line bg-paper text-muted"}`}>
+                      {mark ? <IcoTick /> : isNext ? "→" : ""}
+                    </span>
+                    <div className={`flex flex-1 items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-sm ${mark ? "border-green/25 bg-green-bg" : isNext ? "border-gold/40 bg-gold-bg" : "border-line bg-paper"}`}>
+                      <span className="font-semibold text-ink">{s.label}</span>
+                      <span className="flex items-center gap-2 text-xs text-muted">
+                        {mark && <span className="flex items-center gap-1"><IcoCal2 />{formatDateTime(mark.on)}</span>}
+                        <IcoChevron />
+                      </span>
+                    </div>
+                  </li>
+                );
+              })}
+            </ol>
           </div>
         </div>
-      )}
-
-      {/* Progress timeline */}
-      <div className="mt-4">
-        <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Progress</p>
-        <ol className="space-y-1.5">
-          {LIFECYCLE_STEPS.map((s) => {
-            const mark = batch.steps?.[s.key];
-            const isNext = !mark && LIFECYCLE_STEPS.find((x) => !batch.steps?.[x.key])?.key === s.key;
-            return (
-              <li key={s.key} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${mark ? "border-green/30 bg-green-bg" : isNext ? "border-gold bg-gold-bg" : "border-line"}`}>
-                <span className="font-medium">{mark ? "✓ " : isNext ? "→ " : ""}{s.label}</span>
-                {mark && <span className="text-xs text-muted">{formatDateTime(mark.on)}</span>}
-              </li>
-            );
-          })}
-        </ol>
       </div>
+    </div>
+  );
+}
+
+function SectionTitle({ children }: { children: ReactNode }) {
+  return <p className="mb-2.5 text-[0.72rem] font-bold uppercase tracking-wide text-green">{children}</p>;
+}
+
+function FlockNum({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="text-right">
+      <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="text-sm font-bold tabular-nums text-ink">{value}</p>
     </div>
   );
 }
@@ -392,15 +450,6 @@ function CardStat({ label, value, green }: { label: string; value: string; green
   );
 }
 
-function Info({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
-      <p className="font-medium text-ink">{value}</p>
-    </div>
-  );
-}
-
 // ---- stat card ------------------------------------------------------------
 
 type Tone = "green" | "gold" | "blue";
@@ -433,6 +482,15 @@ const IcoSyringe = () => hsvg(<><path d="M18 2l4 4M17 5l2 2M15 7l2 2M12 10l-8 8-
 const IcoCheck = () => hsvg(<><circle cx="12" cy="12" r="9" /><path d="M8 12l3 3 5-6" /></>);
 const IcoGrid = () => hsvg(<><rect x="3" y="3" width="7" height="7" rx="1" /><rect x="14" y="3" width="7" height="7" rx="1" /><rect x="3" y="14" width="7" height="7" rx="1" /><rect x="14" y="14" width="7" height="7" rx="1" /></>, 15);
 const IcoList = () => hsvg(<><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></>, 15);
+// Batch-details tile / timeline icons
+const IcoCal2 = () => hsvg(<><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M4 9h16M9 3v4M15 3v4" /></>, 14);
+const IcoShield = () => hsvg(<><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z" /><path d="M9 12l2 2 4-4" /></>, 17);
+const IcoTrash = () => hsvg(<><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13h10l1-13" /></>, 17);
+const IcoTrend = () => hsvg(<><path d="M4 15l5-5 4 4 7-7" /><path d="M17 7h4v4" /></>, 17);
+const IcoTruck = () => hsvg(<><rect x="1" y="6" width="13" height="10" rx="1" /><path d="M14 9h4l3 3v4h-7" /><circle cx="6" cy="18" r="1.6" /><circle cx="18" cy="18" r="1.6" /></>, 17);
+const IcoHen = () => hsvg(<><path d="M6 20c0-4 2-7 5-8 0-3 2-5 4-4 0 2-1 3-2 3 2 1 3 3 3 6 0 4-3 7-7 7H6v-4Z" /><path d="M9.5 9L7 7" /></>, 18);
+const IcoTick = () => hsvg(<path d="M5 12l4 4 10-11" />, 13);
+const IcoChevron = () => hsvg(<path d="M6 9l6 6 6-6" />, 14);
 
 function stageIcon(step: string) {
   if (step.startsWith("candling")) return <IcoSearch />;
