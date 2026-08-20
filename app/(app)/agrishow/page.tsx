@@ -42,6 +42,9 @@ function monthLabel(m?: string): string {
   return d.toLocaleDateString(undefined, { month: "short", year: "numeric" });
 }
 
+const IcoTicket = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2 2 2 0 0 0 0 4 2 2 0 0 1-2 2H6a2 2 0 0 1-2-2 2 2 0 0 0 0-4Z" /><path d="M14 6v12" /></svg>);
+const IcoPeople = () => (<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="9" cy="8" r="3" /><path d="M15 11a3 3 0 1 0-2-5.2" /><path d="M3 20c0-3 2.7-5 6-5s6 2 6 5" /><path d="M17 15c2.5.5 4 2.3 4 5" /></svg>);
+
 export default function AgrishowPage() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -64,6 +67,8 @@ export default function AgrishowPage() {
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [teamSearch, setTeamSearch] = useState("");
   const [viewRec, setViewRec] = useState<TeamDetail | null>(null);
+  // Which card is open: null = the card grid, else an event or the team form.
+  const [view, setView] = useState<{ kind: "event"; event: string } | { kind: "team" } | null>(null);
 
   const isAdmin = user?.role === "Admin" || user?.role === "Ross Payment Checker";
   // Only a true Admin manages existing links (copy / close / reopen).
@@ -112,10 +117,7 @@ export default function AgrishowPage() {
   const origin = typeof window !== "undefined" ? window.location.origin : "";
   const linkUrl = (t: string) => `${origin}/visit/${t}`;
 
-  const eventOptions = useMemo(() => {
-    const names = Array.from(new Set(links.map((l) => l.event))).sort();
-    return [{ value: "all", label: "All events" }, ...names.map((n) => ({ value: n, label: n }))];
-  }, [links]);
+  const eventNames = useMemo(() => Array.from(new Set(links.map((l) => l.event))).sort(), [links]);
 
   const shownRegs = useMemo(() => {
     const range: DateRangeValue = presetToRange(preset, ALL_TIME, todayISO());
@@ -261,44 +263,100 @@ export default function AgrishowPage() {
 
   return (
     <div className="space-y-5">
+      {/* ---------------------------------------------------------------- Landing: pick a card */}
+      {view === null && (<>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <h1 className="text-lg font-bold text-ink">Events &amp; forms</h1>
+          <Button onClick={() => setShowCreate((v) => !v)}>{showCreate ? "Cancel" : "＋ New event"}</Button>
+        </div>
+        {showCreate && (
+          <Card>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <Field label="Event name"><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Agrishow 2026" /></Field>
+              <div className="flex items-end"><Button onClick={create} disabled={creating}>{creating ? "Creating…" : "Create event"}</Button></div>
+            </div>
+          </Card>
+        )}
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {eventNames.length === 0 && !loading && (
+            <Card><p className="py-6 text-center text-sm text-muted">No events yet — create one to get a shareable registration form.</p></Card>
+          )}
+          {eventNames.map((ev) => {
+            const evLinks = links.filter((l) => l.event === ev);
+            const active = evLinks.some((l) => l.active);
+            const count = regs.filter((r) => r.event === ev).length;
+            const created = evLinks.map((l) => l.createdAt).sort()[0];
+            return (
+              <button key={ev} type="button" onClick={() => { setView({ kind: "event", event: ev }); setEventFilter(ev); }}
+                className="flex flex-col rounded-2xl border border-line bg-paper p-4 text-left shadow-card transition hover:border-gold">
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex min-w-0 items-center gap-2.5">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-bg text-gold-dark"><IcoTicket /></span>
+                    <p className="truncate font-bold text-ink">{ev}</p>
+                  </div>
+                  <Pill tone={active ? "green" : "neutral"}>{active ? "Active" : "Closed"}</Pill>
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3">
+                  <Info label="Registered" value={count.toLocaleString()} />
+                  <Info label="Created" value={created ? formatDate(created.slice(0, 10)) : "—"} />
+                </div>
+                <span className="mt-3 text-xs font-semibold text-gold-dark">Open →</span>
+              </button>
+            );
+          })}
+          {canManageLinks && (
+            <button type="button" onClick={() => setView({ kind: "team" })}
+              className="flex flex-col rounded-2xl border border-line bg-paper p-4 text-left shadow-card transition hover:border-gold">
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex min-w-0 items-center gap-2.5">
+                  <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-green-bg text-green"><IcoPeople /></span>
+                  <p className="truncate font-bold text-ink">Team member details</p>
+                </div>
+                <Pill tone="gold">HR</Pill>
+              </div>
+              <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3">
+                <Info label="Records" value={teamDetails.length.toLocaleString()} />
+                <Info label="Active links" value={String(activeTeamLinks.length)} />
+              </div>
+              <span className="mt-3 text-xs font-semibold text-gold-dark">Open →</span>
+            </button>
+          )}
+        </div>
+      </>)}
+
+      {/* ---------------------------------------------------------------- Event detail */}
+      {view?.kind === "event" && (<>
+      <button type="button" onClick={() => { setView(null); setEventFilter("all"); }} className="text-sm font-medium text-gold-dark hover:underline">← Back to events</button>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-lg font-bold text-ink">{view.event}</h1>
+        <Pill tone={links.some((l) => l.event === view.event && l.active) ? "green" : "neutral"}>{links.some((l) => l.event === view.event && l.active) ? "Active" : "Closed"}</Pill>
+      </div>
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile label="Customers who visited us" value={shownRegs.length.toLocaleString()} tone="green" />
-        <StatTile label="Active links" value={String(links.filter((l) => l.active).length)} />
-        <StatTile label="Events" value={String(new Set(links.map((l) => l.event)).size)} />
+        <StatTile label="Registered" value={shownRegs.length.toLocaleString()} tone="green" />
+        <StatTile label="Active links" value={String(links.filter((l) => l.event === view.event && l.active).length)} />
+        <StatTile label="Total links" value={String(links.filter((l) => l.event === view.event).length)} />
       </div>
 
       <Card>
-        <CardHeader title="Registration links" />
-        <p className="-mt-1 mb-3 text-xs text-muted">Create a link and send it to your team. Click an active link to open its registration form.</p>
+        <CardHeader title="Registration form link" />
+        <p className="-mt-1 mb-3 text-xs text-muted">Share this link — visitors open it to register. Manage or close it below.</p>
         <div className="flex flex-wrap items-center gap-2">
-          <Button onClick={() => setShowCreate((v) => !v)}>{showCreate ? "Cancel" : "＋ Create link"}</Button>
-          {links.filter((l) => l.active).map((l) => (
-            <Button key={l.id} variant="secondary" onClick={() => window.open(linkUrl(l.token), "_blank", "noopener,noreferrer")}>
-              {l.event} · open form
-            </Button>
+          {links.filter((l) => l.event === view.event && l.active).map((l) => (
+            <Button key={l.id} variant="secondary" onClick={() => window.open(linkUrl(l.token), "_blank", "noopener,noreferrer")}>Open form</Button>
           ))}
-          {!loading && links.filter((l) => l.active).length === 0 && (
-            <span className="text-sm text-muted">No active links yet — create one.</span>
-          )}
+          {links.filter((l) => l.event === view.event && l.active).length === 0 && <span className="text-sm text-muted">No active link — reopen one below.</span>}
         </div>
-
-        {showCreate && (
-          <div className="mt-4 grid grid-cols-1 gap-4 rounded-lg border border-line p-3 sm:grid-cols-3">
-            <Field label="Event name"><Input value={eventName} onChange={(e) => setEventName(e.target.value)} placeholder="e.g. Agrishow 2026" /></Field>
-            <div className="flex items-end"><Button onClick={create} disabled={creating}>{creating ? "Creating…" : "Create link"}</Button></div>
-          </div>
-        )}
       </Card>
 
       {canManageLinks && (
       <Card>
-        <CardHeader title={`Manage links (${links.length})`} />
+        <CardHeader title={`Manage links (${links.filter((l) => l.event === view.event).length})`} />
         <TableWrap>
           <thead><tr><Th>Event</Th><Th>Link</Th><Th>Status</Th><Th className="text-right">Registered</Th><Th></Th></tr></thead>
           <tbody>
-            {links.length === 0 ? (
-              <EmptyRow colSpan={5} text={loading ? "" : "No links yet — create one above."} />
-            ) : links.map((l) => {
+            {links.filter((l) => l.event === view.event).length === 0 ? (
+              <EmptyRow colSpan={5} text="No links for this event." />
+            ) : links.filter((l) => l.event === view.event).map((l) => {
               const count = regs.filter((r) => r.token === l.token).length;
               return (
                 <tr key={l.id}>
@@ -324,7 +382,6 @@ export default function AgrishowPage() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <CardHeader title={`Visitors (${shownRegs.length})`} />
           <div className="flex flex-wrap items-center gap-2">
-            <div className="w-40"><Select value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} options={eventOptions} /></div>
             <div className="w-44"><Select value={productFilter} onChange={(e) => setProductFilter(e.target.value)} options={[
               { value: "all", label: "All products" },
               { value: "Ross 308", label: "Ross 308" },
@@ -362,13 +419,14 @@ export default function AgrishowPage() {
           </tbody>
         </TableWrap>
       </Card>
+      </>)}
 
-      {/* ------------------------------------------ Team member details (Admin only — sensitive HR data) */}
-      {canManageLinks && (<>
-      <div className="flex items-center gap-3 pt-2">
-        <span className="h-3 w-3 rounded-sm bg-gold" />
-        <h2 className="text-[0.8rem] font-bold uppercase tracking-wide text-ink">Team member details</h2>
-        <span className="text-xs text-muted">Personal &amp; family details, corrected by each team member</span>
+      {/* ---------------------------------------------------------------- Team member details (Admin only — sensitive HR data) */}
+      {view?.kind === "team" && (<>
+      <button type="button" onClick={() => setView(null)} className="text-sm font-medium text-gold-dark hover:underline">← Back to events</button>
+      <div>
+        <h1 className="text-lg font-bold text-ink">Team member details</h1>
+        <p className="text-xs text-muted">Personal &amp; family details, corrected by each team member. Sensitive — Admin only.</p>
       </div>
 
       <Card>
