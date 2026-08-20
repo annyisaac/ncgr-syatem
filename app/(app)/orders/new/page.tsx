@@ -210,9 +210,11 @@ export default function NewOrderPage() {
     return customerCredit(orders, { phone: phone.trim(), name: nm }, undefined, refunded);
   }, [orders, clients, phone, name, existingCustomer]);
 
-  // Ordering availability: only Admin-opened dates are selectable; remaining
-  // chicks are visible to Admin & Zone Managers only.
-  const canSeeAvail = user?.role === "Admin" || user?.role === "Tetra Zone Manager";
+  // Ordering availability: only Admin-opened dates are selectable. Remaining
+  // chicks per date are shown to every staff role that can create an order here
+  // (Admin, Zone Manager, the Ross order receiver, and both payment checkers),
+  // so they can see each delivery date's remaining stock while ordering.
+  const canSeeAvail = canCreate;
   // Only offer dates that carry the chosen product's chicks — a Ross seller
   // never sees Tetra-only dates, a Tetra role never sees Ross-only dates.
   const openDates = useMemo(
