@@ -208,6 +208,22 @@ const CAND_LABELS: Record<string, string> = Object.fromEntries(
 const candLabel = (key: string) => CAND_LABELS[key] ?? key;
 const num = (n: number | undefined) => (n ?? 0).toLocaleString();
 
+// Stat-tile semantics: neutral facts, the egg→chick flow, losses (removals /
+// unhatched) and the sellable outcome each read at a glance by colour.
+type TileTone = "muted" | "flow" | "loss" | "out";
+const TILE_CHIP: Record<TileTone, string> = {
+  muted: "bg-grey-bg text-ink/65",
+  flow: "bg-green-bg text-green",
+  loss: "bg-red-bg text-red",
+  out: "bg-gold-bg text-gold-dark",
+};
+const TILE_VALUE: Record<TileTone, string> = {
+  muted: "text-ink",
+  flow: "text-ink",
+  loss: "text-red",
+  out: "text-gold-dark",
+};
+
 /**
  * Full "everything on this batch" overlay, styled to the batch-lifecycle
  * design: a branded header, an icon-tiled stat grid (eggs set → candling
@@ -237,22 +253,22 @@ function BatchDetailsModal({ batch, available, onClose }: { batch: Batch; availa
   const remainingAfterC2 = Math.max(0, batch.eggsSet - c1 - c2);
   const transferred = (batch.transfers ?? []).reduce((s, t) => s + (t.eggs || 0), 0);
 
-  const tiles: { label: string; value: ReactNode; icon: ReactNode }[] = [
-    { label: "Set date", icon: <IcoCal2 />, value: batch.setDate ? formatDate(batch.setDate) : "—" },
-    { label: "Delivery date", icon: <IcoCal2 />, value: batch.setDate ? formatDate(deliveryDateOf(batch.setDate)) : "—" },
-    { label: "Expected chicks", icon: <IcoChick />, value: num(projectedChicksOf(batch)) },
-    { label: "Status", icon: <IcoShield />, value: <Pill tone={statusTone(batch.status)}>{batch.status}</Pill> },
-    { label: "Eggs through the stages", icon: <IcoEgg />, value: num(batch.eggsSet) },
-    { label: "Removed · Candling I", icon: <IcoTrash />, value: doneC1 ? `−${num(c1)}` : "—" },
-    { label: "Remaining after Candling I", icon: <IcoTrend />, value: num(remainingAfterC1) },
-    { label: "Transferred to hatcher", icon: <IcoTransfer />, value: doneTransfer ? num(transferred) : "—" },
-    { label: "Removed · Candling II", icon: <IcoTrash />, value: doneC2 ? `−${num(c2)}` : "—" },
-    { label: "Remaining after Candling II", icon: <IcoTrend />, value: num(remainingAfterC2) },
-    { label: "Hatched", icon: <IcoChick />, value: doneHatch ? num(batch.hatchedCount) : "—" },
-    { label: "Unhatched", icon: <IcoEgg />, value: doneHatch ? num(batch.unhatchedCount) : "—" },
-    { label: "Counted", icon: <IcoBox />, value: doneCount ? num(batch.countedTotal) : "—" },
-    { label: "Saleable", icon: <IcoEgg />, value: num(batch.saleableCount) },
-    { label: "Available now", icon: <IcoCheck />, value: num(available) },
+  const tiles: { label: string; value: ReactNode; icon: ReactNode; tone: TileTone }[] = [
+    { label: "Set date", tone: "muted", icon: <IcoCal2 />, value: batch.setDate ? formatDate(batch.setDate) : "—" },
+    { label: "Delivery date", tone: "muted", icon: <IcoCal2 />, value: batch.setDate ? formatDate(deliveryDateOf(batch.setDate)) : "—" },
+    { label: "Expected chicks", tone: "muted", icon: <IcoChick />, value: num(projectedChicksOf(batch)) },
+    { label: "Status", tone: "muted", icon: <IcoShield />, value: <Pill tone={statusTone(batch.status)}>{batch.status}</Pill> },
+    { label: "Eggs set", tone: "flow", icon: <IcoEgg />, value: num(batch.eggsSet) },
+    { label: "Removed · Candling I", tone: "loss", icon: <IcoTrash />, value: doneC1 ? `−${num(c1)}` : "—" },
+    { label: "Remaining after Candling I", tone: "flow", icon: <IcoTrend />, value: num(remainingAfterC1) },
+    { label: "Transferred to hatcher", tone: "flow", icon: <IcoTransfer />, value: doneTransfer ? num(transferred) : "—" },
+    { label: "Removed · Candling II", tone: "loss", icon: <IcoTrash />, value: doneC2 ? `−${num(c2)}` : "—" },
+    { label: "Remaining after Candling II", tone: "flow", icon: <IcoTrend />, value: num(remainingAfterC2) },
+    { label: "Hatched", tone: "flow", icon: <IcoChick />, value: doneHatch ? num(batch.hatchedCount) : "—" },
+    { label: "Unhatched", tone: "loss", icon: <IcoEgg />, value: doneHatch ? num(batch.unhatchedCount) : "—" },
+    { label: "Counted", tone: "flow", icon: <IcoBox />, value: doneCount ? num(batch.countedTotal) : "—" },
+    { label: "Saleable", tone: "out", icon: <IcoEgg />, value: num(batch.saleableCount) },
+    { label: "Available now", tone: "out", icon: <IcoCheck />, value: num(available) },
   ];
   // Pad to a multiple of 4 (also a multiple of 2) so the cell dividers stay
   // square at both the 2- and 4-column breakpoints.
@@ -280,13 +296,13 @@ function BatchDetailsModal({ batch, available, onClose }: { batch: Batch; availa
         {/* Body */}
         <div className="grow space-y-6 overflow-y-auto bg-cream px-4 py-5 sm:px-6">
           {/* Stat grid */}
-          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
+          <div className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line shadow-card sm:grid-cols-4">
             {tiles.map((t) => (
-              <div key={t.label} className="flex items-start gap-3 bg-paper p-3.5">
-                <span className="mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl bg-green-bg text-green">{t.icon}</span>
+              <div key={t.label} className="flex items-start gap-3 bg-paper p-3.5 transition-colors hover:bg-cream">
+                <span className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-xl ${TILE_CHIP[t.tone]}`}>{t.icon}</span>
                 <div className="min-w-0">
                   <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">{t.label}</p>
-                  <div className="mt-0.5 text-lg font-bold leading-tight text-ink">{t.value}</div>
+                  <div className={`mt-0.5 text-lg font-bold leading-tight tabular-nums ${TILE_VALUE[t.tone]}`}>{t.value}</div>
                 </div>
               </div>
             ))}
@@ -309,7 +325,7 @@ function BatchDetailsModal({ batch, available, onClose }: { batch: Batch; availa
                   }
                   const entries = Object.entries(cats).filter(([, v]) => v > 0);
                   return (
-                    <div key={stage} className="rounded-2xl border border-line bg-paper p-4">
+                    <div key={stage} className="rounded-2xl border border-line bg-paper p-4 shadow-card">
                       <div className="mb-2.5 flex items-center justify-between">
                         <div className="flex items-center gap-2.5">
                           <span className="grid h-9 w-9 place-items-center rounded-xl bg-green-bg text-green"><IcoSearch /></span>
@@ -339,7 +355,7 @@ function BatchDetailsModal({ batch, available, onClose }: { batch: Batch; availa
               <SectionTitle>Flocks in this batch</SectionTitle>
               <div className="space-y-2.5">
                 {batch.flocks.map((f) => (
-                  <div key={f.flockId + f.farm} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-paper p-3.5">
+                  <div key={f.flockId + f.farm} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-paper p-3.5 shadow-card">
                     <div className="flex items-center gap-2.5">
                       <span className="grid h-9 w-9 place-items-center rounded-xl bg-green-bg text-green"><IcoHen /></span>
                       <p className="font-bold text-ink">{f.farm ? `${f.farm} · ` : ""}flock {f.flockId}</p>
