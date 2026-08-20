@@ -13,7 +13,7 @@ import { getSupabase } from "@/lib/supabase";
 import { CANDLING_1_CATEGORIES, CANDLING_2_CATEGORIES, LIFECYCLE_STEPS, type Batch, type ChickInventory } from "@/lib/hatchery/types";
 import { flockRemoved, flockTransferred, removedInStage, stepLabel } from "@/lib/hatchery/lifecycle";
 import { deliveryDateOf, projectedChicksOf } from "@/lib/projection";
-import { formatDate, formatDateTime } from "@/lib/format";
+import { formatDate } from "@/lib/format";
 import { COMPANY } from "@/lib/config";
 import type { Product } from "@/lib/types";
 
@@ -355,33 +355,6 @@ function BatchDetailsModal({ batch, available, onClose }: { batch: Batch; availa
               </div>
             </div>
           )}
-
-          {/* Progress timeline */}
-          <div>
-            <SectionTitle>Progress</SectionTitle>
-            <ol className="relative">
-              {LIFECYCLE_STEPS.map((s, i) => {
-                const mark = batch.steps?.[s.key];
-                const isNext = !mark && LIFECYCLE_STEPS.find((x) => !batch.steps?.[x.key])?.key === s.key;
-                const last = i === LIFECYCLE_STEPS.length - 1;
-                return (
-                  <li key={s.key} className="relative flex gap-3 pb-2">
-                    {!last && <span className="absolute bottom-0 left-[13px] top-7 w-0.5 bg-line" aria-hidden="true" />}
-                    <span className={`relative z-10 grid h-[26px] w-[26px] shrink-0 place-items-center rounded-full text-xs font-bold ${mark ? "bg-green text-white" : isNext ? "bg-gold text-[#231b04]" : "border-2 border-line bg-paper text-muted"}`}>
-                      {mark ? <IcoTick /> : isNext ? "→" : ""}
-                    </span>
-                    <div className={`flex flex-1 items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-sm ${mark ? "border-green/25 bg-green-bg" : isNext ? "border-gold/40 bg-gold-bg" : "border-line bg-paper"}`}>
-                      <span className="font-semibold text-ink">{s.label}</span>
-                      <span className="flex items-center gap-2 text-xs text-muted">
-                        {mark && <span className="flex items-center gap-1"><IcoCal2 />{formatDateTime(mark.on)}</span>}
-                        <IcoChevron />
-                      </span>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
         </div>
       </div>
     </div>
@@ -489,8 +462,6 @@ const IcoTrash = () => hsvg(<><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2
 const IcoTrend = () => hsvg(<><path d="M4 15l5-5 4 4 7-7" /><path d="M17 7h4v4" /></>, 17);
 const IcoTruck = () => hsvg(<><rect x="1" y="6" width="13" height="10" rx="1" /><path d="M14 9h4l3 3v4h-7" /><circle cx="6" cy="18" r="1.6" /><circle cx="18" cy="18" r="1.6" /></>, 17);
 const IcoHen = () => hsvg(<><path d="M6 20c0-4 2-7 5-8 0-3 2-5 4-4 0 2-1 3-2 3 2 1 3 3 3 6 0 4-3 7-7 7H6v-4Z" /><path d="M9.5 9L7 7" /></>, 18);
-const IcoTick = () => hsvg(<path d="M5 12l4 4 10-11" />, 13);
-const IcoChevron = () => hsvg(<path d="M6 9l6 6 6-6" />, 14);
 
 function stageIcon(step: string) {
   if (step.startsWith("candling")) return <IcoSearch />;
