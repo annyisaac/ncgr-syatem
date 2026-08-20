@@ -9,8 +9,8 @@ import { Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td } from "@/components/ui/Table";
 import { fetchTable } from "@/lib/hatchery/db";
 import { getSupabase } from "@/lib/supabase";
-import { LIFECYCLE_STEPS, type Batch, type ChickInventory } from "@/lib/hatchery/types";
-import { stepLabel } from "@/lib/hatchery/lifecycle";
+import { CANDLING_1_CATEGORIES, CANDLING_2_CATEGORIES, LIFECYCLE_STEPS, type Batch, type ChickInventory } from "@/lib/hatchery/types";
+import { flockRemoved, flockTransferred, removedInStage, stepLabel } from "@/lib/hatchery/lifecycle";
 import { deliveryDateOf, projectedChicksOf } from "@/lib/projection";
 import { formatDate, formatDateTime } from "@/lib/format";
 import type { Product } from "@/lib/types";
@@ -187,52 +187,146 @@ export function ProductBatchesView({ product }: { product: Product }) {
       </Card>
 
       {/* Details */}
-      {batch && (
-        <Card>
-          <CardHeader title={`${batch.batchNo} — everything on this batch`} />
-          <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
-            <Info label="Set date" value={batch.setDate ? formatDate(batch.setDate) : "—"} />
-            <Info label="Delivery date" value={batch.setDate ? formatDate(deliveryDateOf(batch.setDate)) : "—"} />
-            <Info label="Eggs set" value={batch.eggsSet.toLocaleString()} />
-            <Info label="Expected chicks" value={projectedChicksOf(batch).toLocaleString()} />
-            <Info label="Hatched" value={batch.hatchedCount.toLocaleString()} />
-            <Info label="Saleable" value={batch.saleableCount.toLocaleString()} />
-            <Info label="Available now" value={(availByBatch.get(batch.id) ?? 0).toLocaleString()} />
-            <Info label="Status" value={batch.status} />
-          </div>
-
-          {batch.flocks && batch.flocks.length > 0 && (
-            <div className="mt-4">
-              <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Flocks in this batch</p>
-              <div className="space-y-1 text-sm">
-                {batch.flocks.map((f) => (
-                  <div key={f.flockId + f.farm} className="flex flex-wrap justify-between gap-2 rounded-md border border-line px-3 py-1.5">
-                    <span>{f.farm ? `${f.farm} · ` : ""}flock {f.flockId}</span>
-                    <span className="text-muted">set {f.eggsSet.toLocaleString()} eggs</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          <div className="mt-4">
-            <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Progress</p>
-            <ol className="space-y-1.5">
-              {LIFECYCLE_STEPS.map((s) => {
-                const mark = batch.steps?.[s.key];
-                const isNext = !mark && LIFECYCLE_STEPS.find((x) => !batch.steps?.[x.key])?.key === s.key;
-                return (
-                  <li key={s.key} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${mark ? "border-green/30 bg-green-bg" : isNext ? "border-gold bg-gold-bg" : "border-line"}`}>
-                    <span className="font-medium">{mark ? "✓ " : isNext ? "→ " : ""}{s.label}</span>
-                    {mark && <span className="text-xs text-muted">{formatDateTime(mark.on)}</span>}
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        </Card>
-      )}
+      {batch && <BatchDetails batch={batch} available={availByBatch.get(batch.id) ?? 0} />}
     </div>
+  );
+}
+
+// ---- batch details (full lifecycle) ---------------------------------------
+
+const CAND_LABELS: Record<string, string> = Object.fromEntries(
+  [...CANDLING_1_CATEGORIES, ...CANDLING_2_CATEGORIES].map((c) => [c.key, c.label])
+);
+const candLabel = (key: string) => CAND_LABELS[key] ?? key;
+const num = (n: number | undefined) => (n ?? 0).toLocaleString();
+
+/**
+ * Everything recorded on a batch, stage by stage: eggs set, eggs removed at
+ * Candling I and II (with the category breakdown), eggs transferred to the
+ * hatcher, then the chick numbers — hatched, culls, unhatched, counted,
+ * saleable and available. A number reads "—" until its stage is reached, so a
+ * not-yet-candled batch never looks like "0 removed".
+ */
+function BatchDetails({ batch, available }: { batch: Batch; available: number }) {
+  const doneC1 = !!batch.steps?.["candling-1"];
+  const doneC2 = !!batch.steps?.["candling-2"];
+  const doneTransfer = !!batch.steps?.["transfer"];
+  const doneHatch = !!batch.steps?.["hatching"];
+  const doneCount = !!batch.steps?.["counting"];
+  const c1 = removedInStage(batch, 1);
+  const c2 = removedInStage(batch, 2);
+  const transferred = (batch.transfers ?? []).reduce((s, t) => s + (t.eggs || 0), 0);
+
+  return (
+    <Card>
+      <CardHeader title={`${batch.batchNo} — everything on this batch`} />
+
+      {/* Overview */}
+      <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+        <Info label="Set date" value={batch.setDate ? formatDate(batch.setDate) : "—"} />
+        <Info label="Delivery date" value={batch.setDate ? formatDate(deliveryDateOf(batch.setDate)) : "—"} />
+        <Info label="Expected chicks" value={num(projectedChicksOf(batch))} />
+        <Info label="Status" value={batch.status} />
+      </div>
+
+      {/* Eggs through the stages */}
+      <div className="mt-4">
+        <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Eggs through the stages</p>
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <Info label="Eggs set" value={num(batch.eggsSet)} />
+          <Info label="Removed · Candling I" value={doneC1 ? `−${num(c1)}` : "—"} />
+          <Info label="Removed · Candling II" value={doneC2 ? `−${num(c2)}` : "—"} />
+          <Info label="Transferred to hatcher" value={doneTransfer ? num(transferred) : "—"} />
+        </div>
+      </div>
+
+      {/* Chicks & counting */}
+      <div className="mt-4">
+        <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Chicks &amp; counting</p>
+        <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+          <Info label="Hatched" value={doneHatch ? num(batch.hatchedCount) : "—"} />
+          <Info label="Culls (dead / weak)" value={doneHatch ? num(batch.culls) : "—"} />
+          <Info label="Unhatched" value={doneHatch ? num(batch.unhatchedCount) : "—"} />
+          <Info label="Counted" value={doneCount ? num(batch.countedTotal) : "—"} />
+          <Info label="Saleable" value={num(batch.saleableCount)} />
+          <Info label="Available now" value={num(available)} />
+        </div>
+      </div>
+
+      {/* Candling breakdown by category */}
+      {batch.candlings && batch.candlings.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">What was removed at candling</p>
+          <div className="grid gap-3 sm:grid-cols-2">
+            {([1, 2] as const).map((stage) => {
+              const recs = batch.candlings.filter((c) => c.stage === stage);
+              if (recs.length === 0) return null;
+              const cats: Record<string, number> = {};
+              let total = 0;
+              for (const rec of recs) {
+                total += rec.totalRemoved || 0;
+                for (const [k, v] of Object.entries(rec.categories ?? {})) cats[k] = (cats[k] ?? 0) + (v || 0);
+              }
+              const entries = Object.entries(cats).filter(([, v]) => v > 0);
+              return (
+                <div key={stage} className="rounded-lg border border-line p-3">
+                  <div className="mb-2 flex items-center justify-between">
+                    <p className="text-sm font-semibold text-ink">Candling {stage === 1 ? "I" : "II"}</p>
+                    <p className="text-sm font-bold text-ink">−{num(total)}</p>
+                  </div>
+                  {entries.length === 0 ? (
+                    <p className="text-xs text-muted">No eggs removed.</p>
+                  ) : (
+                    <div className="flex flex-wrap gap-1.5">
+                      {entries.map(([k, v]) => (
+                        <span key={k} className="rounded-full bg-grey-bg px-2 py-0.5 text-xs text-ink">{candLabel(k)} {num(v)}</span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Per-flock breakdown */}
+      {batch.flocks && batch.flocks.length > 0 && (
+        <div className="mt-4">
+          <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Flocks in this batch</p>
+          <div className="space-y-1.5 text-sm">
+            {batch.flocks.map((f) => (
+              <div key={f.flockId + f.farm} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md border border-line px-3 py-2">
+                <span className="font-medium text-ink">{f.farm ? `${f.farm} · ` : ""}flock {f.flockId}</span>
+                <span className="flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted">
+                  <span>set {num(f.eggsSet)}</span>
+                  <span>C1 −{num(flockRemoved(f, 1))}</span>
+                  <span>C2 −{num(flockRemoved(f, 2))}</span>
+                  <span>transferred {num(flockTransferred(f))}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Progress timeline */}
+      <div className="mt-4">
+        <p className="mb-1 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Progress</p>
+        <ol className="space-y-1.5">
+          {LIFECYCLE_STEPS.map((s) => {
+            const mark = batch.steps?.[s.key];
+            const isNext = !mark && LIFECYCLE_STEPS.find((x) => !batch.steps?.[x.key])?.key === s.key;
+            return (
+              <li key={s.key} className={`flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm ${mark ? "border-green/30 bg-green-bg" : isNext ? "border-gold bg-gold-bg" : "border-line"}`}>
+                <span className="font-medium">{mark ? "✓ " : isNext ? "→ " : ""}{s.label}</span>
+                {mark && <span className="text-xs text-muted">{formatDateTime(mark.on)}</span>}
+              </li>
+            );
+          })}
+        </ol>
+      </div>
+    </Card>
   );
 }
 
