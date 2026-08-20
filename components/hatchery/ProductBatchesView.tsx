@@ -245,7 +245,7 @@ function BatchDetailsModal({ batch, available, onClose }: { batch: Batch; availa
     { label: "Eggs through the stages", icon: <IcoEgg />, value: num(batch.eggsSet) },
     { label: "Removed · Candling I", icon: <IcoTrash />, value: doneC1 ? `−${num(c1)}` : "—" },
     { label: "Remaining after Candling I", icon: <IcoTrend />, value: num(remainingAfterC1) },
-    { label: "Transferred to hatcher", icon: <IcoTruck />, value: doneTransfer ? num(transferred) : "—" },
+    { label: "Transferred to hatcher", icon: <IcoTransfer />, value: doneTransfer ? num(transferred) : "—" },
     { label: "Removed · Candling II", icon: <IcoTrash />, value: doneC2 ? `−${num(c2)}` : "—" },
     { label: "Remaining after Candling II", icon: <IcoTrend />, value: num(remainingAfterC2) },
     { label: "Hatched", icon: <IcoChick />, value: doneHatch ? num(batch.hatchedCount) : "—" },
@@ -460,7 +460,7 @@ const IcoCal2 = () => hsvg(<><rect x="4" y="5" width="16" height="16" rx="2" /><
 const IcoShield = () => hsvg(<><path d="M12 3l7 3v5c0 4.5-3 7.6-7 9-4-1.4-7-4.5-7-9V6l7-3Z" /><path d="M9 12l2 2 4-4" /></>, 17);
 const IcoTrash = () => hsvg(<><path d="M4 7h16M9 7V5a1 1 0 011-1h4a1 1 0 011 1v2M6 7l1 13h10l1-13" /></>, 17);
 const IcoTrend = () => hsvg(<><path d="M4 15l5-5 4 4 7-7" /><path d="M17 7h4v4" /></>, 17);
-const IcoTruck = () => hsvg(<><rect x="1" y="6" width="13" height="10" rx="1" /><path d="M14 9h4l3 3v4h-7" /><circle cx="6" cy="18" r="1.6" /><circle cx="18" cy="18" r="1.6" /></>, 17);
+const IcoTransfer = () => hsvg(<><path d="M3 12h10" /><path d="M9 8l4 4-4 4" /><path d="M17 4h4v16h-4" /></>, 17);
 const IcoHen = () => hsvg(<><path d="M6 20c0-4 2-7 5-8 0-3 2-5 4-4 0 2-1 3-2 3 2 1 3 3 3 6 0 4-3 7-7 7H6v-4Z" /><path d="M9.5 9L7 7" /></>, 18);
 
 function stageIcon(step: string) {
