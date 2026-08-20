@@ -10,6 +10,9 @@ import { teamLinkInfo, submitTeamDetail, type Child } from "@/lib/team";
 const MARITAL = ["Single", "Married", "Divorced", "Widowed"];
 const INPUT = "h-12 w-full rounded-lg border border-line bg-field px-4 text-[0.9rem] text-ink outline-none transition focus:border-gold";
 
+const digits = (s: string) => (s ?? "").replace(/\D/g, "");
+const is16 = (s: string) => /^\d{16}$/.test((s ?? "").trim());
+
 export default function TeamDetailPage() {
   const { token } = useParams<{ token: string }>();
 
@@ -53,11 +56,23 @@ export default function TeamDetailPage() {
     e.preventDefault();
     setErr(null);
     if (!fullName.trim()) return setErr("Please enter your full name.");
+    if (!is16(nationalId)) return setErr("National ID must be exactly 16 digits.");
+    if (digits(phone).length < 10) return setErr("Enter a valid phone number (at least 10 digits).");
+    if (!position.trim()) return setErr("Please enter your position / department.");
     if (!maritalStatus) return setErr("Please select your marital status.");
-    // Keep only children that have at least a name.
-    const cleanKids = children
-      .map((c) => ({ name: c.name.trim(), nationalId: (c.nationalId ?? "").trim(), birthDate: c.birthDate ?? "" }))
-      .filter((c) => c.name !== "");
+    if (married) {
+      if (!spouseName.trim()) return setErr("Please enter your spouse's name.");
+      if (!is16(spouseId)) return setErr("Spouse National ID must be exactly 16 digits.");
+    }
+    // Drop accidental fully-blank child rows; every remaining child must be complete.
+    const rows = children.filter((c) => c.name.trim() || (c.nationalId ?? "").trim() || (c.birthDate ?? ""));
+    for (let i = 0; i < rows.length; i++) {
+      const c = rows[i];
+      if (!c.name.trim()) return setErr(`Enter child ${i + 1}'s full name.`);
+      if (!is16(c.nationalId ?? "")) return setErr(`Child ${i + 1}'s ID must be exactly 16 digits.`);
+      if (!(c.birthDate ?? "")) return setErr(`Enter child ${i + 1}'s date of birth.`);
+    }
+    const cleanKids = rows.map((c) => ({ name: c.name.trim(), nationalId: (c.nationalId ?? "").trim(), birthDate: c.birthDate ?? "" }));
     setBusy(true);
     const res = await submitTeamDetail(token, {
       fullName: fullName.trim(),
@@ -114,14 +129,14 @@ export default function TeamDetailPage() {
                 <input value={fullName} onChange={(e) => setFullName(e.target.value)} required className={INPUT} />
               </Field>
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
-                <Field label="National ID">
-                  <input value={nationalId} onChange={(e) => setNationalId(e.target.value)} inputMode="numeric" placeholder="16 digits" className={INPUT} />
+                <Field label="National ID" required>
+                  <input value={nationalId} onChange={(e) => setNationalId(digits(e.target.value).slice(0, 16))} inputMode="numeric" maxLength={16} placeholder="16 digits" className={INPUT} />
                 </Field>
-                <Field label="Phone number">
+                <Field label="Phone number" required>
                   <input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" className={INPUT} />
                 </Field>
               </div>
-              <Field label="Position / department">
+              <Field label="Position / department" required>
                 <input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. Sales, Hatchery attendant" className={INPUT} />
               </Field>
 
@@ -140,11 +155,11 @@ export default function TeamDetailPage() {
 
               {married && (
                 <div className="grid grid-cols-1 gap-3.5 rounded-xl border border-line bg-field/60 p-3.5 sm:grid-cols-2">
-                  <Field label="Spouse name (wife / husband)">
+                  <Field label="Spouse name (wife / husband)" required>
                     <input value={spouseName} onChange={(e) => setSpouseName(e.target.value)} className={INPUT} />
                   </Field>
-                  <Field label="Spouse National ID">
-                    <input value={spouseId} onChange={(e) => setSpouseId(e.target.value)} inputMode="numeric" className={INPUT} />
+                  <Field label="Spouse National ID" required>
+                    <input value={spouseId} onChange={(e) => setSpouseId(digits(e.target.value).slice(0, 16))} inputMode="numeric" maxLength={16} placeholder="16 digits" className={INPUT} />
                   </Field>
                 </div>
               )}
@@ -156,7 +171,7 @@ export default function TeamDetailPage() {
                   <button type="button" onClick={addChild} className="rounded-lg border border-gold px-3 py-1.5 text-xs font-semibold text-gold-dark transition hover:bg-gold hover:text-[#231b04]">＋ Add child</button>
                 </div>
                 {children.length === 0 ? (
-                  <p className="rounded-xl border border-dashed border-line px-3.5 py-3 text-sm text-muted">No children added. Tap “Add child” for each child — name, ID (if any) and date of birth.</p>
+                  <p className="rounded-xl border border-dashed border-line px-3.5 py-3 text-sm text-muted">No children added. Tap “Add child” for each child — name, 16-digit ID and date of birth are all required per child.</p>
                 ) : (
                   <div className="space-y-3">
                     {children.map((c, i) => (
@@ -168,7 +183,7 @@ export default function TeamDetailPage() {
                         <div className="space-y-3">
                           <input value={c.name} onChange={(e) => setChild(i, { name: e.target.value })} placeholder="Child's full name" className={INPUT} />
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                            <input value={c.nationalId ?? ""} onChange={(e) => setChild(i, { nationalId: e.target.value })} inputMode="numeric" placeholder="ID (if any)" className={INPUT} />
+                            <input value={c.nationalId ?? ""} onChange={(e) => setChild(i, { nationalId: digits(e.target.value).slice(0, 16) })} inputMode="numeric" maxLength={16} placeholder="16-digit ID" className={INPUT} />
                             <input type="date" value={c.birthDate ?? ""} onChange={(e) => setChild(i, { birthDate: e.target.value })} className={INPUT} />
                           </div>
                         </div>
