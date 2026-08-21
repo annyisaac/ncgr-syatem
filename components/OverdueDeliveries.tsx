@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { usePathname } from "next/navigation";
 
 import { useAuth } from "./AuthProvider";
 import { useData } from "./DataProvider";
@@ -26,18 +27,29 @@ const daysAgo = (date: string) => {
 };
 
 /**
- * A reminder popup: when the viewer has orders whose delivery date has passed
- * but that aren't marked delivered, it opens automatically and lets them either
- * confirm the delivery or reschedule it to a new open date. Dismissible for the
- * session. Mounted once in AppShell.
+ * A reminder popup listing orders whose delivery date has passed but that
+ * aren't marked delivered, letting the viewer confirm the delivery or reschedule
+ * it. It opens every time the Orders page is opened (re-opens on each navigation
+ * there), and can be closed for the current view. Mounted once in AppShell.
  */
+const ORDERS_PATH = "/orders";
+
 export function OverdueDeliveries() {
   const { user } = useAuth();
   const { orders, availability, upsertOrder } = useData();
   const { toast } = useToast();
-  const [dismissed, setDismissed] = useState(false);
+  const pathname = usePathname();
+  const [prevPath, setPrevPath] = useState(pathname);
+  const [open, setOpen] = useState(pathname === ORDERS_PATH);
   const [rescheduleId, setRescheduleId] = useState<string | null>(null);
   const [newDate, setNewDate] = useState("");
+
+  // Re-open every time the user lands on the Orders page (adjust-state-during-
+  // render, like AppShell's drawer) — close it when they navigate elsewhere.
+  if (prevPath !== pathname) {
+    setPrevPath(pathname);
+    setOpen(pathname === ORDERS_PATH);
+  }
 
   const today = todayISO();
   const overdue = useMemo(() => {
@@ -48,8 +60,7 @@ export function OverdueDeliveries() {
   }, [orders, user, today]);
 
   if (!user || !ACTOR_ROLES.has(user.role)) return null;
-  const open = overdue.length > 0 && !dismissed;
-  if (!open) return null;
+  if (!open || overdue.length === 0) return null;
 
   const isAdmin = user.role === "Admin";
 
@@ -83,10 +94,10 @@ export function OverdueDeliveries() {
   return (
     <Modal
       open
-      onClose={() => setDismissed(true)}
+      onClose={() => setOpen(false)}
       title={`Overdue deliveries (${overdue.length})`}
       className="max-w-2xl"
-      footer={<Button variant="ghost" onClick={() => setDismissed(true)}>Remind me later</Button>}
+      footer={<Button variant="ghost" onClick={() => setOpen(false)}>Close</Button>}
     >
       <p className="-mt-1 mb-4 text-sm text-muted">
         These orders&apos; delivery dates have passed but they aren&apos;t marked delivered. Confirm the delivery, or reschedule to a new date.
