@@ -15,7 +15,7 @@ import { nowISO, todayISO, formatDate } from "@/lib/format";
 import type { Batch, Supply, Vaccination } from "@/lib/hatchery/types";
 import { markStep } from "@/lib/hatchery/lifecycle";
 
-const CAN_VAX = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician", "Hatchery Attendant"];
+const CAN_VAX = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician", "Hatchery Attendant", "Hatchery Veterinary"];
 const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 export default function VaccinationPage() {
@@ -47,6 +47,13 @@ export default function VaccinationPage() {
 
   const rows = useMemo(() => vaccinations.slice().sort((a, b) => (a.on < b.on ? 1 : -1)), [vaccinations]);
   const batchNo = (id: string) => batches.find((b) => b.id === id)?.batchNo ?? id;
+
+  // Every vaccine a batch has received (newest first) — a batch can get several.
+  const vaxByBatch = useMemo(() => {
+    const m = new Map<string, Vaccination[]>();
+    for (const v of rows) { const a = m.get(v.batchId) ?? []; a.push(v); m.set(v.batchId, a); }
+    return m;
+  }, [rows]);
 
   // Summary.
   const dosesGiven = rows.reduce((s, v) => s + (v.doses ?? 0), 0);
@@ -113,7 +120,7 @@ export default function VaccinationPage() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-2xl font-extrabold tracking-tight text-ink">Vaccination</h1>
-          <p className="text-sm text-muted">Vaccinate hatched batches and record culls to finalise saleable chicks</p>
+          <p className="text-sm text-muted">Give hatched batches their vaccines — a batch can receive several — and record any culls to finalise saleable chicks</p>
         </div>
         {canVax && <Button onClick={() => openNew()}>＋ New Vaccination</Button>}
       </div>
@@ -136,22 +143,35 @@ export default function VaccinationPage() {
               <th className={`${HG} first:rounded-tl-lg`}>Batch</th>
               <th className={HG}>Product</th>
               <th className={`${HG} text-right`}>Saleable</th>
-              <th className={HG}>Status</th>
+              <th className={HG}>Vaccines given</th>
               {canVax && <th className={`${HG} last:rounded-tr-lg text-right`}>Actions</th>}
             </tr>
           </thead>
           <tbody>
             {hatched.length === 0 ? (
               <EmptyRow colSpan={canVax ? 5 : 4} text="No hatched batches available to vaccinate." />
-            ) : hatched.map((b) => (
-              <tr key={b.id}>
-                <Td className="whitespace-nowrap font-semibold text-ink">{b.batchNo}</Td>
-                <Td><span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-2 w-2 rounded-full" style={{ background: b.productType === "Ross 308" ? "#1565c0" : "#b8860b" }} />{b.productType}</span></Td>
-                <Td className="text-right tabular-nums">{b.saleableCount.toLocaleString()}</Td>
-                <Td>{b.vaccinated ? <Pill tone="green">Vaccinated</Pill> : <Pill tone="gold">Pending</Pill>}</Td>
-                {canVax && <Td className="text-right">{!b.vaccinated && <Button size="sm" onClick={() => openNew(b)}>Vaccinate</Button>}</Td>}
-              </tr>
-            ))}
+            ) : hatched.map((b) => {
+              const given = vaxByBatch.get(b.id) ?? [];
+              return (
+                <tr key={b.id}>
+                  <Td className="whitespace-nowrap font-semibold text-ink">{b.batchNo}</Td>
+                  <Td><span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-2 w-2 rounded-full" style={{ background: b.productType === "Ross 308" ? "#1565c0" : "#b8860b" }} />{b.productType}</span></Td>
+                  <Td className="text-right tabular-nums">{b.saleableCount.toLocaleString()}</Td>
+                  <Td>
+                    {given.length === 0 ? (
+                      <Pill tone="gold">None yet</Pill>
+                    ) : (
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {given.map((v) => (
+                          <span key={v.id} title={`${formatDate(v.date)} · ${v.administeredBy}`} className="rounded-full bg-green-bg px-2 py-0.5 text-[0.7rem] font-medium text-green">{v.vaccine} · {v.doses.toLocaleString()}</span>
+                        ))}
+                      </div>
+                    )}
+                  </Td>
+                  {canVax && <Td className="text-right"><Button size="sm" variant={given.length ? "ghost" : "primary"} onClick={() => openNew(b)}>{given.length ? "＋ Add vaccine" : "Vaccinate"}</Button></Td>}
+                </tr>
+              );
+            })}
           </tbody>
         </TableWrap>
       </Card>
@@ -228,7 +248,7 @@ export default function VaccinationPage() {
 
             {batch && (
               <div className="space-y-2 rounded-lg border border-line p-3">
-                <p className="text-sm font-semibold text-ink">Culls removed during vaccination</p>
+                <p className="text-sm font-semibold text-ink">Culls removed this session <span className="font-normal text-muted">(optional — leave 0 if none)</span></p>
                 <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label={`Culls (of ${batch.saleableCount.toLocaleString()} saleable)`}>
                     <Input type="number" min={0} value={vaxCulls} onChange={(e) => setVaxCulls(e.target.value)} />
