@@ -239,15 +239,6 @@ export default function DsrOrderPage() {
             <Field label="Phone" required><Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => onPhoneChange(e.target.value)} placeholder="07xxxxxxxx" /></Field>
             <Field label="District" required hint={`Your zone (${myDsr.zone}) only`}><Select value={district} placeholder="Select district" options={myZoneDistricts.map((d) => ({ value: d, label: d }))} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} /></Field>
             <Field label="Sector" required><Select value={sector} placeholder={district ? "Select sector" : "Choose district first"} options={sectorOptions} disabled={!district} onChange={(e) => setSector(e.target.value)} /></Field>
-            <div className="sm:col-span-2">
-              <label className="flex items-center gap-2 text-sm text-ink"><input type="checkbox" checked={isCompany} onChange={(e) => setIsCompany(e.target.checked)} /> This is a company / business order</label>
-            </div>
-            {isCompany && (<>
-              <Field label="Company name" required><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Registered company name" /></Field>
-              <Field label="Company TIN" required><Input value={companyTin} onChange={(e) => setCompanyTin(e.target.value)} inputMode="numeric" placeholder="Tax ID number" /></Field>
-              <Field label="Consignee (person receiving)" required><Input value={consignee} onChange={(e) => setConsignee(e.target.value)} placeholder="Full name" /></Field>
-              <Field label="Consignee phone" required><Input type="tel" inputMode="numeric" value={consigneePhone} onChange={(e) => setConsigneePhone(e.target.value)} placeholder="07xxxxxxxx" /></Field>
-            </>)}
             <Field label="Chicks ordered" required><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
             <Field label="Currency" hint="Applies to the whole order — price & payments"><Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[{ value: "RWF", label: "RWF — Rwandan Franc" }, { value: "USD", label: "USD — US Dollar" }, { value: "EUR", label: "EUR — Euro" }]} /></Field>
             <Field label={`Unit price (${currency})`} required><Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
@@ -257,6 +248,19 @@ export default function DsrOrderPage() {
             <Calc label="To deliver" value={String(toDeliverN)} />
             <Calc label="Total (charged)" value={formatMoney(total, currency)} />
           </div>
+        </Card>
+
+        <Card>
+          <label className="flex items-center gap-2 text-sm font-medium text-ink"><input type="checkbox" checked={isCompany} onChange={(e) => setIsCompany(e.target.checked)} /> This is a company / business order</label>
+          {isCompany && (<>
+            <p className="mb-3 mt-1 text-xs text-muted">These appear on the invoice and the payment proof.</p>
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <Field label="Company name" required><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Registered company name" /></Field>
+              <Field label="Company TIN" required><Input value={companyTin} onChange={(e) => setCompanyTin(e.target.value)} inputMode="numeric" placeholder="Tax ID number" /></Field>
+              <Field label="Consignee (person receiving)" required><Input value={consignee} onChange={(e) => setConsignee(e.target.value)} placeholder="Full name" /></Field>
+              <Field label="Consignee phone" required><Input type="tel" inputMode="numeric" value={consigneePhone} onChange={(e) => setConsigneePhone(e.target.value)} placeholder="07xxxxxxxx" /></Field>
+            </div>
+          </>)}
         </Card>
 
         <Card>

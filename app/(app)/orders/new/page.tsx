@@ -242,6 +242,10 @@ export default function NewOrderPage() {
   const extra2 = Math.round(nChicks * 0.02);
   const toDeliver = nChicks + extra2 + nComp;
   const total = nChicks * nPrice;
+  // Live order summary figures
+  const firstPay = Number(payAmt) || 0;
+  const creditToApply = Math.min(custCredit, total);
+  const orderBalance = Math.max(0, total - creditToApply - firstPay);
 
   function resetProductDependent() {
     setProvince("");
@@ -620,28 +624,6 @@ export default function NewOrderPage() {
                     onChange={(e) => setClientSector(e.target.value)}
                   />
                 </Field>
-                <div className="sm:col-span-2">
-                  <label className="flex items-center gap-2 text-sm text-ink">
-                    <input type="checkbox" checked={isCompany} onChange={(e) => setIsCompany(e.target.checked)} />
-                    This is a company / business order
-                  </label>
-                </div>
-                {isCompany && (
-                  <>
-                    <Field label="Company name" required>
-                      <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Registered company name" />
-                    </Field>
-                    <Field label="Company TIN" required>
-                      <Input value={companyTin} onChange={(e) => setCompanyTin(e.target.value)} inputMode="numeric" placeholder="Tax ID number" />
-                    </Field>
-                    <Field label="Consignee (person receiving)" required>
-                      <Input value={consignee} onChange={(e) => setConsignee(e.target.value)} placeholder="Full name" />
-                    </Field>
-                    <Field label="Consignee phone" required>
-                      <Input type="tel" inputMode="numeric" value={consigneePhone} onChange={(e) => setConsigneePhone(e.target.value)} placeholder="07xxxxxxxx" />
-                    </Field>
-                  </>
-                )}
                 <Field label="Chicks ordered" required>
                   <Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} />
                 </Field>
@@ -678,12 +660,36 @@ export default function NewOrderPage() {
                 </Field>
               </div>
 
-              <div className="mt-4 grid grid-cols-2 gap-3 rounded-md bg-ink/5 p-3 text-sm sm:grid-cols-4">
-                <Calc label="2% extra (free)" value={String(extra2)} />
-                <Calc label="To deliver" value={String(toDeliver)} />
-                <Calc label="Total (charged)" value={formatMoney(total, currency)} />
-                <Calc label="Free chicks" value={String(extra2 + nComp)} />
+              <div className="mt-4 rounded-xl border border-gold/30 bg-gold-bg/40 p-3.5">
+                <p className="mb-2.5 text-[0.66rem] font-semibold uppercase tracking-wide text-gold-dark">Order summary</p>
+                <div className="grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+                  <Calc label="To deliver" value={`${toDeliver.toLocaleString()} chicks`} />
+                  <Calc label="Free (2% + comp)" value={String(extra2 + nComp)} />
+                  <Calc label="Total (charged)" value={formatMoney(total, currency)} />
+                  {creditToApply > 0 && <Calc label="Credit applied" value={`− ${formatMoney(creditToApply, currency)}`} />}
+                  {firstPay > 0 && <Calc label="First payment" value={`− ${formatMoney(firstPay, currency)}`} />}
+                  <Calc label="Balance" value={formatMoney(orderBalance, currency)} />
+                </div>
               </div>
+            </Card>
+
+            {/* Company / business details — its own card, shown when ticked */}
+            <Card>
+              <label className="flex items-center gap-2 text-sm font-medium text-ink">
+                <input type="checkbox" checked={isCompany} onChange={(e) => setIsCompany(e.target.checked)} />
+                This is a company / business order
+              </label>
+              {isCompany && (
+                <>
+                  <p className="mb-3 mt-1 text-xs text-muted">These appear on the invoice and the payment proof.</p>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <Field label="Company name" required><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Registered company name" /></Field>
+                    <Field label="Company TIN" required><Input value={companyTin} onChange={(e) => setCompanyTin(e.target.value)} inputMode="numeric" placeholder="Tax ID number" /></Field>
+                    <Field label="Consignee (person receiving)" required><Input value={consignee} onChange={(e) => setConsignee(e.target.value)} placeholder="Full name" /></Field>
+                    <Field label="Consignee phone" required><Input type="tel" inputMode="numeric" value={consigneePhone} onChange={(e) => setConsigneePhone(e.target.value)} placeholder="07xxxxxxxx" /></Field>
+                  </div>
+                </>
+              )}
             </Card>
 
             <Card>
