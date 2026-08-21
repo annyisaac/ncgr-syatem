@@ -470,8 +470,9 @@ export async function teamDetailsPDF(records: TeamDetail[]): Promise<void> {
     body.push([
       { content: `National ID: ${r.nationalId || "—"}` },
       { content: `Phone: ${r.phone || "—"}` },
-      { content: `Marital: ${r.maritalStatus || "—"}` },
+      { content: `Born: ${r.birthDate ? formatDate(r.birthDate) : "—"}` },
     ]);
+    body.push([{ content: `Marital status: ${r.maritalStatus || "—"}`, colSpan: 3 }]);
     if (r.maritalStatus === "Married") {
       body.push([{ content: `Spouse: ${r.spouseName || "—"}${r.spouseId ? `   (National ID: ${r.spouseId})` : ""}`, colSpan: 3 }]);
     }

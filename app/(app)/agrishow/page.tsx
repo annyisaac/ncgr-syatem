@@ -251,13 +251,13 @@ export default function AgrishowPage() {
 
   function downloadTeamCsv() {
     if (shownTeam.length === 0) return toast("No team records to download.", "info");
-    const head = ["Full Name", "National ID", "Phone", "Position", "Marital Status", "Spouse", "Spouse ID", "Children", "Submitted"];
+    const head = ["Full Name", "National ID", "Phone", "Date of Birth", "Position", "Marital Status", "Spouse", "Spouse ID", "Children", "Submitted"];
     const esc = (v: string) => `"${(v ?? "").replace(/"/g, '""')}"`;
     const kids = (r: TeamDetail) => r.children.map((c) => `${c.name}${c.nationalId ? ` (ID ${c.nationalId})` : ""}${c.birthDate ? ` — ${c.birthDate}` : ""}`).join("; ");
     const lines = [head.map(esc).join(",")];
     for (const r of shownTeam) {
       lines.push([
-        r.fullName, r.nationalId ?? "", r.phone ?? "", r.position ?? "", r.maritalStatus ?? "",
+        r.fullName, r.nationalId ?? "", r.phone ?? "", r.birthDate ?? "", r.position ?? "", r.maritalStatus ?? "",
         r.spouseName ?? "", r.spouseId ?? "", kids(r), formatDateTime(r.on),
       ].map((v) => esc(String(v))).join(","));
     }
@@ -551,6 +551,7 @@ function TeamRecordEditModal({ record, onClose, onSave }: { record: TeamDetail; 
   const [fullName, setFullName] = useState(record.fullName);
   const [nationalId, setNationalId] = useState(record.nationalId ?? "");
   const [phone, setPhone] = useState(record.phone ?? "");
+  const [birthDate, setBirthDate] = useState(record.birthDate ?? "");
   const [position, setPosition] = useState(record.position ?? "");
   const [maritalStatus, setMaritalStatus] = useState(record.maritalStatus ?? "");
   const [spouseName, setSpouseName] = useState(record.spouseName ?? "");
@@ -574,6 +575,7 @@ function TeamRecordEditModal({ record, onClose, onSave }: { record: TeamDetail; 
       fullName: fullName.trim(),
       nationalId: nationalId.trim(),
       phone: phone.trim(),
+      birthDate: birthDate.trim(),
       position: position.trim(),
       maritalStatus,
       spouseName: married ? spouseName.trim() : "",
@@ -589,6 +591,7 @@ function TeamRecordEditModal({ record, onClose, onSave }: { record: TeamDetail; 
         <Field label="Full name"><Input value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
         <Field label="National ID"><Input value={nationalId} onChange={(e) => setNationalId(e.target.value)} inputMode="numeric" /></Field>
         <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+        <Field label="Date of birth"><Input type="date" value={birthDate} onChange={(e) => setBirthDate(e.target.value)} /></Field>
         <Field label="Position / department"><Input value={position} onChange={(e) => setPosition(e.target.value)} /></Field>
         <Field label="Marital status"><Select value={maritalStatus} placeholder="Select status" options={MARITAL_OPTS} onChange={(e) => setMaritalStatus(e.target.value)} /></Field>
         {married && <Field label="Spouse name"><Input value={spouseName} onChange={(e) => setSpouseName(e.target.value)} /></Field>}

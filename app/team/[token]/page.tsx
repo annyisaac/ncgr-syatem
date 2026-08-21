@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
 import Image from "next/image";
 
@@ -12,6 +12,51 @@ const INPUT = "h-12 w-full rounded-lg border border-line bg-field px-4 text-[0.9
 
 const digits = (s: string) => (s ?? "").replace(/\D/g, "");
 const is16 = (s: string) => /^\d{16}$/.test((s ?? "").trim());
+
+// Accept a typed date in yyyy-mm-dd, dd/mm/yyyy, dd-mm-yyyy or dd.mm.yyyy and
+// return it as yyyy-mm-dd (or "" if it isn't a full date yet).
+function normalizeDate(raw: string): string {
+  const s = (raw ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const m = s.match(/^(\d{1,2})[/\-.](\d{1,2})[/\-.](\d{4})$/);
+  if (m) return `${m[3]}-${m[2].padStart(2, "0")}-${m[1].padStart(2, "0")}`;
+  return "";
+}
+
+/** A date field you can either TYPE (dd/mm/yyyy or yyyy-mm-dd) or pick from a
+ *  calendar (the icon opens the native date picker). Value is stored yyyy-mm-dd. */
+function DateInput({ value, onChange }: { value: string; onChange: (iso: string) => void }) {
+  const dateRef = useRef<HTMLInputElement>(null);
+  const [text, setText] = useState(value);
+  // Reflect an external reset (e.g. cleared on marital change) into the text box.
+  // eslint-disable-next-line react-hooks/set-state-in-effect
+  useEffect(() => { setText(value); }, [value]);
+  const isIso = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  return (
+    <div className="relative">
+      <input
+        value={text}
+        onChange={(e) => { setText(e.target.value); onChange(normalizeDate(e.target.value)); }}
+        onBlur={() => setText(value)}
+        inputMode="numeric"
+        placeholder="dd/mm/yyyy"
+        className={`${INPUT} pr-12`}
+      />
+      <input
+        ref={dateRef}
+        type="date"
+        value={isIso ? value : ""}
+        onChange={(e) => { onChange(e.target.value); setText(e.target.value); }}
+        className="absolute right-0 top-0 h-full w-12 cursor-pointer opacity-0"
+        aria-label="Pick date from calendar"
+        tabIndex={-1}
+      />
+      <span className="pointer-events-none absolute right-3.5 top-1/2 -translate-y-1/2 text-gold-dark">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="5" width="16" height="16" rx="2" /><path d="M4 9h16M9 3v4M15 3v4" /></svg>
+      </span>
+    </div>
+  );
+}
 
 export default function TeamDetailPage() {
   const { token } = useParams<{ token: string }>();
@@ -26,6 +71,7 @@ export default function TeamDetailPage() {
   const [fullName, setFullName] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [phone, setPhone] = useState("");
+  const [birthDate, setBirthDate] = useState("");
   const [position, setPosition] = useState("");
   const [maritalStatus, setMaritalStatus] = useState("");
   const [spouseName, setSpouseName] = useState("");
@@ -58,6 +104,7 @@ export default function TeamDetailPage() {
     if (!fullName.trim()) return setErr("Please enter your full name.");
     if (!is16(nationalId)) return setErr("National ID must be exactly 16 digits.");
     if (digits(phone).length < 10) return setErr("Enter a valid phone number (at least 10 digits).");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) return setErr("Please enter your date of birth (type it or pick from the calendar).");
     if (!position.trim()) return setErr("Please enter your position / department.");
     if (!maritalStatus) return setErr("Please select your marital status.");
     if (married) {
@@ -78,6 +125,7 @@ export default function TeamDetailPage() {
       fullName: fullName.trim(),
       nationalId: nationalId.trim(),
       phone: phone.trim(),
+      birthDate,
       position: position.trim(),
       maritalStatus,
       spouseName: married ? spouseName.trim() : "",
@@ -136,6 +184,9 @@ export default function TeamDetailPage() {
                   <input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" className={INPUT} />
                 </Field>
               </div>
+              <Field label="Date of birth" required>
+                <DateInput value={birthDate} onChange={setBirthDate} />
+              </Field>
               <Field label="Position / department" required>
                 <input value={position} onChange={(e) => setPosition(e.target.value)} placeholder="e.g. Sales, Hatchery attendant" className={INPUT} />
               </Field>
@@ -184,7 +235,7 @@ export default function TeamDetailPage() {
                           <input value={c.name} onChange={(e) => setChild(i, { name: e.target.value })} placeholder="Child's full name" className={INPUT} />
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <input value={c.nationalId ?? ""} onChange={(e) => setChild(i, { nationalId: digits(e.target.value).slice(0, 16) })} inputMode="numeric" maxLength={16} placeholder="16-digit ID" className={INPUT} />
-                            <input type="date" value={c.birthDate ?? ""} onChange={(e) => setChild(i, { birthDate: e.target.value })} className={INPUT} />
+                            <DateInput value={c.birthDate ?? ""} onChange={(iso) => setChild(i, { birthDate: iso })} />
                           </div>
                         </div>
                       </div>

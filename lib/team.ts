@@ -35,6 +35,7 @@ export interface TeamDetail {
   fullName: string;
   nationalId?: string;
   phone?: string;
+  birthDate?: string; // the member's own date of birth (yyyy-mm-dd)
   position?: string; // role / department
   maritalStatus?: string;
   spouseName?: string; // wife / husband
@@ -47,6 +48,7 @@ export interface TeamDetailInput {
   fullName: string;
   nationalId?: string;
   phone?: string;
+  birthDate?: string;
   position?: string;
   maritalStatus?: string;
   spouseName?: string;
