@@ -11,6 +11,7 @@ import { useOperator } from "./OperatorProvider";
 import { OperatorGate } from "./OperatorGate";
 import { DsrGate } from "./DsrGate";
 import { NotificationBell } from "./NotificationBell";
+import { OverdueDeliveries } from "./OverdueDeliveries";
 import { Avatar } from "./ui/Avatar";
 import { canAccess, navForRole, homeForRole } from "@/lib/permissions";
 import { COMPANY } from "@/lib/config";
@@ -238,6 +239,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <NotAuthorized role={user.role} />
           )}
         </main>
+
+        {/* Reminder popup: overdue (undelivered, past-date) orders to confirm or reschedule. */}
+        {!isAttendant && !isDsr && !needsOperator && <OverdueDeliveries />}
 
         <footer className="border-t border-line bg-paper">
           <div className="mx-auto flex max-w-[1440px] flex-col items-center justify-between gap-1 px-4 py-4 text-[0.72rem] text-muted sm:flex-row md:px-8">
