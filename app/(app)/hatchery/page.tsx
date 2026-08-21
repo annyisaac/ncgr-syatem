@@ -15,6 +15,7 @@ import { presetToRange, type PeriodPreset } from "@/lib/period";
 import { formatDate, formatDateTime, todayISO } from "@/lib/format";
 import { formatRWF } from "@/lib/config";
 import { computeKpis, hatchabilityPct, stepLabel, isMachineOverTemp } from "@/lib/hatchery/lifecycle";
+import { deliveryDateOf } from "@/lib/projection";
 import { visibleOrders } from "@/lib/permissions";
 import { PRODUCTS, isFullyPaid, type Order, type User } from "@/lib/types";
 import type { Batch } from "@/lib/hatchery/types";
@@ -647,56 +648,181 @@ function TechView({ filter }: { filter: DashFilter }) {
 
 function VetView({ filter }: { filter: DashFilter }) {
   const { batches, vaccineRequests, farmVisits, biosecurity } = useHatchery();
+  const today = todayISO();
+
+  const dueDate = (b: Batch) => (b.setDate ? deliveryDateOf(b.setDate) : "");
+  const daysLeft = (iso: string) => Math.round((Date.parse(iso) - Date.parse(today)) / 86_400_000);
+
   const toVax = batches
     .filter(awaitingVaccination)
-    .filter((b) => matches(filter.q, b.batchNo, b.productType) && inFilterRange(b.createdAt, filter.range));
+    .filter((b) => matches(filter.q, b.batchNo, b.productType) && inFilterRange(b.createdAt, filter.range))
+    .slice()
+    .sort((a, b) => ((dueDate(a) || "9999") < (dueDate(b) || "9999") ? -1 : 1));
   const pendingReq = vaccineRequests
     .filter((r) => r.status === "requested" || r.status === "confirmed")
     .filter((r) => matches(filter.q, r.vaccine, r.status));
+
+  const counted = (b: Batch) => b.countedTotal || b.saleableCount || 0;
+  const totalCounted = toVax.reduce((s, b) => s + counted(b), 0);
+  const totalCulls = toVax.reduce((s, b) => s + (b.culls || 0), 0);
+  const avgCullPct = totalCounted + totalCulls > 0 ? (totalCulls / (totalCounted + totalCulls)) * 100 : 0;
+
   return (
     <>
+      {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label="Batches to vaccinate" value={String(toVax.length)} tone={toVax.length ? "gold" : "default"} />
-        <StatTile label="Pending vaccine requests" value={String(pendingReq.length)} tone={pendingReq.length ? "gold" : "default"} />
-        <StatTile label="Farm visits logged" value={String(farmVisits.length)} />
-        <StatTile label="Biosecurity logs" value={String(biosecurity.length)} />
+        <VetStat icon={<IcoSyringe />} tone="gold" value={String(toVax.length)} label="Batches to vaccinate" sub="Due for vaccination" />
+        <VetStat icon={<IcoClipboard />} tone="purple" value={String(pendingReq.length)} label="Pending vaccine requests" sub="Requests to act on" />
+        <VetStat icon={<IcoTruck />} tone="green" value={String(farmVisits.length)} label="Farm visits logged" sub="Logged" />
+        <VetStat icon={<IcoShield />} tone="blue" value={String(biosecurity.length)} label="Biosecurity logs" sub="Logged" />
       </div>
 
-      <Card>
-        <SectionTitle label={`Batches awaiting vaccination (${toVax.length})`} />
-        <TableWrap>
-          <thead><tr><Th>Batch</Th><Th>Product</Th><Th className="text-right">Counted</Th><Th className="text-right">Culls</Th></tr></thead>
-          <tbody>
-            {toVax.length === 0 ? <EmptyRow colSpan={4} text="Nothing awaiting vaccination." /> : toVax.map((b) => (
-              <tr key={b.id}>
-                <Td><Link href={`/hatchery/batches/${b.id}`} className="text-gold-dark">{b.batchNo}</Link></Td>
-                <Td>{b.productType}</Td>
-                <Td className="text-right">{b.countedTotal.toLocaleString()}</Td>
-                <Td className="text-right">{b.culls.toLocaleString()}</Td>
-              </tr>
-            ))}
-          </tbody>
-        </TableWrap>
-      </Card>
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+        {/* Batches awaiting vaccination */}
+        <Card className="lg:col-span-2">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <SectionTitle label={`Batches awaiting vaccination (${toVax.length})`} />
+            <Link href="/hatchery/vaccination" className="shrink-0 text-xs font-semibold text-gold-dark hover:underline">View all</Link>
+          </div>
+          <TableWrap>
+            <thead><tr><Th>Batch</Th><Th>Product</Th><Th className="text-right">Counted</Th><Th className="text-right">Culls</Th><Th>Due date</Th></tr></thead>
+            <tbody>
+              {toVax.length === 0 ? <EmptyRow colSpan={5} text="Nothing awaiting vaccination." /> : toVax.map((b) => {
+                const dd = dueDate(b);
+                const dl = dd ? daysLeft(dd) : null;
+                return (
+                  <tr key={b.id}>
+                    <Td><Link href={`/hatchery/batches/${b.id}`} className="whitespace-nowrap font-medium text-gold-dark">{b.batchNo}</Link></Td>
+                    <Td><span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className="h-2 w-2 rounded-full" style={{ background: b.productType === "Ross 308" ? "#1565c0" : "#b8860b" }} />{b.productType}</span></Td>
+                    <Td className="text-right tabular-nums">{counted(b).toLocaleString()}</Td>
+                    <Td className="text-right tabular-nums">{b.culls.toLocaleString()}</Td>
+                    <Td>{dd ? (
+                      <div>
+                        <p className="whitespace-nowrap text-xs">{formatDate(dd)}</p>
+                        {dl !== null && <span className={`mt-0.5 inline-block rounded-full px-2 py-0.5 text-[0.6rem] font-semibold ${dl < 0 ? "bg-red-bg text-red" : dl <= 2 ? "bg-gold-bg text-gold-dark" : "bg-green-bg text-green"}`}>{dl < 0 ? `${-dl}d overdue` : dl === 0 ? "today" : `${dl} days left`}</span>}
+                      </div>
+                    ) : <span className="text-muted">—</span>}</Td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </TableWrap>
+          {toVax.length > 0 && (
+            <div className="mt-3 grid grid-cols-3 gap-3 border-t border-line pt-3">
+              <FooterStat label="Total counted" value={totalCounted.toLocaleString()} />
+              <FooterStat label="Total culls" value={totalCulls.toLocaleString()} />
+              <FooterStat label="Avg cull %" value={`${avgCullPct.toFixed(2)}%`} />
+            </div>
+          )}
+        </Card>
 
-      <Card>
-        <SectionTitle label={`Vaccine requests to act on (${pendingReq.length})`} />
-        <TableWrap>
-          <thead><tr><Th>Vaccine</Th><Th className="text-right">Qty</Th><Th>Status</Th></tr></thead>
-          <tbody>
-            {pendingReq.length === 0 ? <EmptyRow colSpan={3} text="No pending requests." /> : pendingReq.map((r) => (
-              <tr key={r.id}>
-                <Td>{r.vaccine}</Td>
-                <Td className="text-right">{r.quantity.toLocaleString()} {r.unit}</Td>
-                <Td><Pill tone={r.status === "confirmed" ? "gold" : "info"}>{r.status}</Pill></Td>
-              </tr>
-            ))}
-          </tbody>
-        </TableWrap>
-      </Card>
+        {/* Vaccine requests to act on */}
+        <Card>
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <SectionTitle label={`Vaccine requests (${pendingReq.length})`} />
+            <Link href="/hatchery/vaccine-requests" className="shrink-0 text-xs font-semibold text-gold-dark hover:underline">View all</Link>
+          </div>
+          {pendingReq.length === 0 ? (
+            <div className="grid place-items-center py-8 text-center">
+              <span className="mb-3 grid h-14 w-14 place-items-center rounded-2xl bg-purple-bg text-purple"><IcoClipboardCheck /></span>
+              <p className="font-semibold text-ink">No pending requests</p>
+              <p className="mt-1 max-w-[16rem] text-xs text-muted">All caught up — there are no vaccine requests waiting for your action.</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {pendingReq.slice(0, 6).map((r) => (
+                <div key={r.id} className="flex items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+                  <span className="min-w-0 truncate font-medium text-ink">{r.vaccine}</span>
+                  <span className="flex shrink-0 items-center gap-2 text-xs text-muted">{r.quantity.toLocaleString()} {r.unit}<Pill tone={r.status === "confirmed" ? "gold" : "info"}>{r.status}</Pill></span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+        {/* Quick actions */}
+        <Card>
+          <SectionTitle label="Quick actions" />
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <QuickAction href="/hatchery/farm-visits" icon={<IcoPin />} label="Log farm visit" />
+            <QuickAction href="/hatchery/vaccine-requests" icon={<IcoClipboard />} label="New vaccine request" />
+            <QuickAction href="/hatchery/biosecurity" icon={<IcoShield />} label="Biosecurity log" />
+            <QuickAction href="/hatchery/vaccination" icon={<IcoSyringe />} label="Vaccinate a batch" />
+          </div>
+        </Card>
+
+        {/* Today's schedule */}
+        <Card>
+          <SectionTitle label="What needs vaccinating" />
+          <div className="mt-3 space-y-2">
+            {toVax.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted">Nothing scheduled — all batches are vaccinated.</p>
+            ) : toVax.slice(0, 5).map((b) => {
+              const dd = dueDate(b);
+              return (
+                <div key={b.id} className="flex items-center justify-between gap-2 rounded-lg border-l-4 border-gold bg-gold-bg/40 px-3 py-2.5">
+                  <div className="min-w-0">
+                    <p className="truncate text-sm font-semibold text-ink">{b.batchNo} <span className="font-normal text-muted">({b.productType})</span></p>
+                    <p className="text-xs text-muted">Vaccination due</p>
+                  </div>
+                  {dd && <span className="shrink-0 rounded-full bg-paper px-2.5 py-1 text-xs font-medium text-ink">{formatDate(dd)}</span>}
+                </div>
+              );
+            })}
+          </div>
+          <div className="mt-3 text-center"><Link href="/hatchery/vaccination" className="text-xs font-semibold text-gold-dark hover:underline">Go to vaccination →</Link></div>
+        </Card>
+      </div>
     </>
   );
 }
+
+// ---- Vet dashboard pieces --------------------------------------------------
+
+type VetTone = "gold" | "purple" | "green" | "blue";
+const VET_CHIP: Record<VetTone, string> = { gold: "bg-gold-bg text-gold-dark", purple: "bg-purple-bg text-purple", green: "bg-green-bg text-green", blue: "bg-blue-bg text-blue" };
+const VET_ACCENT: Record<VetTone, string> = { gold: "bg-gold", purple: "bg-purple", green: "bg-green", blue: "bg-blue" };
+
+function VetStat({ icon, value, label, sub, tone }: { icon: ReactNode; value: string; label: string; sub: string; tone: VetTone }) {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-line bg-paper p-4 shadow-card">
+      <div className="flex items-start gap-3">
+        <span className={`grid h-11 w-11 shrink-0 place-items-center rounded-xl ${VET_CHIP[tone]}`}>{icon}</span>
+        <div className="min-w-0">
+          <p className="text-[0.56rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+          <p className="mt-0.5 text-2xl font-extrabold leading-none tabular-nums text-ink">{value}</p>
+          <p className="mt-1 truncate text-[0.62rem] text-muted">{sub}</p>
+        </div>
+      </div>
+      <span className={`absolute inset-x-0 bottom-0 h-1 ${VET_ACCENT[tone]}`} aria-hidden />
+    </div>
+  );
+}
+
+function FooterStat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <p className="text-[0.6rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+      <p className="font-bold tabular-nums text-ink">{value}</p>
+    </div>
+  );
+}
+
+function QuickAction({ href, icon, label }: { href: string; icon: ReactNode; label: string }) {
+  return (
+    <Link href={href} className="flex flex-col items-center gap-2 rounded-xl border border-line bg-paper p-3 text-center shadow-card transition hover:border-gold">
+      <span className="grid h-10 w-10 place-items-center rounded-xl bg-gold-bg text-gold-dark">{icon}</span>
+      <span className="text-xs font-semibold text-ink">{label}</span>
+    </Link>
+  );
+}
+
+const vsvg = (children: ReactNode) => (<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">{children}</svg>);
+const IcoSyringe = () => vsvg(<><path d="M4 20l2-2M17 3l4 4M14 6l4 4M15 5l-9 9v4h4l9-9M10 10l2 2" /></>);
+const IcoClipboardCheck = () => vsvg(<><rect x="7" y="4" width="10" height="16" rx="2" /><path d="M9 4V3h6v1" /><path d="M9 13l2 2 4-4" /></>);
+const IcoPin = () => vsvg(<><path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" /><circle cx="12" cy="10" r="2.5" /></>);
 
 // ---------------------------------------------------------------------------
 // Maintenance Technician — machines & spare parts
