@@ -107,6 +107,14 @@ export async function deleteTeamDetail(id: string): Promise<void> {
   if (error) throw new Error(`Could not delete record: ${error.message}`);
 }
 
+/** Admin edit of a submitted record (staff-only RLS). Writes the whole row. */
+export async function upsertTeamDetail(rec: TeamDetail): Promise<void> {
+  const { error } = await getSupabase()
+    .from("team_details")
+    .upsert({ id: rec.id, data: rec, updated_at: new Date().toISOString() });
+  if (error) throw new Error(`Could not save record: ${error.message}`);
+}
+
 // ---- Public (anon, via SECURITY DEFINER RPCs) ----------------------------
 
 export async function teamLinkInfo(token: string): Promise<{ ok: boolean; title?: string }> {

@@ -30,6 +30,8 @@ import {
   listTeamDetails,
   listTeamLinks,
   setTeamLinkActive,
+  upsertTeamDetail,
+  type Child,
   type TeamDetail,
   type TeamDetailLink,
 } from "@/lib/team";
@@ -238,6 +240,13 @@ export default function AgrishowPage() {
     setTeamDetails((p) => p.filter((x) => x.id !== rec.id));
     try { await deleteTeamDetail(rec.id); toast("Record deleted."); }
     catch { toast("Could not delete.", "error"); void load(); }
+  }
+
+  async function saveRecord(rec: TeamDetail) {
+    setTeamDetails((p) => p.map((x) => (x.id === rec.id ? rec : x)));
+    setViewRec(null);
+    try { await upsertTeamDetail(rec); toast("Record updated."); }
+    catch { toast("Could not save.", "error"); void load(); }
   }
 
   function downloadTeamCsv() {
@@ -505,7 +514,7 @@ export default function AgrishowPage() {
                 <Td>{formatDateTime(r.on)}</Td>
                 <Td>
                   <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => setViewRec(r)}>View</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setViewRec(r)}>Edit</Button>
                     <Button size="sm" variant="ghost" onClick={() => removeRecord(r)}>Delete</Button>
                   </div>
                 </Td>
@@ -515,41 +524,7 @@ export default function AgrishowPage() {
         </TableWrap>
       </Card>
 
-      <Modal open={!!viewRec} onClose={() => setViewRec(null)} title={viewRec ? viewRec.fullName : ""} className="max-w-lg">
-        {viewRec && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-3 text-sm">
-              <Info label="National ID" value={viewRec.nationalId || "—"} />
-              <Info label="Phone" value={viewRec.phone || "—"} />
-              <Info label="Position / department" value={viewRec.position || "—"} />
-              <Info label="Marital status" value={viewRec.maritalStatus || "—"} />
-              {viewRec.maritalStatus === "Married" && <>
-                <Info label="Spouse" value={viewRec.spouseName || "—"} />
-                <Info label="Spouse National ID" value={viewRec.spouseId || "—"} />
-              </>}
-              <Info label="Submitted" value={formatDateTime(viewRec.on)} />
-            </div>
-            <div>
-              <p className="mb-2 text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Children ({viewRec.children.length})</p>
-              {viewRec.children.length === 0 ? (
-                <p className="text-sm text-muted">No children recorded.</p>
-              ) : (
-                <div className="space-y-2">
-                  {viewRec.children.map((c, i) => (
-                    <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm">
-                      <span className="font-medium text-ink">{c.name}</span>
-                      <span className="flex flex-wrap gap-x-3 text-xs text-muted">
-                        <span>ID: {c.nationalId || "—"}</span>
-                        <span>Born: {c.birthDate ? formatDate(c.birthDate) : "—"}</span>
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </Modal>
+      {viewRec && <TeamRecordEditModal record={viewRec} onClose={() => setViewRec(null)} onSave={saveRecord} />}
       </>)}
     </div>
   );
@@ -561,5 +536,84 @@ function Info({ label, value }: { label: string; value: string }) {
       <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
       <p className="font-medium text-ink">{value}</p>
     </div>
+  );
+}
+
+const MARITAL_OPTS = [
+  { value: "Single", label: "Single" },
+  { value: "Married", label: "Married" },
+  { value: "Divorced", label: "Divorced" },
+  { value: "Widowed", label: "Widowed" },
+];
+
+/** Admin edit of a team-details record: all fields plus children add/remove. */
+function TeamRecordEditModal({ record, onClose, onSave }: { record: TeamDetail; onClose: () => void; onSave: (r: TeamDetail) => void }) {
+  const [fullName, setFullName] = useState(record.fullName);
+  const [nationalId, setNationalId] = useState(record.nationalId ?? "");
+  const [phone, setPhone] = useState(record.phone ?? "");
+  const [position, setPosition] = useState(record.position ?? "");
+  const [maritalStatus, setMaritalStatus] = useState(record.maritalStatus ?? "");
+  const [spouseName, setSpouseName] = useState(record.spouseName ?? "");
+  const [spouseId, setSpouseId] = useState(record.spouseId ?? "");
+  const [children, setChildren] = useState<Child[]>(record.children ?? []);
+
+  const married = maritalStatus === "Married";
+  const canKids = maritalStatus !== "" && maritalStatus !== "Single";
+
+  const setChild = (i: number, patch: Partial<Child>) => setChildren((c) => c.map((ch, idx) => (idx === i ? { ...ch, ...patch } : ch)));
+  const addChild = () => setChildren((c) => [...c, { name: "", nationalId: "", birthDate: "" }]);
+  const removeChild = (i: number) => setChildren((c) => c.filter((_, idx) => idx !== i));
+
+  function save() {
+    if (!fullName.trim()) return;
+    const kids = (canKids ? children : [])
+      .map((c) => ({ name: c.name.trim(), nationalId: (c.nationalId ?? "").trim(), birthDate: c.birthDate ?? "" }))
+      .filter((c) => c.name !== "");
+    onSave({
+      ...record,
+      fullName: fullName.trim(),
+      nationalId: nationalId.trim(),
+      phone: phone.trim(),
+      position: position.trim(),
+      maritalStatus,
+      spouseName: married ? spouseName.trim() : "",
+      spouseId: married ? spouseId.trim() : "",
+      children: kids,
+    });
+  }
+
+  return (
+    <Modal open onClose={onClose} title={`Edit — ${record.fullName}`} className="max-w-xl"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={save}>Save changes</Button></>}>
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <Field label="Full name"><Input value={fullName} onChange={(e) => setFullName(e.target.value)} /></Field>
+        <Field label="National ID"><Input value={nationalId} onChange={(e) => setNationalId(e.target.value)} inputMode="numeric" /></Field>
+        <Field label="Phone"><Input value={phone} onChange={(e) => setPhone(e.target.value)} /></Field>
+        <Field label="Position / department"><Input value={position} onChange={(e) => setPosition(e.target.value)} /></Field>
+        <Field label="Marital status"><Select value={maritalStatus} placeholder="Select status" options={MARITAL_OPTS} onChange={(e) => setMaritalStatus(e.target.value)} /></Field>
+        {married && <Field label="Spouse name"><Input value={spouseName} onChange={(e) => setSpouseName(e.target.value)} /></Field>}
+        {married && <Field label="Spouse National ID"><Input value={spouseId} onChange={(e) => setSpouseId(e.target.value)} inputMode="numeric" /></Field>}
+      </div>
+      {canKids && (
+        <div className="mt-4 border-t border-line pt-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Children ({children.length})</p>
+            <Button size="sm" variant="ghost" onClick={addChild}>＋ Add child</Button>
+          </div>
+          {children.length === 0 ? <p className="text-sm text-muted">No children.</p> : (
+            <div className="space-y-2">
+              {children.map((c, i) => (
+                <div key={i} className="flex flex-wrap items-end gap-2 rounded-lg border border-line p-2.5">
+                  <div className="min-w-[9rem] flex-1"><Field label="Name"><Input value={c.name} onChange={(e) => setChild(i, { name: e.target.value })} /></Field></div>
+                  <div className="w-32"><Field label="ID"><Input value={c.nationalId ?? ""} onChange={(e) => setChild(i, { nationalId: e.target.value })} inputMode="numeric" /></Field></div>
+                  <div className="w-40"><Field label="Date of birth"><Input type="date" value={c.birthDate ?? ""} onChange={(e) => setChild(i, { birthDate: e.target.value })} /></Field></div>
+                  <Button size="sm" variant="ghost" onClick={() => removeChild(i)}>Remove</Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+    </Modal>
   );
 }
