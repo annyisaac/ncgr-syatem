@@ -2,6 +2,7 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
@@ -62,7 +63,7 @@ export default function HatcheryDashboard() {
   const isManagerDash = !SPECIAL_VIEWS.includes(role);
   return (
     <div className="space-y-5">
-      {!isManagerDash && (
+      {!isManagerDash && role !== "Hatchery Veterinary" && (
         <GreetingHeader name={user.name} subtitle={HATCHERY_SUBTITLE[role] ?? "here's the hatchery today"} right={<Pill tone="gold">{role}</Pill>} />
       )}
 
@@ -647,6 +648,7 @@ function TechView({ filter }: { filter: DashFilter }) {
 // ---------------------------------------------------------------------------
 
 function VetView({ filter }: { filter: DashFilter }) {
+  const { user } = useAuth();
   const { batches, vaccineRequests, farmVisits, biosecurity } = useHatchery();
   const today = todayISO();
 
@@ -669,6 +671,20 @@ function VetView({ filter }: { filter: DashFilter }) {
 
   return (
     <>
+      {/* Welcome banner with chicks */}
+      <div className="relative overflow-hidden rounded-2xl border border-line shadow-card">
+        <div className="flex items-stretch justify-between gap-3 bg-gradient-to-r from-gold-bg via-cream to-green-bg">
+          <div className="min-w-0 px-5 py-6 sm:px-7 sm:py-8">
+            <h1 className="text-2xl font-extrabold tracking-tight text-ink sm:text-[1.7rem]">Hello {user?.name ?? "there"} <span className="align-middle">👋</span></h1>
+            <p className="mt-1 text-sm text-muted">Here&apos;s your health &amp; vaccination overview for today.</p>
+          </div>
+          <div className="relative hidden w-48 shrink-0 sm:block md:w-64 lg:w-80">
+            <Image src="/tetra-chicks.jpeg" alt="Day-old chicks" fill sizes="320px" className="object-cover" priority unoptimized />
+            <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-cream to-transparent" aria-hidden />
+          </div>
+        </div>
+      </div>
+
       {/* Stat cards */}
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <VetStat icon={<IcoSyringe />} tone="gold" value={String(toVax.length)} label="Batches to vaccinate" sub="Due for vaccination" />
