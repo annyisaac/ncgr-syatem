@@ -1599,6 +1599,10 @@ function EditModal({
   const [price, setPrice] = useState(String(order.price));
   const [date, setDate] = useState(order.date);
   const [pickup, setPickup] = useState(order.pickupLocation ?? "");
+  const [companyName, setCompanyName] = useState(order.companyName ?? "");
+  const [companyTin, setCompanyTin] = useState(order.companyTin ?? "");
+  const [consignee, setConsignee] = useState(order.consignee ?? "");
+  const [consigneePhone, setConsigneePhone] = useState(order.consigneePhone ?? "");
   const [pays, setPays] = useState<string[]>(order.payments.map((p) => String(p.amt)));
   return (
     <Modal
@@ -1618,6 +1622,10 @@ function EditModal({
                 price: Number(price) || order.price,
                 date: date || order.date,
                 pickupLocation: pickup.trim() || undefined,
+                companyName: companyName.trim() || undefined,
+                companyTin: companyTin.trim() || undefined,
+                consignee: consignee.trim() || undefined,
+                consigneePhone: consigneePhone.trim() || undefined,
                 ...(isAdmin && order.payments.length > 0
                   ? { payments: order.payments.map((p, i) => ({ ...p, amt: pays[i] !== undefined && pays[i] !== "" ? Number(pays[i]) : p.amt })) }
                   : {}),
@@ -1637,6 +1645,15 @@ function EditModal({
         <Field label={`Unit price (${order.currency ?? "RWF"})`}><Input type="number" step={(order.currency ?? "RWF") === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
         <Field label={order.backorderOf ? "Backorder delivery date" : "Delivery date"}><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
         <Field label="Pickup location"><Input value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="e.g. Nyabugogo taxi park" /></Field>
+      </div>
+      <div className="mt-4 border-t border-line pt-3">
+        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-muted">Company / business (optional — shown on invoice &amp; payment proof)</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <Field label="Company name"><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} /></Field>
+          <Field label="Company TIN"><Input value={companyTin} onChange={(e) => setCompanyTin(e.target.value)} inputMode="numeric" /></Field>
+          <Field label="Consignee"><Input value={consignee} onChange={(e) => setConsignee(e.target.value)} /></Field>
+          <Field label="Consignee phone"><Input value={consigneePhone} onChange={(e) => setConsigneePhone(e.target.value)} /></Field>
+        </div>
       </div>
       {isAdmin && order.payments.length > 0 && (
         <div className="mt-4 border-t border-line pt-3">

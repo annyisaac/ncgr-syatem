@@ -31,6 +31,11 @@ export default function DsrOrderPage() {
   const [date, setDate] = useState("");
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
+  const [isCompany, setIsCompany] = useState(false);
+  const [companyName, setCompanyName] = useState("");
+  const [companyTin, setCompanyTin] = useState("");
+  const [consignee, setConsignee] = useState("");
+  const [consigneePhone, setConsigneePhone] = useState("");
   const [district, setDistrict] = useState("");
   const [sector, setSector] = useState("");
   const [chicks, setChicks] = useState("");
@@ -110,6 +115,12 @@ export default function DsrOrderPage() {
     if (zoneOfDistrict(district) !== myDsr!.zone)
       return setError(`You can only take clients in your zone (${myDsr!.zone}). ${district} is outside it.`);
     if (!sector.trim()) return setError("Enter the client's sector.");
+    if (isCompany) {
+      if (!companyName.trim()) return setError("Enter the company name.");
+      if (!companyTin.trim()) return setError("Enter the company TIN.");
+      if (!consignee.trim()) return setError("Enter the consignee's name.");
+      if (phoneDigitCount(consigneePhone) < 10) return setError("Consignee phone must be at least 10 digits.");
+    }
     if (nChicks <= 0) return setError("Chicks must be greater than zero.");
     if (nPrice <= 0) return setError("Enter a unit price.");
     if (selAvail && nChicks > availableFor(selAvail, product as Product, orders)) {
@@ -158,6 +169,10 @@ export default function DsrOrderPage() {
       phone: phone.trim(), chicks: nChicks, comp: 0, price: nPrice, date,
       status: "pending", by: user!.email, zone, created: date, createdAt: nowISO(),
       history, plan: samedate, payments, currency,
+      ...(isCompany && companyName.trim() ? { companyName: companyName.trim() } : {}),
+      ...(isCompany && companyTin.trim() ? { companyTin: companyTin.trim() } : {}),
+      ...(isCompany && consignee.trim() ? { consignee: consignee.trim() } : {}),
+      ...(isCompany && consigneePhone.trim() ? { consigneePhone: consigneePhone.trim() } : {}),
     };
     // One live order per customer per delivery date — phone is the primary key,
     // so this holds across products (matches the DB guard in place_order).
@@ -224,6 +239,15 @@ export default function DsrOrderPage() {
             <Field label="Phone" required><Input type="tel" inputMode="numeric" required value={phone} onChange={(e) => onPhoneChange(e.target.value)} placeholder="07xxxxxxxx" /></Field>
             <Field label="District" required hint={`Your zone (${myDsr.zone}) only`}><Select value={district} placeholder="Select district" options={myZoneDistricts.map((d) => ({ value: d, label: d }))} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} /></Field>
             <Field label="Sector" required><Select value={sector} placeholder={district ? "Select sector" : "Choose district first"} options={sectorOptions} disabled={!district} onChange={(e) => setSector(e.target.value)} /></Field>
+            <div className="sm:col-span-2">
+              <label className="flex items-center gap-2 text-sm text-ink"><input type="checkbox" checked={isCompany} onChange={(e) => setIsCompany(e.target.checked)} /> This is a company / business order</label>
+            </div>
+            {isCompany && (<>
+              <Field label="Company name" required><Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Registered company name" /></Field>
+              <Field label="Company TIN" required><Input value={companyTin} onChange={(e) => setCompanyTin(e.target.value)} inputMode="numeric" placeholder="Tax ID number" /></Field>
+              <Field label="Consignee (person receiving)" required><Input value={consignee} onChange={(e) => setConsignee(e.target.value)} placeholder="Full name" /></Field>
+              <Field label="Consignee phone" required><Input type="tel" inputMode="numeric" value={consigneePhone} onChange={(e) => setConsigneePhone(e.target.value)} placeholder="07xxxxxxxx" /></Field>
+            </>)}
             <Field label="Chicks ordered" required><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
             <Field label="Currency" hint="Applies to the whole order — price & payments"><Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[{ value: "RWF", label: "RWF — Rwandan Franc" }, { value: "USD", label: "USD — US Dollar" }, { value: "EUR", label: "EUR — Euro" }]} /></Field>
             <Field label={`Unit price (${currency})`} required><Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>

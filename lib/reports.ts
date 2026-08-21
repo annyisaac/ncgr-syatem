@@ -1012,6 +1012,17 @@ function labelledBlock(
   return y;
 }
 
+/** Business-buyer rows (company name, TIN, consignee) — only when the order
+ *  carries company details, so individual orders are unaffected. */
+function companyRows(order: Order): [string, string][] {
+  const rows: [string, string][] = [];
+  if (order.companyName) rows.push(["Company", order.companyName]);
+  if (order.companyTin) rows.push(["Company TIN", order.companyTin]);
+  if (order.consignee) rows.push(["Consignee", order.consignee]);
+  if (order.consigneePhone) rows.push(["Consignee phone", order.consigneePhone]);
+  return rows;
+}
+
 export async function invoicePDF(order: Order): Promise<void> {
   const { doc, autoTable, startY, logo } = await brandedDoc(
     `Invoice — ${order.name}`,
@@ -1026,6 +1037,7 @@ export async function invoicePDF(order: Order): Promise<void> {
   const afterInfo = labelledBlock(doc, [
     ["Client", order.name],
     ["Phone", order.phone],
+    ...companyRows(order),
     ["District / Sector", `${order.district} · ${order.sector}`],
     ["Product", order.product],
     ["DSR", order.dsr ?? "—"],
@@ -1067,6 +1079,7 @@ export async function paymentProofPDF(
   const y = labelledBlock(doc, [
     ["Client", order.name],
     ["Phone", order.phone],
+    ...companyRows(order),
     ["Product", order.product],
     ["Transaction ID", payment.checkedRef || payment.ref],
     ["Amount", formatRWF(payment.amt)],

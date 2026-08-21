@@ -66,6 +66,12 @@ export default function NewOrderPage() {
   const [clientDistrict, setClientDistrict] = useState("");
   const [clientSector, setClientSector] = useState("");
   const [phone, setPhone] = useState(initialPhone);
+  // Business/company buyer (optional)
+  const [isCompany, setIsCompany] = useState(false);
+  const [companyName, setCompanyName] = useState("");
+  const [companyTin, setCompanyTin] = useState("");
+  const [consignee, setConsignee] = useState("");
+  const [consigneePhone, setConsigneePhone] = useState("");
   const [chicks, setChicks] = useState("");
   const [comp, setComp] = useState("0");
   const [price, setPrice] = useState("");
@@ -272,6 +278,12 @@ export default function NewOrderPage() {
     if (nPrice <= 0) return setError("Enter a unit price.");
     if (!date) return setError("Choose a delivery date.");
     if (!pickup.trim()) return setError("Enter the pickup location.");
+    if (isCompany) {
+      if (!companyName.trim()) return setError("Enter the company name.");
+      if (!companyTin.trim()) return setError("Enter the company TIN.");
+      if (!consignee.trim()) return setError("Enter the consignee's name.");
+      if (phoneDigitCount(consigneePhone) < 10) return setError("Consignee phone must be at least 10 digits.");
+    }
     if (selAvail) {
       const left = availableFor(selAvail, product as Product, orders);
       // Counts what actually leaves the hatchery for this order (chicks + 2% + comp).
@@ -378,6 +390,10 @@ export default function NewOrderPage() {
       ...(applied > 0 ? { creditApplied: applied } : {}),
       ...(fullyByCredit ? { confirmedOk: true } : {}),
       ...(pickup.trim() ? { pickupLocation: pickup.trim() } : {}),
+      ...(isCompany && companyName.trim() ? { companyName: companyName.trim() } : {}),
+      ...(isCompany && companyTin.trim() ? { companyTin: companyTin.trim() } : {}),
+      ...(isCompany && consignee.trim() ? { consignee: consignee.trim() } : {}),
+      ...(isCompany && consigneePhone.trim() ? { consigneePhone: consigneePhone.trim() } : {}),
     };
 
     // One live order per customer per delivery date — phone is the primary key,
@@ -604,6 +620,28 @@ export default function NewOrderPage() {
                     onChange={(e) => setClientSector(e.target.value)}
                   />
                 </Field>
+                <div className="sm:col-span-2">
+                  <label className="flex items-center gap-2 text-sm text-ink">
+                    <input type="checkbox" checked={isCompany} onChange={(e) => setIsCompany(e.target.checked)} />
+                    This is a company / business order
+                  </label>
+                </div>
+                {isCompany && (
+                  <>
+                    <Field label="Company name" required>
+                      <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Registered company name" />
+                    </Field>
+                    <Field label="Company TIN" required>
+                      <Input value={companyTin} onChange={(e) => setCompanyTin(e.target.value)} inputMode="numeric" placeholder="Tax ID number" />
+                    </Field>
+                    <Field label="Consignee (person receiving)" required>
+                      <Input value={consignee} onChange={(e) => setConsignee(e.target.value)} placeholder="Full name" />
+                    </Field>
+                    <Field label="Consignee phone" required>
+                      <Input type="tel" inputMode="numeric" value={consigneePhone} onChange={(e) => setConsigneePhone(e.target.value)} placeholder="07xxxxxxxx" />
+                    </Field>
+                  </>
+                )}
                 <Field label="Chicks ordered" required>
                   <Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} />
                 </Field>

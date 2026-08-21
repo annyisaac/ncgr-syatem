@@ -242,6 +242,12 @@ export interface Order {
   clientDistrict?: string; // the client's own district
   clientSector?: string; // the client's own sector
   phone: string;
+  /** Business/company buyer details — set when the customer is a company.
+   *  Shown on the invoice and the payment proof. */
+  companyName?: string;
+  companyTin?: string; // tax identification number
+  consignee?: string; // person receiving on the company's behalf
+  consigneePhone?: string;
   chicks: number; // ordered chicks
   comp: number; // compensated (free) chicks
   price: number; // unit price
