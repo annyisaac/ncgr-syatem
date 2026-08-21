@@ -405,10 +405,13 @@ export interface SparePartRequest {
 // Vaccination
 // ---------------------------------------------------------------------------
 
+export type VaccineMethod = "Injection" | "Spray";
+
 export interface Vaccination {
   id: string;
   batchId: string;
   vaccine: string; // supply name
+  method?: VaccineMethod; // how it was given — injection or spray
   doses: number;
   date: string;
   administeredBy: string;

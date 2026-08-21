@@ -12,7 +12,7 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
-import type { Batch, Supply, Vaccination } from "@/lib/hatchery/types";
+import type { Batch, Supply, Vaccination, VaccineMethod } from "@/lib/hatchery/types";
 import { markStep } from "@/lib/hatchery/lifecycle";
 
 const CAN_VAX = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician", "Hatchery Attendant", "Hatchery Veterinary"];
@@ -26,6 +26,7 @@ export default function VaccinationPage() {
   const [show, setShow] = useState(false);
   const [batchId, setBatchId] = useState("");
   const [vaccineId, setVaccineId] = useState("");
+  const [method, setMethod] = useState<VaccineMethod>("Injection");
   const [doses, setDoses] = useState("");
   const [date, setDate] = useState(todayISO());
   const [vaxCulls, setVaxCulls] = useState(""); // culls removed during vaccination (batch total)
@@ -74,7 +75,7 @@ export default function VaccinationPage() {
 
   function openNew(b?: Batch) {
     setBatchId(b?.id ?? "");
-    setVaccineId(""); setDoses(""); setDate(todayISO()); setVaxCulls(""); setErr(null);
+    setVaccineId(""); setMethod("Injection"); setDoses(""); setDate(todayISO()); setVaxCulls(""); setErr(null);
     setShow(true);
   }
 
@@ -89,7 +90,7 @@ export default function VaccinationPage() {
     const on = nowISO();
 
     // Vaccination record + deduct vaccine stock.
-    const rec: Vaccination = { id: newId("vax"), batchId: batch.id, vaccine: vaccine.name, doses: dosesN, date, administeredBy: user!.name, on };
+    const rec: Vaccination = { id: newId("vax"), batchId: batch.id, vaccine: vaccine.name, method, doses: dosesN, date, administeredBy: user!.name, on };
     upsertVaccination(rec);
     const sup: Supply = { ...vaccine, quantity: vaccine.quantity - dosesN, history: [...vaccine.history, `${on} — ${dosesN} doses to ${batch.batchNo} by ${user!.name}`], on };
     upsertSupply(sup);
@@ -163,7 +164,7 @@ export default function VaccinationPage() {
                     ) : (
                       <div className="flex flex-wrap items-center gap-1.5">
                         {given.map((v) => (
-                          <span key={v.id} title={`${formatDate(v.date)} · ${v.administeredBy}`} className="rounded-full bg-green-bg px-2 py-0.5 text-[0.7rem] font-medium text-green">{v.vaccine} · {v.doses.toLocaleString()}</span>
+                          <span key={v.id} title={`${formatDate(v.date)} · ${v.administeredBy}`} className="rounded-full bg-green-bg px-2 py-0.5 text-[0.7rem] font-medium text-green">{v.vaccine} · {v.doses.toLocaleString()}{v.method ? ` · ${v.method}` : ""}</span>
                         ))}
                       </div>
                     )}
@@ -191,18 +192,20 @@ export default function VaccinationPage() {
               <th className={`${HG} first:rounded-tl-lg`}>Date</th>
               <th className={HG}>Batch</th>
               <th className={HG}>Vaccine</th>
+              <th className={HG}>Method</th>
               <th className={`${HG} text-right`}>Doses</th>
               <th className={`${HG} last:rounded-tr-lg`}>By</th>
             </tr>
           </thead>
           <tbody>
             {pageRows.length === 0 ? (
-              <EmptyRow colSpan={5} text="No vaccinations match." />
+              <EmptyRow colSpan={6} text="No vaccinations match." />
             ) : pageRows.map((v) => (
               <tr key={v.id}>
                 <Td className="whitespace-nowrap">{formatDate(v.date)}</Td>
                 <Td className="whitespace-nowrap">{batchNo(v.batchId)}</Td>
                 <Td>{v.vaccine}</Td>
+                <Td>{v.method ? <Pill tone={v.method === "Spray" ? "info" : "purple"}>{v.method}</Pill> : "—"}</Td>
                 <Td className="text-right tabular-nums">{v.doses.toLocaleString()}</Td>
                 <Td className="whitespace-nowrap text-xs text-muted">{v.administeredBy}</Td>
               </tr>
@@ -241,6 +244,10 @@ export default function VaccinationPage() {
                 <Select value={vaccineId} onChange={(e) => setVaccineId(e.target.value)}
                   placeholder={vaccineSupplies.length ? "Select vaccine" : "No vaccines in inventory"}
                   options={vaccineSupplies.map((sp) => ({ value: sp.id, label: `${sp.name} (${sp.quantity} ${sp.unit})` }))} />
+              </Field>
+              <Field label="Method of administration">
+                <Select value={method} onChange={(e) => setMethod(e.target.value as VaccineMethod)}
+                  options={[{ value: "Injection", label: "Injection" }, { value: "Spray", label: "Spray" }]} />
               </Field>
               <Field label="Doses"><Input type="number" min={0} value={doses} onChange={(e) => setDoses(e.target.value)} /></Field>
               <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
