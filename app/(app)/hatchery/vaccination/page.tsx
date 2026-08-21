@@ -12,10 +12,12 @@ import { Field, Input, Select } from "@/components/ui/Select";
 import { Pill } from "@/components/ui/Pill";
 import { TableWrap, Td, EmptyRow } from "@/components/ui/Table";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
-import type { Batch, Supply, Vaccination, VaccineMethod } from "@/lib/hatchery/types";
+import type { Batch, Vaccination, VaccineMethod } from "@/lib/hatchery/types";
 import { markStep } from "@/lib/hatchery/lifecycle";
 
 const CAN_VAX = ["Admin", "Hatchery Manager", "Operations Manager", "Hatchery Operations Manager", "Production Technician", "Hatchery Attendant", "Hatchery Veterinary"];
+
+type VaxLine = { vaccineId: string; method: VaccineMethod; doses: string };
 const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
 
 export default function VaccinationPage() {
@@ -25,9 +27,7 @@ export default function VaccinationPage() {
 
   const [show, setShow] = useState(false);
   const [batchId, setBatchId] = useState("");
-  const [vaccineId, setVaccineId] = useState("");
-  const [method, setMethod] = useState<VaccineMethod>("Injection");
-  const [doses, setDoses] = useState("");
+  const [lines, setLines] = useState<VaxLine[]>([{ vaccineId: "", method: "Injection", doses: "" }]);
   const [date, setDate] = useState(todayISO());
   const [vaxCulls, setVaxCulls] = useState(""); // culls removed during vaccination (batch total)
   const [err, setErr] = useState<string | null>(null);
@@ -40,8 +40,10 @@ export default function VaccinationPage() {
 
   const hatched = useMemo(() => batches.filter((b) => b.steps["hatching"]), [batches]);
   const batch = hatched.find((b) => b.id === batchId) ?? null;
-  const vaccine = vaccineSupplies.find((s) => s.id === vaccineId) ?? null;
-  const dosesN = Number(doses) || 0;
+
+  const addLine = () => setLines((l) => [...l, { vaccineId: "", method: "Injection", doses: "" }]);
+  const removeLine = (i: number) => setLines((l) => (l.length > 1 ? l.filter((_, idx) => idx !== i) : l));
+  const setLine = (i: number, patch: Partial<VaxLine>) => setLines((l) => l.map((x, idx) => (idx === i ? { ...x, ...patch } : x)));
 
   const vaxCullsN = Number(vaxCulls) || 0;
   const finalSaleable = batch ? Math.max(0, batch.saleableCount - vaxCullsN) : 0;
@@ -75,7 +77,8 @@ export default function VaccinationPage() {
 
   function openNew(b?: Batch) {
     setBatchId(b?.id ?? "");
-    setVaccineId(""); setMethod("Injection"); setDoses(""); setDate(todayISO()); setVaxCulls(""); setErr(null);
+    setLines([{ vaccineId: "", method: "Injection", doses: "" }]);
+    setDate(todayISO()); setVaxCulls(""); setErr(null);
     setShow(true);
   }
 
@@ -83,19 +86,37 @@ export default function VaccinationPage() {
     e.preventDefault();
     setErr(null);
     if (!batch) return setErr("Select a hatched batch.");
-    if (!vaccine) return setErr("Select a vaccine.");
-    if (dosesN <= 0) return setErr("Enter the number of doses.");
-    if (dosesN > vaccine.quantity) return setErr(`Only ${vaccine.quantity} doses of ${vaccine.name} in stock.`);
+
+    // Each filled line = one vaccine given (different types are separate lines).
+    const clean = lines
+      .filter((ln) => ln.vaccineId)
+      .map((ln) => ({ ...ln, dosesN: Number(ln.doses) || 0, supply: vaccineSupplies.find((s) => s.id === ln.vaccineId)! }));
+    if (clean.length === 0) return setErr("Add at least one vaccine.");
+    for (const ln of clean) {
+      if (ln.dosesN <= 0) return setErr(`Enter the doses for ${ln.supply.name}.`);
+    }
+    // Aggregate doses per vaccine so shared vaccines are checked/deducted once.
+    const perVaccine = new Map<string, number>();
+    for (const ln of clean) perVaccine.set(ln.vaccineId, (perVaccine.get(ln.vaccineId) ?? 0) + ln.dosesN);
+    for (const [vid, need] of perVaccine) {
+      const sup = vaccineSupplies.find((s) => s.id === vid)!;
+      if (need > sup.quantity) return setErr(`Only ${sup.quantity} doses of ${sup.name} in stock (this needs ${need}).`);
+    }
     if (vaxCullsN > batch.saleableCount) return setErr(`Culls (${vaxCullsN}) can't exceed the ${batch.saleableCount.toLocaleString()} saleable.`);
     const on = nowISO();
 
-    // Vaccination record + deduct vaccine stock.
-    const rec: Vaccination = { id: newId("vax"), batchId: batch.id, vaccine: vaccine.name, method, doses: dosesN, date, administeredBy: user!.name, on };
-    upsertVaccination(rec);
-    const sup: Supply = { ...vaccine, quantity: vaccine.quantity - dosesN, history: [...vaccine.history, `${on} — ${dosesN} doses to ${batch.batchNo} by ${user!.name}`], on };
-    upsertSupply(sup);
+    // One vaccination record per line.
+    for (const ln of clean) {
+      const rec: Vaccination = { id: newId("vax"), batchId: batch.id, vaccine: ln.supply.name, method: ln.method, doses: ln.dosesN, date, administeredBy: user!.name, on };
+      upsertVaccination(rec);
+    }
+    // Deduct each vaccine's stock (aggregated across lines).
+    for (const [vid, used] of perVaccine) {
+      const sup = vaccineSupplies.find((s) => s.id === vid)!;
+      upsertSupply({ ...sup, quantity: sup.quantity - used, history: [...sup.history, `${on} — ${used} doses to ${batch.batchNo} by ${user!.name}`], on });
+    }
 
-    // Final saleable = counted saleable − culls removed at vaccination.
+    // Final saleable = counted saleable − culls removed this session.
     const saleableTot = Math.max(0, batch.saleableCount - vaxCullsN);
     const cullsTot = (batch.culls ?? 0) + vaxCullsN;
     let nb: Batch = { ...batch, vaccinated: true, saleableCount: saleableTot, culls: cullsTot };
@@ -110,8 +131,7 @@ export default function VaccinationPage() {
         : { id: newId("inv"), productType: batch.productType, hatchDate: todayISO(), availableCount: saleableTot, batchId: batch.id, updatedBy: user!.email, on }
     );
 
-    toast(`${dosesN} doses of ${vaccine.name} given to ${batch.batchNo} — final saleable ${saleableTot.toLocaleString()}.`);
-    setDoses(""); setVaxCulls("");
+    toast(`${clean.length} vaccine${clean.length === 1 ? "" : "s"} recorded for ${batch.batchNo} — final saleable ${saleableTot.toLocaleString()}.`);
     setShow(false);
   }
 
@@ -240,17 +260,38 @@ export default function VaccinationPage() {
                 <Select value={batchId} onChange={(e) => { setBatchId(e.target.value); setVaxCulls(""); setErr(null); }} placeholder="Select batch"
                   options={hatched.map((b) => ({ value: b.id, label: `${b.batchNo} · ${b.saleableCount.toLocaleString()} saleable${b.vaccinated ? " · vaccinated" : ""}` }))} />
               </Field>
-              <Field label="Vaccine (from inventory)">
-                <Select value={vaccineId} onChange={(e) => setVaccineId(e.target.value)}
-                  placeholder={vaccineSupplies.length ? "Select vaccine" : "No vaccines in inventory"}
-                  options={vaccineSupplies.map((sp) => ({ value: sp.id, label: `${sp.name} (${sp.quantity} ${sp.unit})` }))} />
-              </Field>
-              <Field label="Method of administration">
-                <Select value={method} onChange={(e) => setMethod(e.target.value as VaccineMethod)}
-                  options={[{ value: "Injection", label: "Injection" }, { value: "Spray", label: "Spray" }]} />
-              </Field>
-              <Field label="Doses"><Input type="number" min={0} value={doses} onChange={(e) => setDoses(e.target.value)} /></Field>
               <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+            </div>
+
+            {/* Vaccines given this session — one row per vaccine type / method. */}
+            <div className="rounded-lg border border-line p-3">
+              <div className="mb-2 flex items-center justify-between">
+                <p className="text-sm font-semibold text-ink">Vaccines given <span className="font-normal text-muted">— add a row per type</span></p>
+                <Button size="sm" variant="ghost" onClick={addLine}>＋ Add vaccine</Button>
+              </div>
+              <div className="space-y-2">
+                {lines.map((ln, i) => (
+                  <div key={i} className="flex flex-wrap items-end gap-2">
+                    <div className="min-w-[10rem] flex-1">
+                      <Field label={i === 0 ? "Vaccine (from inventory)" : ""}>
+                        <Select value={ln.vaccineId} onChange={(e) => setLine(i, { vaccineId: e.target.value })}
+                          placeholder={vaccineSupplies.length ? "Select vaccine" : "No vaccines in inventory"}
+                          options={vaccineSupplies.map((sp) => ({ value: sp.id, label: `${sp.name} (${sp.quantity} ${sp.unit})` }))} />
+                      </Field>
+                    </div>
+                    <div className="w-36">
+                      <Field label={i === 0 ? "Method" : ""}>
+                        <Select value={ln.method} onChange={(e) => setLine(i, { method: e.target.value as VaccineMethod })}
+                          options={[{ value: "Injection", label: "Injection" }, { value: "Spray", label: "Spray" }]} />
+                      </Field>
+                    </div>
+                    <div className="w-28">
+                      <Field label={i === 0 ? "Doses" : ""}><Input type="number" min={0} value={ln.doses} onChange={(e) => setLine(i, { doses: e.target.value })} /></Field>
+                    </div>
+                    <Button size="sm" variant="ghost" disabled={lines.length <= 1} onClick={() => removeLine(i)}>✕</Button>
+                  </div>
+                ))}
+              </div>
             </div>
 
             {batch && (
