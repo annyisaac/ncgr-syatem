@@ -1089,7 +1089,15 @@ function OrdersInner() {
             // Changing the delivery date moves the order (re-slots its plan) like a
             // reschedule; the other field edits are merged on top.
             const base = patch.date && patch.date !== o.date ? rescheduleOrder(o, patch.date, user, orders) : o;
-            act(withHistory({ ...base, ...patch }, user, "Edited order"), "Order updated.");
+            let next = withHistory({ ...base, ...patch }, user, "Edited order");
+            // Keep an allocated order's delivery count in step with the edit until
+            // it's delivered, so availability (ordered) and delivery planning
+            // (allocated) never drift apart after an edit.
+            if (next.deliveryChicks != null && !next.deliverOk) {
+              const td = toDeliver(next);
+              if (td !== next.deliveryChicks) next = { ...next, deliveryChicks: td };
+            }
+            act(next, "Order updated.");
             setModal(null);
           }}
         />
