@@ -535,6 +535,7 @@ export default function AvailabilityPage() {
       {canManage && (
         <Modal open={showForm} onClose={() => setShowForm(false)} title="Open / update a delivery date">
           <form onSubmit={save} className="space-y-3">
+            <p className="rounded-lg border border-line bg-cream px-3 py-2 text-xs text-muted">Tip: you can open a <strong className="text-ink">future month</strong> now (e.g. October) to take advance orders before its batch is set. Use a conservative estimate — the capacity switches to the real batch automatically once a batch delivers on that date.</p>
             <Field label="Delivery date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
             <div className="grid grid-cols-2 gap-3">
               <Field label="Ross 308 chicks"><Input type="number" min={0} value={ross} onChange={(e) => setRoss(e.target.value)} /></Field>
@@ -561,7 +562,7 @@ export default function AvailabilityPage() {
             <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-gold-bg text-gold-dark"><IcoCal /></span>
             <div>
               <h2 className="text-[0.78rem] font-bold uppercase tracking-wide text-ink">Delivery dates · {filteredDates.length}</h2>
-              <p className="text-xs text-muted">Track commitments vs availability by delivery date.</p>
+              <p className="text-xs text-muted">Track commitments vs availability by delivery date. <span className="text-amber">Estimate</span> = a future date opened by hand — capacity is provisional until a batch is set.</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -587,7 +588,7 @@ export default function AvailabilityPage() {
                 <div key={a.id} className={`flex flex-col rounded-2xl border border-line bg-paper p-4 shadow-card ${a.closed || past ? "opacity-70" : ""}`}>
                   <div className="flex items-center justify-between gap-2">
                     <span className="font-bold text-ink">{formatDate(a.date)}</span>
-                    {a.fromBatch ? <Pill tone="green">Batches</Pill> : <Pill tone="neutral">Manual</Pill>}
+                    {a.fromBatch ? <Pill tone="green">Batches</Pill> : !past ? <Pill tone="amber">Estimate</Pill> : <Pill tone="neutral">Manual</Pill>}
                   </div>
                   <div className="mt-3 space-y-1.5 text-sm">
                     <div className="flex items-center justify-between"><span className="text-muted">Ross (Left / Avail)</span>{a.ross > 0 ? <span className="tabular-nums"><b className={rossLeft > 0 ? "text-green" : "text-red"}>● {rossLeft.toLocaleString()}</b> <span className="text-muted">/ {a.ross.toLocaleString()}</span></span> : <span className="text-muted">—</span>}</div>
