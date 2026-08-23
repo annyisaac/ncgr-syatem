@@ -28,6 +28,7 @@ import {
   buildStatementRows,
   guessAmountColumn,
   guessDateColumn,
+  guessPhoneColumn,
   guessRefColumn,
   parseWorkbook,
   type ParsedSheet,
@@ -47,6 +48,7 @@ interface Staged {
   refCol: string;
   amtCol: string;
   dateCol: string;
+  phoneCol: string;
   currency: Currency;
 }
 
@@ -102,7 +104,6 @@ export default function VerificationPage() {
 
   // Filters for the payments table.
   const [query, setQuery] = useState("");
-  const [lookup, setLookup] = useState(""); // phone/name lookup of a customer's payments
   const [productFilter, setProductFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("");
@@ -126,22 +127,6 @@ export default function VerificationPage() {
         .sort((a, b) => Number(!!a.p.verified) - Number(!!b.p.verified) || (a.o.date < b.o.date ? -1 : 1)),
     [myOrders]
   );
-
-  // Customer payment lookup: every payment for the customer whose phone (or
-  // name) matches, newest first — so "what did they pay and when" is one search.
-  const lookupRows = useMemo(() => {
-    const q = lookup.trim();
-    if (q.length < 2) return [];
-    const d = q.replace(/\D/g, "");
-    return payRows
-      .filter(({ o }) => (d.length >= 3 && (o.phone ?? "").replace(/\D/g, "").includes(d)) || o.name.toLowerCase().includes(q.toLowerCase()))
-      .sort((a, b) => (a.p.on < b.p.on ? 1 : -1));
-  }, [lookup, payRows]);
-  const lookupTotals = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const { o, p } of lookupRows) if (!p.voided) m.set(o.currency ?? "RWF", (m.get(o.currency ?? "RWF") ?? 0) + p.amt);
-    return [...m.entries()].map(([cur, amt]) => formatMoney(amt, cur as Currency)).join(" · ");
-  }, [lookupRows]);
 
   // Payments a checker sent to the Admin (missing/ambiguous transaction ids).
   const approvalRows = useMemo(
@@ -320,6 +305,7 @@ export default function VerificationPage() {
         refCol: guessRefColumn(sheet.headers),
         amtCol: guessAmountColumn(sheet.headers),
         dateCol: guessDateColumn(sheet.headers),
+        phoneCol: guessPhoneColumn(sheet.headers),
         currency: "RWF",
       });
     } catch {
@@ -331,7 +317,7 @@ export default function VerificationPage() {
 
   function addStatement() {
     if (!staged) return;
-    const rows = buildStatementRows(staged.sheet, staged.refCol, staged.amtCol, staged.dateCol || undefined);
+    const rows = buildStatementRows(staged.sheet, staged.refCol, staged.amtCol, staged.dateCol || undefined, staged.phoneCol || undefined);
     if (rows.length === 0) {
       toast("No rows found with those columns.", "error");
       return;
@@ -344,6 +330,7 @@ export default function VerificationPage() {
       refColumn: staged.refCol,
       amtColumn: staged.amtCol,
       dateColumn: staged.dateCol || undefined,
+      phoneColumn: staged.phoneCol || undefined,
       currency: staged.currency,
       rows,
     };
@@ -632,45 +619,6 @@ export default function VerificationPage() {
         </div>
       </div>
 
-      {/* Customer payment lookup — type a phone (or name) to see what they paid and when */}
-      <Card>
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-[0.95rem] font-bold text-ink">Customer payments</h2>
-            <p className="text-xs text-muted">Type a phone number (or name) to see every payment they&apos;ve made — amount and date.</p>
-          </div>
-          <div className="relative w-full max-w-xs">
-            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
-            <Input className="pl-9" inputMode="numeric" placeholder="Phone number or name…" value={lookup} onChange={(e) => setLookup(e.target.value)} />
-          </div>
-        </div>
-        {lookup.trim().length >= 2 && (
-          lookupRows.length === 0 ? (
-            <p className="mt-3 text-sm text-muted">No payments found for &ldquo;{lookup.trim()}&rdquo;.</p>
-          ) : (
-            <div className="mt-3">
-              <p className="mb-2 text-sm text-ink"><b>{lookupRows.length}</b> payment{lookupRows.length === 1 ? "" : "s"}{lookupTotals ? <> · paid <b className="text-green">{lookupTotals}</b></> : null}</p>
-              <TableWrap>
-                <thead><tr><Th>Date paid</Th><Th>Customer</Th><Th>Phone</Th><Th>Delivery date</Th><Th>Method</Th><Th className="text-right">Amount</Th><Th>Status</Th></tr></thead>
-                <tbody>
-                  {lookupRows.map(({ o, p, i }) => (
-                    <tr key={`${o.id}-${i}`}>
-                      <Td className="whitespace-nowrap">{formatDateTime(p.on)}</Td>
-                      <Td className="font-medium">{o.name}</Td>
-                      <Td className="whitespace-nowrap">{o.phone}</Td>
-                      <Td className="whitespace-nowrap">{formatDate(o.date)}</Td>
-                      <Td>{p.method ?? "—"}</Td>
-                      <Td className="whitespace-nowrap text-right font-semibold tabular-nums">{formatMoney(p.amt, o.currency ?? "RWF")}</Td>
-                      <Td>{p.voided ? <Pill tone="red">Rejected</Pill> : p.verified ? <Pill tone="green">Verified</Pill> : <Pill tone="amber">Pending</Pill>}</Td>
-                    </tr>
-                  ))}
-                </tbody>
-              </TableWrap>
-            </div>
-          )
-        )}
-      </Card>
-
       {/* Overview — click a card to filter the list */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <Kpi compact icon="money" tone="gold" value={stats.count.toLocaleString()} label="Total payments" sub={`${hero.pct}% reconciled`} active={statusFilter === "all"} onClick={() => setStatusFilter("all")} />
@@ -718,6 +666,7 @@ export default function VerificationPage() {
               <Field label="Reference column"><Select value={staged.refCol} onChange={(e) => setStaged({ ...staged, refCol: e.target.value })} options={staged.sheet.headers.map((h) => ({ value: h, label: h }))} /></Field>
               <Field label="Amount column"><Select value={staged.amtCol} onChange={(e) => setStaged({ ...staged, amtCol: e.target.value })} options={staged.sheet.headers.map((h) => ({ value: h, label: h }))} /></Field>
               <Field label="Date column (optional)"><Select value={staged.dateCol} onChange={(e) => setStaged({ ...staged, dateCol: e.target.value })} options={[{ value: "", label: "— none —" }, ...staged.sheet.headers.map((h) => ({ value: h, label: h }))]} /></Field>
+              <Field label="Phone / sender column (optional)"><Select value={staged.phoneCol} onChange={(e) => setStaged({ ...staged, phoneCol: e.target.value })} options={[{ value: "", label: "— none —" }, ...staged.sheet.headers.map((h) => ({ value: h, label: h }))]} /></Field>
               <Field label="Currency"><Select value={staged.currency} onChange={(e) => setStaged({ ...staged, currency: e.target.value as Currency })} options={[
                 { value: "RWF", label: "RWF" }, { value: "USD", label: "USD" }, { value: "EUR", label: "EUR" },
               ]} /></Field>
@@ -1008,22 +957,28 @@ export default function VerificationPage() {
         <Modal open onClose={() => { setShowStatements(false); setStmtQuery(""); }} title="Bank statements" className="max-w-3xl">
           {isAdmin && (
             <div className="mb-3">
-              <Input value={stmtQuery} onChange={(e) => setStmtQuery(e.target.value)} placeholder="Search a transaction id across the uploaded statements — see amount & payment date…" />
+              <Input value={stmtQuery} onChange={(e) => setStmtQuery(e.target.value)} placeholder="Search by phone number or transaction id — see amount & payment date…" />
             </div>
           )}
           {stmtQuery.trim() ? (
             (() => {
               const q = normRef(stmtQuery);
               const ql = stmtQuery.trim().toLowerCase();
+              const qd = stmtQuery.replace(/\D/g, "");
               const matches = statements.flatMap((s) =>
                 s.rows
-                  .filter((r) => (q && normRef(r.ref).includes(q)) || r.ref.toLowerCase().includes(ql))
-                  .map((r) => ({ ref: r.ref, amt: r.amt, date: r.date, file: s.fileName, on: s.uploadedOn, currency: s.currency }))
+                  .filter((r) =>
+                    (q && normRef(r.ref).includes(q)) ||
+                    r.ref.toLowerCase().includes(ql) ||
+                    (qd.length >= 3 && (r.phone ?? "").replace(/\D/g, "").includes(qd))
+                  )
+                  .map((r) => ({ ref: r.ref, amt: r.amt, date: r.date, phone: r.phone, file: s.fileName, on: s.uploadedOn, currency: s.currency }))
               );
               return (
                 <TableWrap>
                   <thead>
                     <tr>
+                      <Th>Phone / sender</Th>
                       <Th>Transaction id</Th>
                       <Th className="text-right">Amount</Th>
                       <Th>Payment date</Th>
@@ -1032,9 +987,10 @@ export default function VerificationPage() {
                   </thead>
                   <tbody>
                     {matches.length === 0 ? (
-                      <EmptyRow colSpan={4} text="No transaction with that id in the statements." />
+                      <EmptyRow colSpan={5} text="No matching transaction in the statements. (Phone search needs a statement uploaded with a phone/sender column mapped.)" />
                     ) : matches.map((mm, idx) => (
                       <tr key={idx}>
+                        <Td className="whitespace-nowrap">{mm.phone || <span className="text-muted">—</span>}</Td>
                         <Td className="font-mono text-xs">{mm.ref}</Td>
                         <Td className="text-right font-semibold tabular-nums">{formatMoney(mm.amt, mm.currency)}</Td>
                         <Td className="whitespace-nowrap">{mm.date || <span className="text-muted">—</span>}</Td>

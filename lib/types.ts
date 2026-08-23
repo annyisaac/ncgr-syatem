@@ -489,6 +489,9 @@ export interface StatementRow {
   /** The transaction date as it appears in the statement (raw text), when a
    *  date column was mapped on upload. */
   date?: string;
+  /** The payer / sender phone number from the statement (e.g. MoMo), when a
+   *  phone column was mapped on upload — lets you search a statement by phone. */
+  phone?: string;
 }
 
 export interface BankStatement {
@@ -500,6 +503,8 @@ export interface BankStatement {
   amtColumn: string;
   /** The column mapped as the transaction date, when one was chosen. */
   dateColumn?: string;
+  /** The column mapped as the payer/sender phone, when one was chosen. */
+  phoneColumn?: string;
   /** Currency of this statement's amounts. Payments only match a statement in
    *  their own currency. Defaults to RWF for statements uploaded before this. */
   currency?: Currency;
