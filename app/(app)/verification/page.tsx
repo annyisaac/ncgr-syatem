@@ -128,6 +128,26 @@ export default function VerificationPage() {
     [myOrders]
   );
 
+  // One flat, pre-normalised index of every statement transaction — built once
+  // per statements change so the search only scans a plain array (fast, even
+  // with tens of thousands of rows across all uploads).
+  const stmtIndex = useMemo(
+    () =>
+      statements.flatMap((s) =>
+        s.rows.map((r) => ({
+          ref: r.ref,
+          nref: normRef(r.ref),
+          amt: r.amt,
+          date: r.date,
+          phone: r.phone,
+          pdigits: (r.phone ?? "").replace(/\D/g, ""),
+          file: s.fileName,
+          currency: s.currency,
+        }))
+      ),
+    [statements]
+  );
+
   // Payments a checker sent to the Admin (missing/ambiguous transaction ids).
   const approvalRows = useMemo(
     () => myOrders.flatMap((o) => o.payments.map((p, i) => ({ o, p, i })).filter((x) => x.p.pendingApproval && !x.p.verified)),
@@ -317,9 +337,26 @@ export default function VerificationPage() {
 
   function addStatement() {
     if (!staged) return;
-    const rows = buildStatementRows(staged.sheet, staged.refCol, staged.amtCol, staged.dateCol || undefined, staged.phoneCol || undefined);
-    if (rows.length === 0) {
+    const allRows = buildStatementRows(staged.sheet, staged.refCol, staged.amtCol, staged.dateCol || undefined, staged.phoneCol || undefined);
+    if (allRows.length === 0) {
       toast("No rows found with those columns.", "error");
+      return;
+    }
+    // One transaction id per table: only keep transactions we don't already have
+    // (across every uploaded statement), and drop duplicates within this file too.
+    const existingRefs = new Set<string>();
+    for (const s of statements) for (const r of s.rows) { const n = normRef(r.ref); if (n) existingRefs.add(n); }
+    const seen = new Set<string>();
+    const rows = allRows.filter((r) => {
+      const n = normRef(r.ref);
+      if (!n || existingRefs.has(n) || seen.has(n)) return false;
+      seen.add(n);
+      return true;
+    });
+    const skipped = allRows.length - rows.length;
+    if (rows.length === 0) {
+      toast(`All ${allRows.length} transactions are already in the table — nothing new added.`, "info");
+      setStaged(null);
       return;
     }
     const stmt: BankStatement = {
@@ -349,10 +386,11 @@ export default function VerificationPage() {
     const cleared = res.outcomes.filter((x) => x.result === "verified" || x.result === "corrected").length;
     setOutcomes(res.outcomes);
     if (res.outcomes.length > 0) setShowAutoResults(true);
+    const skippedNote = skipped > 0 ? ` (skipped ${skipped} already in the table)` : "";
     toast(
       cleared > 0
-        ? `Added "${stmt.fileName}" (${rows.length} rows) — ${cleared} payment(s) auto-verified.`
-        : `Added "${stmt.fileName}" (${rows.length} rows).`
+        ? `Added ${rows.length} new transaction(s)${skippedNote} — ${cleared} payment(s) auto-verified.`
+        : `Added ${rows.length} new transaction(s)${skippedNote}.`
     );
   }
 
@@ -965,40 +1003,40 @@ export default function VerificationPage() {
               const q = normRef(stmtQuery);
               const ql = stmtQuery.trim().toLowerCase();
               const qd = stmtQuery.replace(/\D/g, "");
-              const matches = statements.flatMap((s) =>
-                s.rows
-                  .filter((r) =>
-                    (q && normRef(r.ref).includes(q)) ||
-                    r.ref.toLowerCase().includes(ql) ||
-                    (qd.length >= 3 && (r.phone ?? "").replace(/\D/g, "").includes(qd))
-                  )
-                  .map((r) => ({ ref: r.ref, amt: r.amt, date: r.date, phone: r.phone, file: s.fileName, on: s.uploadedOn, currency: s.currency }))
+              const hits = stmtIndex.filter((r) =>
+                (q !== "" && r.nref.includes(q)) ||
+                r.ref.toLowerCase().includes(ql) ||
+                (qd.length >= 3 && r.pdigits.includes(qd))
               );
+              const matches = hits.slice(0, 200);
               return (
-                <TableWrap>
-                  <thead>
-                    <tr>
-                      <Th>Phone / sender</Th>
-                      <Th>Transaction id</Th>
-                      <Th className="text-right">Amount</Th>
-                      <Th>Payment date</Th>
-                      <Th>Statement</Th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {matches.length === 0 ? (
-                      <EmptyRow colSpan={5} text="No matching transaction in the statements. (Phone search needs a statement uploaded with a phone/sender column mapped.)" />
-                    ) : matches.map((mm, idx) => (
-                      <tr key={idx}>
-                        <Td className="whitespace-nowrap">{mm.phone || <span className="text-muted">—</span>}</Td>
-                        <Td className="font-mono text-xs">{mm.ref}</Td>
-                        <Td className="text-right font-semibold tabular-nums">{formatMoney(mm.amt, mm.currency)}</Td>
-                        <Td className="whitespace-nowrap">{mm.date || <span className="text-muted">—</span>}</Td>
-                        <Td>{mm.file}</Td>
+                <>
+                  <TableWrap>
+                    <thead>
+                      <tr>
+                        <Th>Phone / sender</Th>
+                        <Th>Transaction id</Th>
+                        <Th className="text-right">Amount</Th>
+                        <Th>Payment date</Th>
+                        <Th>Statement</Th>
                       </tr>
-                    ))}
-                  </tbody>
-                </TableWrap>
+                    </thead>
+                    <tbody>
+                      {matches.length === 0 ? (
+                        <EmptyRow colSpan={5} text="No matching transaction in the statements. (Phone search needs a statement uploaded with a phone/sender column mapped.)" />
+                      ) : matches.map((mm, idx) => (
+                        <tr key={idx}>
+                          <Td className="whitespace-nowrap">{mm.phone || <span className="text-muted">—</span>}</Td>
+                          <Td className="font-mono text-xs">{mm.ref}</Td>
+                          <Td className="text-right font-semibold tabular-nums">{formatMoney(mm.amt, mm.currency)}</Td>
+                          <Td className="whitespace-nowrap">{mm.date || <span className="text-muted">—</span>}</Td>
+                          <Td>{mm.file}</Td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </TableWrap>
+                  {hits.length > matches.length && <p className="mt-2 text-xs text-muted">Showing the first {matches.length} of {hits.length.toLocaleString()} matches — narrow your search.</p>}
+                </>
               );
             })()
           ) : (
