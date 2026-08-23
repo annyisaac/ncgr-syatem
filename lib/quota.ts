@@ -34,6 +34,20 @@ export async function upsertAgentQuota(q: AgentQuota): Promise<void> {
   if (error) throw new Error(`Could not save quota: ${error.message}`);
 }
 
+/** A field agent records a payment on their own order (via a scoped RPC — they
+ *  have no UPDATE access to orders otherwise). */
+export async function agentAddPayment(orderId: string, payment: unknown): Promise<{ ok: boolean; error?: string }> {
+  const { error } = await getSupabase().rpc("agent_add_payment", { p_order_id: orderId, p_payment: payment });
+  if (error) {
+    const m = error.message || "";
+    if (m.includes("DUPLICATE_PAYMENT_REF")) return { ok: false, error: "That transaction reference is already recorded on another order." };
+    if (m.includes("FORBIDDEN")) return { ok: false, error: "You can only add payments to orders you created." };
+    if (m.includes("BAD_PAYMENT")) return { ok: false, error: "Enter a valid amount." };
+    return { ok: false, error: "Could not save the payment — please try again." };
+  }
+  return { ok: true };
+}
+
 /** The chicks an agent may still sell on a date: allocation − what they've
  *  already sold there (active orders they created). Returns null when no quota
  *  has been assigned for that date (i.e. they can't sell that day). */

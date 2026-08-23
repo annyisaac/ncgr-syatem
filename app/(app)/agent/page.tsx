@@ -1,52 +1,25 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
-import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
-import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
-import { Field, Input, Select } from "@/components/ui/Select";
-
-import { type Order, type Payment, type Province, type Currency, toDeliver } from "@/lib/types";
-import { availableFor } from "@/lib/types";
-import { ALL_DISTRICTS, formatMoney, provinceOfDistrict, sectorsOfDistrict, zoneOfDistrict } from "@/lib/config";
-import { nowISO, formatDate, normalizePhone, todayISO, phoneDigitCount, isValidMomoRef } from "@/lib/format";
-import { logLine } from "@/lib/orders";
-import { uploadPaymentSlip } from "@/lib/db";
+import { StatTile } from "@/components/dashboard/DashKit";
+import { formatMoney } from "@/lib/config";
+import { formatDate, todayISO } from "@/lib/format";
+import { toDeliver, isFullyPaid, balance } from "@/lib/types";
 import { listAgentQuotas, type AgentQuota } from "@/lib/quota";
 
-const num = (v: string) => Number(v) || 0;
 const isActive = (s?: string) => s !== "refunded" && s !== "rejected";
-const PRODUCT = "Ross 308" as const;
 
-export default function AgentOrderPage() {
+export default function AgentDashboardPage() {
   const { user } = useAuth();
-  const { orders, availability, placeOrder, newId } = useData();
-  const { toast } = useToast();
-  const router = useRouter();
-
+  const { orders } = useData();
   const [quotas, setQuotas] = useState<AgentQuota[]>([]);
   const email = (user?.email ?? "").toLowerCase();
-
-  const [date, setDate] = useState("");
-  const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
-  const [district, setDistrict] = useState("");
-  const [sector, setSector] = useState("");
-  const [chicks, setChicks] = useState("");
-  const [price, setPrice] = useState("");
-  const [currency, setCurrency] = useState<Currency>("RWF");
-  const [payAmt, setPayAmt] = useState("");
-  const [payRef, setPayRef] = useState("");
-  const [payMethod, setPayMethod] = useState<"MoMo" | "Bank">("MoMo");
-  const [bankName, setBankName] = useState("");
-  const [slipFile, setSlipFile] = useState<File | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -54,171 +27,107 @@ export default function AgentOrderPage() {
     return () => { active = false; };
   }, []);
 
-  // Chicks this agent has already committed on a date (their own active orders).
-  const soldOn = useMemo(() => (d: string) =>
-    orders.filter((o) => o.date === d && o.product === PRODUCT && isActive(o.status) && (o.by ?? "").toLowerCase() === email).reduce((s, o) => s + toDeliver(o), 0),
-    [orders, email]);
+  const mine = useMemo(() => orders.filter((o) => (o.by ?? "").toLowerCase() === email && o.product === "Ross 308"), [orders, email]);
+  const active = mine.filter((o) => isActive(o.status));
 
-  // Only the delivery dates this agent has a quota for, that are still open in
-  // availability and where they have quota + capacity left.
-  const sellableDates = useMemo(() => {
+  const perDate = useMemo(() => {
     const today = todayISO();
     return quotas
-      .filter((q) => q.agentEmail.toLowerCase() === email)
+      .filter((q) => q.agentEmail.toLowerCase() === email && q.date >= today)
       .map((q) => {
-        const a = availability.find((x) => x.id === q.date);
-        const remainingQuota = Math.max(0, q.chicks - soldOn(q.date));
-        const dateLeft = a ? availableFor(a, PRODUCT, orders) : 0;
-        return { date: q.date, chicks: q.chicks, remainingQuota, dateLeft, open: !!a && !a.closed && q.date >= today && a.ross > 0 };
+        const sold = active.filter((o) => o.date === q.date).reduce((s, o) => s + toDeliver(o), 0);
+        return { date: q.date, chicks: q.chicks, sold, left: Math.max(0, q.chicks - sold) };
       })
-      .filter((x) => x.open && x.remainingQuota > 0)
-      .sort((x, y) => (x.date < y.date ? -1 : 1));
-  }, [quotas, email, availability, orders, soldOn]);
-
-  const selDate = sellableDates.find((x) => x.date === date) ?? null;
-  const nChicks = num(chicks);
-  const nPrice = num(price);
-  const extra2 = Math.round(nChicks * 0.02);
-  const toDeliverN = nChicks + extra2;
-  const total = nChicks * nPrice;
-  const sectorOptions = useMemo(() => sectorsOfDistrict(district).map((s) => ({ value: s, label: s })), [district]);
+      .sort((a, b) => (a.date < b.date ? -1 : 1));
+  }, [quotas, email, active]);
 
   if (!user) return null;
 
-  async function submit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-    if (!date) return setError("Choose a delivery date you have a quota for.");
-    if (!selDate) return setError("That date is no longer available to you.");
-    if (!name.trim()) return setError("Enter the client name.");
-    if (phoneDigitCount(phone) < 10) return setError("Phone number must be at least 10 digits.");
-    if (!district) return setError("Choose the client's district.");
-    if (!sector.trim()) return setError("Choose the client's sector.");
-    if (nChicks <= 0) return setError("Chicks must be greater than zero.");
-    if (nPrice <= 0) return setError("Enter a unit price.");
-    // Quota: this order's chicks (chicks + 2% free) must fit the agent's remaining allocation.
-    if (toDeliverN > selDate.remainingQuota) {
-      return setError(`Your quota for ${formatDate(date)} is ${selDate.remainingQuota.toLocaleString()} chicks left — this order needs ${toDeliverN.toLocaleString()} (incl. 2% free).`);
-    }
-    const payAmount = num(payAmt);
-    if (payAmount > 0) {
-      if (!payRef.trim()) return setError("Enter the transaction ID for the first payment.");
-      if (payMethod === "MoMo" && !isValidMomoRef(payRef)) return setError("MoMo transaction ID must be exactly 11 digits.");
-      if (payMethod === "Bank" && !bankName.trim()) return setError("Enter the bank name.");
-      if (payMethod === "Bank" && !slipFile) return setError("Upload the bank payment slip.");
-    }
-
-    const province: Province = (provinceOfDistrict(district) ?? "Eastern") as Province;
-    const zone = zoneOfDistrict(district) ?? "Zone 1";
-
-    let slipPath: string | undefined;
-    if (payAmount > 0 && payMethod === "Bank" && slipFile) {
-      setSaving(true);
-      try { slipPath = await uploadPaymentSlip(slipFile); }
-      catch (err) { setSaving(false); return setError(err instanceof Error ? err.message : "Could not upload the payment slip."); }
-    }
-
-    const payments: Payment[] = [];
-    const history = [logLine(user!, "Created order — field agent (Not confirmed)")];
-    if (payAmount > 0) {
-      payments.push({ amt: payAmount, ref: payRef.trim(), on: nowISO(), by: user!.email, method: payMethod, ...(payMethod === "Bank" ? { bankName: bankName.trim() } : {}), ...(slipPath ? { slipPath } : {}), verified: false });
-      history.push(logLine(user!, `Recorded first payment ${payAmount.toLocaleString()} ${currency} via ${payMethod} (ref ${payRef.trim()})`));
-    }
-    const samedate = orders.filter((o) => o.date === date).length;
-    const order: Order = {
-      id: newId("ord"), product: PRODUCT, province, district, sector: sector.trim(),
-      dsr: user!.name,
-      name: name.trim(), clientDistrict: district, clientSector: sector.trim(),
-      phone: phone.trim(), chicks: nChicks, comp: 0, price: nPrice, date,
-      status: "pending", by: user!.email, zone, created: date, createdAt: nowISO(),
-      history, plan: samedate, payments, currency,
-    };
-    // One live order per customer per delivery date (matches the DB guard).
-    const dupKey = normalizePhone(order.phone);
-    const dup = orders.find((o) => o.id !== order.id && o.date === order.date && isActive(o.status) && dupKey && normalizePhone(o.phone) === dupKey);
-    if (dup) return setError(`${order.name} already has an order for ${formatDate(order.date)}. A customer can only have one order per delivery date.`);
-
-    setSaving(true);
-    const res = await placeOrder(order);
-    setSaving(false);
-    if (!res.ok) {
-      if (res.reason === "not_enough") return setError(`Not enough ${PRODUCT} chicks available on ${formatDate(date)} anymore. Pick another day or a smaller order.`);
-      if (res.reason === "no_quota") return setError(`You don't have a quota for ${formatDate(date)}. Ask the Admin to allocate you chicks for that date.`);
-      if (res.reason === "quota_exceeded") return setError(`This exceeds your remaining quota for ${formatDate(date)}${typeof res.left === "number" ? ` (${res.left.toLocaleString()} left)` : ""}.`);
-      if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
-      if (res.reason === "duplicate") return setError(`${order.name} already has an order for ${formatDate(order.date)}.`);
-      if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order.`);
-      return setError("Could not place the order. Check your connection and try again.");
-    }
-    toast(`Order created for ${order.name}.`);
-    // Refresh quotas view (remaining recomputes from the new order automatically).
-    router.push("/agent/orders");
-  }
+  const totalLeft = perDate.reduce((s, d) => s + d.left, 0);
+  const chicksSold = active.reduce((s, o) => s + o.chicks, 0);
+  // Rejected payments across the agent's orders — a nudge to re-collect.
+  const rejectedPayments = mine.reduce((n, o) => n + o.payments.filter((p) => p.voided).length, 0);
+  const recent = mine.slice().sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1)).slice(0, 5);
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       <div>
-        <h1 className="text-xl font-extrabold tracking-tight text-ink">New Ross 308 order</h1>
-        <p className="text-sm text-muted">Collect an order in the field. You can sell up to your quota on each delivery date.</p>
+        <h1 className="text-xl font-extrabold tracking-tight text-ink">Hello {user.name} 👋</h1>
+        <p className="text-sm text-muted">Your Ross 308 field sales at a glance.</p>
       </div>
 
-      {sellableDates.length === 0 ? (
-        <Card><p className="text-sm text-muted">You have no delivery date with quota to sell right now. Ask the Admin to assign you chicks for a delivery date.</p></Card>
-      ) : (
-        <form onSubmit={submit} className="space-y-4">
-          <Card>
-            <CardHeader title="Product & delivery day" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Product"><div className="flex h-12 items-center"><Pill tone="ross">Ross 308</Pill></div></Field>
-              <Field label="Delivery date" required>
-                <Select value={date} placeholder="Select a delivery date" onChange={(e) => setDate(e.target.value)}
-                  options={sellableDates.map((d) => ({ value: d.date, label: `${formatDate(d.date)} · ${d.remainingQuota.toLocaleString()} left for you` }))} />
-              </Field>
-            </div>
-            {selDate && <p className="mt-2 text-xs text-muted">Your quota for {formatDate(selDate.date)}: <strong className="text-ink">{selDate.chicks.toLocaleString()}</strong> · remaining <strong className="text-green">{selDate.remainingQuota.toLocaleString()}</strong></p>}
-          </Card>
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatTile label="Chicks left to sell" value={totalLeft.toLocaleString()} tone={totalLeft > 0 ? "green" : "default"} />
+        <StatTile label="My orders" value={String(active.length)} />
+        <StatTile label="Chicks sold" value={chicksSold.toLocaleString()} />
+        <StatTile label="Rejected payments" value={String(rejectedPayments)} tone={rejectedPayments > 0 ? "red" : "default"} />
+      </div>
 
-          <Card>
-            <CardHeader title="Client & quantity" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Client name" required><Input value={name} onChange={(e) => setName(e.target.value)} /></Field>
-              <Field label="Phone" required><Input type="tel" inputMode="numeric" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="07xxxxxxxx" /></Field>
-              <Field label="District" required><Select value={district} placeholder="Select district" options={ALL_DISTRICTS.map((d) => ({ value: d, label: d }))} onChange={(e) => { setDistrict(e.target.value); setSector(""); }} /></Field>
-              <Field label="Sector" required><Select value={sector} placeholder={district ? "Select sector" : "Choose district first"} options={sectorOptions} disabled={!district} onChange={(e) => setSector(e.target.value)} /></Field>
-              <Field label="Chicks ordered" required><Input type="number" min={1} value={chicks} onChange={(e) => setChicks(e.target.value)} /></Field>
-              <Field label="Currency"><Select value={currency} onChange={(e) => setCurrency(e.target.value as Currency)} options={[{ value: "RWF", label: "RWF — Rwandan Franc" }, { value: "USD", label: "USD — US Dollar" }, { value: "EUR", label: "EUR — Euro" }]} /></Field>
-              <Field label={`Unit price (${currency})`} required><Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={price} onChange={(e) => setPrice(e.target.value)} /></Field>
-            </div>
-            <div className="mt-4 grid grid-cols-3 gap-3 rounded-md bg-ink/5 p-3 text-sm">
-              <Calc label="2% extra (free)" value={String(extra2)} />
-              <Calc label="To deliver" value={String(toDeliverN)} />
-              <Calc label="Total (charged)" value={formatMoney(total, currency)} />
-            </div>
-          </Card>
+      {/* Quick actions */}
+      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+        <Link href="/agent/order" className="rounded-2xl border border-line bg-paper p-4 text-center shadow-card transition hover:border-gold">
+          <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-gold-bg text-gold-dark"><IcoPlus /></span>
+          <p className="mt-2 text-sm font-semibold text-ink">New order</p>
+        </Link>
+        <Link href="/agent/orders" className="rounded-2xl border border-line bg-paper p-4 text-center shadow-card transition hover:border-gold">
+          <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-blue-bg text-blue"><IcoList /></span>
+          <p className="mt-2 text-sm font-semibold text-ink">My orders {rejectedPayments > 0 && <span className="text-red">· {rejectedPayments} to re-collect</span>}</p>
+        </Link>
+        <Link href="/agent/orders#report" className="rounded-2xl border border-line bg-paper p-4 text-center shadow-card transition hover:border-gold">
+          <span className="mx-auto grid h-11 w-11 place-items-center rounded-xl bg-green-bg text-green"><IcoReport /></span>
+          <p className="mt-2 text-sm font-semibold text-ink">Report</p>
+        </Link>
+      </div>
 
-          <Card>
-            <CardHeader title="First payment (optional)" />
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-              <Field label="Payment method"><Select value={payMethod} onChange={(e) => setPayMethod(e.target.value as "MoMo" | "Bank")} options={[{ value: "MoMo", label: "Mobile Money (MoMo)" }, { value: "Bank", label: "Bank transfer" }]} /></Field>
-              <Field label={`Amount (${currency})`}><Input type="number" min={0} step={currency === "RWF" ? "1" : "0.01"} value={payAmt} onChange={(e) => setPayAmt(e.target.value)} /></Field>
-              <Field label="Transaction ID"><Input value={payRef} onChange={(e) => setPayRef(e.target.value)} placeholder={payMethod === "Bank" ? "Bank transfer reference" : "MoMo transaction ID (11 digits)"} /></Field>
-              {payMethod === "Bank" && (<>
-                <Field label="Bank name"><Input value={bankName} onChange={(e) => setBankName(e.target.value)} placeholder="e.g. Bank of Kigali" /></Field>
-                <Field label="Payment slip (image/PDF)"><Input type="file" accept="image/*,application/pdf" onChange={(e) => setSlipFile(e.target.files?.[0] ?? null)} /></Field>
-              </>)}
-            </div>
-          </Card>
-
-          {error && <p className="rounded-md bg-red-bg px-3 py-2 text-sm text-status-refunded">{error}</p>}
-          <div className="flex justify-end gap-2">
-            <Button type="submit" disabled={saving}>{saving ? "Placing…" : "Create order"}</Button>
+      {rejectedPayments > 0 && (
+        <div className="flex items-center gap-3 rounded-2xl border border-red/30 bg-red-bg/60 p-4 shadow-card">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-full bg-red-bg font-bold text-red">!</span>
+          <div className="min-w-0">
+            <p className="text-sm font-semibold text-ink">{rejectedPayments} payment{rejectedPayments === 1 ? "" : "s"} rejected</p>
+            <p className="text-xs text-muted">Re-collect the money and add the new payment on the order in <Link href="/agent/orders" className="text-gold-dark underline">My orders</Link>.</p>
           </div>
-        </form>
+        </div>
       )}
+
+      <Card>
+        <CardHeader title="My quota by delivery date" />
+        {perDate.length === 0 ? (
+          <p className="text-sm text-muted">No upcoming quota. Ask the Admin to allocate you chicks for a delivery date.</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 xl:grid-cols-3">
+            {perDate.map((d) => (
+              <div key={d.date} className="rounded-xl border border-line bg-paper p-3 shadow-card">
+                <p className="font-semibold text-ink">{formatDate(d.date)}</p>
+                <div className="mt-1 flex items-center justify-between text-sm">
+                  <span className="text-muted">Sold {d.sold.toLocaleString()} / {d.chicks.toLocaleString()}</span>
+                  <Pill tone={d.left > 0 ? "green" : "neutral"}>{d.left.toLocaleString()} left</Pill>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+
+      <Card>
+        <CardHeader title="Recent orders" action={<Link href="/agent/orders" className="text-xs font-semibold text-gold-dark underline">View all</Link>} />
+        {recent.length === 0 ? (
+          <p className="py-4 text-center text-sm text-muted">No orders yet.</p>
+        ) : (
+          <div className="space-y-2">
+            {recent.map((o) => (
+              <div key={o.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+                <span className="min-w-0"><b className="text-ink">{o.name}</b> <span className="text-muted">· {formatDate(o.date)} · {o.chicks.toLocaleString()} chicks</span></span>
+                <span className={isFullyPaid(o) ? "text-green" : "text-muted"}>{isFullyPaid(o) ? "Paid" : formatMoney(balance(o), o.currency ?? "RWF") + " left"}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
     </div>
   );
 }
 
-function Calc({ label, value }: { label: string; value: string }) {
-  return (<div><p className="text-xs text-ink/60">{label}</p><p className="font-semibold text-ink">{value}</p></div>);
-}
+const svg = (children: React.ReactNode) => <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">{children}</svg>;
+const IcoPlus = () => svg(<><path d="M12 5v14M5 12h14" /></>);
+const IcoList = () => svg(<><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01" /></>);
+const IcoReport = () => svg(<><path d="M4 4h11l5 5v11a0 0 0 0 1 0 0H4z" /><path d="M14 4v5h5M8 13h8M8 17h5" /></>);

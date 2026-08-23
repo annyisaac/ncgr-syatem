@@ -237,7 +237,8 @@ const NAV: Record<Role, NavItem[]> = {
   // Ross 308 field sales agent — collects orders + first payment in the field,
   // limited to a per-delivery-date chick quota the Admin assigns.
   "Ross Sales Agent": [
-    { label: "New order", href: "/agent" },
+    { label: "Dashboard", href: "/agent" },
+    { label: "New order", href: "/agent/order" },
     { label: "My orders", href: "/agent/orders" },
   ],
 
