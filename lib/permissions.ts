@@ -146,6 +146,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Requests", href: "/requests" },
     { label: "Farm visits", href: "/farm-visits" },
     { label: "Availability", href: "/availability" },
+    { label: "Agent quotas", href: "/agent-quotas" },
     { label: "Delivery planning", href: "/planning" },
     { label: "Commission", href: "/commission" },
     { label: "Verification", href: "/verification" },

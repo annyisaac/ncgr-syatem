@@ -143,6 +143,8 @@ export default function AgentOrderPage() {
     setSaving(false);
     if (!res.ok) {
       if (res.reason === "not_enough") return setError(`Not enough ${PRODUCT} chicks available on ${formatDate(date)} anymore. Pick another day or a smaller order.`);
+      if (res.reason === "no_quota") return setError(`You don't have a quota for ${formatDate(date)}. Ask the Admin to allocate you chicks for that date.`);
+      if (res.reason === "quota_exceeded") return setError(`This exceeds your remaining quota for ${formatDate(date)}${typeof res.left === "number" ? ` (${res.left.toLocaleString()} left)` : ""}.`);
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
       if (res.reason === "duplicate") return setError(`${order.name} already has an order for ${formatDate(order.date)}.`);
       if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order.`);

@@ -394,7 +394,7 @@ export const deleteOrderOne = (id: string) => deleteOne("orders", "id", id);
 
 export type PlaceResult =
   | { ok: true }
-  | { ok: false; reason: "not_enough" | "date_closed" | "out_of_zone" | "duplicate" | "dup_payment" | "failed"; left?: number; message?: string };
+  | { ok: false; reason: "not_enough" | "date_closed" | "out_of_zone" | "duplicate" | "dup_payment" | "no_quota" | "quota_exceeded" | "failed"; left?: number; message?: string };
 
 export async function placeOrder(order: Order): Promise<PlaceResult> {
   if (!inBrowser()) return { ok: false, reason: "failed" };
@@ -403,6 +403,9 @@ export async function placeOrder(order: Order): Promise<PlaceResult> {
   const m = error.message || "";
   const nm = m.match(/NOT_ENOUGH:(-?\d+)/);
   if (nm) return { ok: false, reason: "not_enough", left: Math.max(0, Number(nm[1])) };
+  const qm = m.match(/QUOTA_EXCEEDED:(-?\d+)/);
+  if (qm) return { ok: false, reason: "quota_exceeded", left: Math.max(0, Number(qm[1])) };
+  if (m.includes("NO_QUOTA")) return { ok: false, reason: "no_quota" };
   if (m.includes("DATE_CLOSED")) return { ok: false, reason: "date_closed" };
   if (m.includes("OUT_OF_ZONE")) return { ok: false, reason: "out_of_zone" };
   if (m.includes("DUPLICATE_CUSTOMER")) return { ok: false, reason: "duplicate" };
