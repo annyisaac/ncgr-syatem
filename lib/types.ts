@@ -39,6 +39,7 @@ export type Role =
   | "Tetra Payment Checker"
   | "Ross Order Receiver"
   | "Ross Payment Checker"
+  | "Ross Sales Agent"
   | "DSR"
   // Finance
   | "Accountant"
@@ -62,6 +63,7 @@ export const ROLES: Role[] = [
   "Tetra Payment Checker",
   "Ross Order Receiver",
   "Ross Payment Checker",
+  "Ross Sales Agent",
   "DSR",
   "Accountant",
   "Logistics Officer",

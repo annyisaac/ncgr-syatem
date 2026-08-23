@@ -21,6 +21,7 @@ export function productForRole(role: Role): Product | undefined {
       return "Tetra Super Harco";
     case "Ross Order Receiver":
     case "Ross Payment Checker":
+    case "Ross Sales Agent":
       return "Ross 308";
     default:
       return undefined;
@@ -52,6 +53,9 @@ export function canSee(order: Order, user: User): boolean {
     case "Ross Payment Checker":
       // Ross 308 is one product handled across both zones.
       return order.product === "Ross 308";
+    case "Ross Sales Agent":
+      // A field agent sees only the Ross 308 orders they collected themselves.
+      return order.product === "Ross 308" && (order.by ?? "").toLowerCase() === user.email.toLowerCase();
     case "Accountant":
       // Finance oversight — every order, across products and zones.
       return true;
@@ -228,6 +232,12 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Delivery planning", href: "/planning" },
     { label: "Orders", href: "/orders" },
     { label: "Agrishow", href: "/agrishow" },
+  ],
+  // Ross 308 field sales agent — collects orders + first payment in the field,
+  // limited to a per-delivery-date chick quota the Admin assigns.
+  "Ross Sales Agent": [
+    { label: "New order", href: "/agent" },
+    { label: "My orders", href: "/agent/orders" },
   ],
 
   // ---- Finance ----
