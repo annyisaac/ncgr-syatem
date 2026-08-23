@@ -6,10 +6,17 @@ import type { AppNotification, Role } from "./types";
  */
 export function notificationHref(n: AppNotification, role: Role): string {
   // The order is gone — deep-linking to it would show an empty list.
-  if (n.type === "deleted") return role === "DSR" ? "/dsr/orders" : "/orders";
+  if (n.type === "deleted") {
+    if (role === "DSR") return "/dsr/orders";
+    if (role === "Ross Sales Agent") return "/agent/orders";
+    return "/orders";
+  }
 
   // DSRs only have their own order list.
   if (role === "DSR") return "/dsr/orders";
+  // Field agents live entirely inside /agent — every notification lands on the
+  // order it's about, in their own list.
+  if (role === "Ross Sales Agent") return "/agent/orders";
 
   const isChecker = role === "Tetra Payment Checker" || role === "Ross Payment Checker";
   // A payment is the checker's/admin's job — send them where they verify it.
