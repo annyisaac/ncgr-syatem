@@ -102,6 +102,7 @@ export default function VerificationPage() {
 
   // Filters for the payments table.
   const [query, setQuery] = useState("");
+  const [lookup, setLookup] = useState(""); // phone/name lookup of a customer's payments
   const [productFilter, setProductFilter] = useState("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateFilter, setDateFilter] = useState("");
@@ -125,6 +126,22 @@ export default function VerificationPage() {
         .sort((a, b) => Number(!!a.p.verified) - Number(!!b.p.verified) || (a.o.date < b.o.date ? -1 : 1)),
     [myOrders]
   );
+
+  // Customer payment lookup: every payment for the customer whose phone (or
+  // name) matches, newest first — so "what did they pay and when" is one search.
+  const lookupRows = useMemo(() => {
+    const q = lookup.trim();
+    if (q.length < 2) return [];
+    const d = q.replace(/\D/g, "");
+    return payRows
+      .filter(({ o }) => (d.length >= 3 && (o.phone ?? "").replace(/\D/g, "").includes(d)) || o.name.toLowerCase().includes(q.toLowerCase()))
+      .sort((a, b) => (a.p.on < b.p.on ? 1 : -1));
+  }, [lookup, payRows]);
+  const lookupTotals = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const { o, p } of lookupRows) if (!p.voided) m.set(o.currency ?? "RWF", (m.get(o.currency ?? "RWF") ?? 0) + p.amt);
+    return [...m.entries()].map(([cur, amt]) => formatMoney(amt, cur as Currency)).join(" · ");
+  }, [lookupRows]);
 
   // Payments a checker sent to the Admin (missing/ambiguous transaction ids).
   const approvalRows = useMemo(
@@ -614,6 +631,45 @@ export default function VerificationPage() {
           <span className="font-semibold text-ink">{user.name}</span> · {user.role}
         </div>
       </div>
+
+      {/* Customer payment lookup — type a phone (or name) to see what they paid and when */}
+      <Card>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-[0.95rem] font-bold text-ink">Customer payments</h2>
+            <p className="text-xs text-muted">Type a phone number (or name) to see every payment they&apos;ve made — amount and date.</p>
+          </div>
+          <div className="relative w-full max-w-xs">
+            <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted" aria-hidden><circle cx="9" cy="9" r="5.5" /><path d="m13.5 13.5 3.5 3.5" /></svg>
+            <Input className="pl-9" inputMode="numeric" placeholder="Phone number or name…" value={lookup} onChange={(e) => setLookup(e.target.value)} />
+          </div>
+        </div>
+        {lookup.trim().length >= 2 && (
+          lookupRows.length === 0 ? (
+            <p className="mt-3 text-sm text-muted">No payments found for &ldquo;{lookup.trim()}&rdquo;.</p>
+          ) : (
+            <div className="mt-3">
+              <p className="mb-2 text-sm text-ink"><b>{lookupRows.length}</b> payment{lookupRows.length === 1 ? "" : "s"}{lookupTotals ? <> · paid <b className="text-green">{lookupTotals}</b></> : null}</p>
+              <TableWrap>
+                <thead><tr><Th>Date paid</Th><Th>Customer</Th><Th>Phone</Th><Th>Delivery date</Th><Th>Method</Th><Th className="text-right">Amount</Th><Th>Status</Th></tr></thead>
+                <tbody>
+                  {lookupRows.map(({ o, p, i }) => (
+                    <tr key={`${o.id}-${i}`}>
+                      <Td className="whitespace-nowrap">{formatDateTime(p.on)}</Td>
+                      <Td className="font-medium">{o.name}</Td>
+                      <Td className="whitespace-nowrap">{o.phone}</Td>
+                      <Td className="whitespace-nowrap">{formatDate(o.date)}</Td>
+                      <Td>{p.method ?? "—"}</Td>
+                      <Td className="whitespace-nowrap text-right font-semibold tabular-nums">{formatMoney(p.amt, o.currency ?? "RWF")}</Td>
+                      <Td>{p.voided ? <Pill tone="red">Rejected</Pill> : p.verified ? <Pill tone="green">Verified</Pill> : <Pill tone="amber">Pending</Pill>}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </TableWrap>
+            </div>
+          )
+        )}
+      </Card>
 
       {/* Overview — click a card to filter the list */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
