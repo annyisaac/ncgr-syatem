@@ -117,7 +117,9 @@ function OrdersInner() {
   const [dateFilter, setDateFilter] = useState(dateParam);
   const [preset, setPreset] = useState<PeriodPreset>("all");
   const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
-  const range = presetToRange(preset, custom, todayISO());
+  // Memoized so its object identity is stable across renders — otherwise every
+  // render produces a new range and forces the (expensive) rows memo to rerun.
+  const range = useMemo(() => presetToRange(preset, custom, todayISO()), [preset, custom]);
   const [modal, setModal] = useState<ModalState>(null);
   // Admin bulk reschedule: selected order ids + the target delivery date.
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -176,9 +178,13 @@ function OrdersInner() {
   // Roles that see more than one zone need each order's zone spelled out.
   const showZone = isAdmin || role === "Tetra Payment Checker" || role === "Accountant";
 
+  // Every order this user is permitted to see — computed ONCE and reused by all
+  // the aggregates below. Previously visibleOrders() (an O(n) permission scan)
+  // ran 5× per render, and twice per keystroke; this collapses it to once.
+  const visible = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
+
   const rows = useMemo(() => {
-    if (!user) return [];
-    let list = visibleOrders(orders, user);
+    let list = visible;
 
     // Arrived from a notification — show only that order, ignoring other filters.
     if (orderParam) return list.filter((o) => o.id === orderParam);
@@ -258,22 +264,21 @@ function OrdersInner() {
               ? 1
               : 0
       );
-  }, [orders, user, tile, cardFilter, statusFilter, productFilter, dateFilter, range, query, orderParam]);
+  }, [visible, tile, cardFilter, statusFilter, productFilter, dateFilter, range, query, orderParam]);
 
   // As-you-type client-name suggestions from the orders this user can see.
   const searchSuggestions = useMemo(
-    () => (user ? suggest(query, visibleOrders(orders, user), (o) => o.name, 6) : []),
-    [query, orders, user]
+    () => suggest(query, visible, (o) => o.name, 6),
+    [query, visible]
   );
 
   // Oversold delivery dates: a date+product whose ordered chicks exceed the
   // number the admin made available (e.g. after they lowered it). Computed from
   // every order this user can see, not just the filtered rows.
-  const oversold = useMemo(() => {
-    if (!user) return { groups: [], keys: new Set<string>() };
-    const vis = visibleOrders(orders, user);
-    return { groups: oversoldGroups(vis, availability), keys: oversoldKeys(vis, availability) };
-  }, [orders, availability, user]);
+  const oversold = useMemo(
+    () => ({ groups: oversoldGroups(visible, availability), keys: oversoldKeys(visible, availability) }),
+    [visible, availability]
+  );
 
   // Delivery dates the Admin has opened, for the delivery-date filter — scoped to
   // the role's product (Ross roles see only Ross dates, Tetra roles only Tetra).
@@ -284,17 +289,16 @@ function OrdersInner() {
     // (but still carries orders) stays filterable instead of disappearing.
     const dates = new Set<string>();
     for (const a of availability) if (dateHasProduct(a, prod)) dates.add(a.id);
-    const vis = user ? visibleOrders(orders, user) : [];
-    for (const o of vis) if (o.date && (!prod || o.product === prod)) dates.add(o.date);
+    for (const o of visible) if (o.date && (!prod || o.product === prod)) dates.add(o.date);
     return [
       { value: "", label: "All delivery dates" },
       ...[...dates].sort().map((d) => ({ value: d, label: formatDate(d) })),
     ];
-  }, [availability, role, orders, user]);
+  }, [availability, role, visible]);
 
   // KPI aggregates over every order this user can see (all time, unfiltered).
   const stats = useMemo(() => {
-    const all = user ? visibleOrders(orders, user) : [];
+    const all = visible;
     let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0;
     for (const o of all) {
       value += orderTotal(o);
@@ -306,7 +310,7 @@ function OrdersInner() {
     const total = all.length;
     const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
     return { total, fulfilled, confirmed, pending, cancelled, value, pct };
-  }, [orders, user]);
+  }, [visible]);
 
   if (!user) return null;
 
