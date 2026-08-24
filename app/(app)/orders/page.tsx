@@ -306,9 +306,11 @@ function OrdersInner() {
   // KPI aggregates over every order this user can see (all time, unfiltered).
   const stats = useMemo(() => {
     const all = scoped;
-    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0, chicks = 0;
+    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0, chicks = 0, paid = 0, bal = 0;
     for (const o of all) {
       value += orderTotal(o);
+      paid += settledAmount(o); // cash paid + applied customer credit
+      bal += balance(o);        // outstanding (value = paid + balance per order)
       const isCancelled = o.status === "refunded" || o.status === "rejected";
       // Chicks to deliver — the delivery total (ordered + 2% padding + free/comp
       // chicks), active orders only (a rejected/refunded order delivers nothing).
@@ -320,7 +322,7 @@ function OrdersInner() {
     }
     const total = all.length;
     const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
-    return { total, fulfilled, confirmed, pending, cancelled, value, chicks, pct };
+    return { total, fulfilled, confirmed, pending, cancelled, value, chicks, paid, bal, pct };
   }, [scoped]);
 
   // Whether any scope filter is active — the KPI cards say "All time" only when
@@ -662,14 +664,37 @@ function OrdersInner() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-7">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-8">
         <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub={scopeSub} active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
         <Kpi compact icon="chicks" tone="default" value={stats.chicks.toLocaleString()} label="Chicks to Deliver" sub={scopeSub} />
         <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} active={cardFilter === "fulfilled"} onClick={() => setCardFilter((f) => (f === "fulfilled" ? "all" : "fulfilled"))} />
         <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} active={cardFilter === "confirmed"} onClick={() => setCardFilter((f) => (f === "confirmed" ? "all" : "confirmed"))} />
         <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} active={cardFilter === "pending"} onClick={() => setCardFilter((f) => (f === "pending" ? "all" : "pending"))} />
         <Kpi compact icon="cross" tone="red" value={stats.cancelled.toLocaleString()} label="Cancelled" sub={stats.pct(stats.cancelled)} active={cardFilter === "cancelled"} onClick={() => setCardFilter((f) => (f === "cancelled" ? "all" : "cancelled"))} />
-        <Kpi compact icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub={scopeSub} />
+        {/* Money card — total order value with paid + balance broken out, all
+            following the active filter. Spans 2 columns for room. */}
+        <div className="col-span-2 flex flex-col rounded-xl border border-line bg-paper p-3 shadow-card">
+          <div className="flex items-center justify-between">
+            <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-[#efe7fb] text-[#7c3aed]">
+              <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3.5" y="6" width="13" height="8" rx="1.5" /><circle cx="10" cy="10" r="2" />
+              </svg>
+            </span>
+            <span className="text-[0.66rem] text-muted">{scopeSub}</span>
+          </div>
+          <p className="mt-2 text-[1.2rem] font-bold leading-none tracking-tight text-ink tabular-nums">{formatRWF(stats.value)}</p>
+          <p className="mt-1 text-[0.6rem] font-semibold uppercase tracking-[0.09em] text-muted">Total Order Value</p>
+          <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2">
+            <div>
+              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Paid</p>
+              <p className="text-[0.95rem] font-bold leading-tight text-green tabular-nums">{formatRWF(stats.paid)}</p>
+            </div>
+            <div>
+              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Balance</p>
+              <p className="text-[0.95rem] font-bold leading-tight text-red tabular-nums">{formatRWF(stats.bal)}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {oversold.groups.length > 0 && (
