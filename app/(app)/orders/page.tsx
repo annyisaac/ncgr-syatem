@@ -1,7 +1,7 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { useAuth } from "@/components/AuthProvider";
@@ -98,6 +98,7 @@ function OrdersInner() {
   const { user } = useAuth();
   const { orders, availability, upsertOrder, removeOrder, newId, reload } = useData();
   const { toast } = useToast();
+  const router = useRouter();
   const search = useSearchParams();
   const tile = search.get("tile") ?? "all";
   const dateParam = search.get("date") ?? "";
@@ -108,18 +109,45 @@ function OrdersInner() {
   // Deep-link from a client's "Record payment": open the Add-payment modal.
   const payParam = search.get("pay") ?? "";
 
-  // ?q= prefills the search (the dashboard's search bar hands off to here).
+  // Filters initialise from the URL so a refresh (or a shared link) restores the
+  // same view; they're written back to the URL as they change (see the effect).
+  const cardParam = search.get("card") ?? "";
+  const initialCard = (["fulfilled", "confirmed", "pending", "cancelled"].includes(cardParam) ? cardParam : "all") as
+    "all" | "fulfilled" | "confirmed" | "pending" | "cancelled";
   const [query, setQuery] = useState(search.get("q") ?? "");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(search.get("status") ?? "all");
   // Clickable stat-card filter (Total / Fulfilled / Confirmed / Pending / Cancelled).
-  const [cardFilter, setCardFilter] = useState<"all" | "fulfilled" | "confirmed" | "pending" | "cancelled">("all");
-  const [productFilter, setProductFilter] = useState("all");
+  const [cardFilter, setCardFilter] = useState(initialCard);
+  const [productFilter, setProductFilter] = useState(search.get("product") ?? "all");
   const [dateFilter, setDateFilter] = useState(dateParam);
-  const [preset, setPreset] = useState<PeriodPreset>("all");
-  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const [preset, setPreset] = useState<PeriodPreset>((search.get("preset") as PeriodPreset) ?? "all");
+  const [custom, setCustom] = useState<DateRangeValue>(() => {
+    const from = search.get("from"), to = search.get("to");
+    return from || to ? { from: from ?? "", to: to ?? "" } : ALL_TIME;
+  });
   // Memoized so its object identity is stable across renders — otherwise every
   // render produces a new range and forces the (expensive) rows memo to rerun.
   const range = useMemo(() => presetToRange(preset, custom, todayISO()), [preset, custom]);
+
+  // Mirror the active filters into the URL so a refresh or a shared link restores
+  // the same view. Deep-link params (order/fix/pay) are kept while present. The
+  // qs-equality guard stops it from looping on its own writes.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (query.trim()) params.set("q", query.trim());
+    if (statusFilter !== "all") params.set("status", statusFilter);
+    if (productFilter !== "all") params.set("product", productFilter);
+    if (cardFilter !== "all") params.set("card", cardFilter);
+    if (preset !== "all") params.set("preset", preset);
+    if (preset === "custom" && custom.from) params.set("from", custom.from);
+    if (preset === "custom" && custom.to) params.set("to", custom.to);
+    if (dateFilter) params.set("date", dateFilter);
+    if (tile !== "all") params.set("tile", tile);
+    for (const k of ["order", "fix", "pay"]) { const v = search.get(k); if (v) params.set(k, v); }
+    const qs = params.toString();
+    if (qs !== search.toString()) router.replace(qs ? `/orders?${qs}` : "/orders", { scroll: false });
+  }, [query, statusFilter, productFilter, cardFilter, preset, custom, dateFilter, tile, search, router]);
+
   const [modal, setModal] = useState<ModalState>(null);
   // Admin bulk reschedule: selected order ids + the target delivery date.
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -223,6 +251,8 @@ function OrdersInner() {
             return !!o.backorderOf;
           case "payrejected":
             return o.payments.some((p) => p.voided);
+          case "rescheduled":
+            return !!o.rescheduled;
           default:
             return true;
         }
@@ -331,6 +361,12 @@ function OrdersInner() {
     Boolean(orderParam) || tile !== "all" || statusFilter !== "all" ||
     productFilter !== "all" || Boolean(dateFilter) || preset !== "all" || query.trim().length > 0;
   const scopeSub = isFiltered ? "Filtered" : "All time";
+
+  function clearFilters() {
+    setQuery(""); setStatusFilter("all"); setCardFilter("all");
+    setProductFilter("all"); setDateFilter(""); setPreset("all"); setCustom(ALL_TIME);
+    router.replace("/orders", { scroll: false });
+  }
 
   if (!user) return null;
 
@@ -777,6 +813,7 @@ function OrdersInner() {
                 { value: "fulfilled", label: "Fulfilled" },
                 { value: "refunded", label: "Refunded" },
                 { value: "rejected", label: "Rejected" },
+                { value: "rescheduled", label: "Rescheduled" },
                 { value: "backorder", label: "Backorders" },
                 { value: "paid", label: "Payment: Fully paid" },
                 { value: "partial", label: "Payment: Partially paid" },
@@ -793,6 +830,12 @@ function OrdersInner() {
               options={deliveryDateOptions}
             />
           </div>
+          {isFiltered && (
+            <Button variant="ghost" size="sm" onClick={clearFilters} className="gap-1.5 whitespace-nowrap">
+              <svg width="15" height="15" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M6 6l8 8M14 6l-8 8" /></svg>
+              Clear filters
+            </Button>
+          )}
         </div>
       </div>
 
@@ -822,6 +865,7 @@ function OrdersInner() {
                   <input type="checkbox" checked={allRowsSelected} onChange={toggleSelAll} aria-label="Select all orders" className="h-4 w-4 accent-gold" />
                 </Th>
               )}
+              {dateFilter && <Th className="w-10 text-right">#</Th>}
               <Th>Delivery</Th>
               <Th>Product</Th>
               <Th>Client</Th>
@@ -834,10 +878,11 @@ function OrdersInner() {
           </thead>
           <tbody>
             {rows.length === 0 ? (
-              <EmptyRow colSpan={isAdmin ? 9 : 8} text="No orders match." />
+              <EmptyRow colSpan={(isAdmin ? 9 : 8) + (dateFilter ? 1 : 0)} text="No orders match." />
             ) : (
-              pageRows.map((o) => {
+              pageRows.map((o, i) => {
                 const cs = paymentCheckState(o);
+                const seq = (safePage - 1) * pageSize + i + 1;
                 return (
                   <tr key={o.id}>
                     {isAdmin && (
@@ -845,6 +890,7 @@ function OrdersInner() {
                         <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleSel(o.id)} aria-label={`Select ${o.name}`} className="h-4 w-4 accent-gold" />
                       </Td>
                     )}
+                    {dateFilter && <Td className="text-right font-semibold text-ink/60 tabular-nums">{seq}</Td>}
                     <Td>
                       {formatDate(o.date)}
                       <div className="text-xs text-ink/50">Ordered {formatDateTime(o.createdAt)}</div>
