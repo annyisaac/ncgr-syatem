@@ -70,6 +70,7 @@ export default function AgrishowPage() {
   const [creatingTeam, setCreatingTeam] = useState(false);
   const [teamSearch, setTeamSearch] = useState("");
   const [viewRec, setViewRec] = useState<TeamDetail | null>(null);
+  const [detailRec, setDetailRec] = useState<TeamDetail | null>(null);
   // Which card is open: null = the card grid, else an event or the team form.
   const [view, setView] = useState<{ kind: "event"; event: string } | { kind: "team" } | null>(null);
 
@@ -524,7 +525,8 @@ export default function AgrishowPage() {
                   <TeamField icon={<IcoHeart />} label="Marital status" value={r.maritalStatus || "—"} />
                   <TeamField icon={<IcoUser />} label="Spouse" value={r.spouseName || "—"} />
                   <TeamField icon={<IcoUsers />} label="Children" value={r.children.length ? String(r.children.length) : "—"} />
-                  <div className="flex items-end justify-start gap-2 sm:justify-end">
+                  <div className="flex flex-wrap items-end justify-start gap-2 sm:justify-end">
+                    <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setDetailRec(r)}><IcoEye /> View</Button>
                     <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setViewRec(r)}><IcoEdit /> Edit</Button>
                     <Button size="sm" variant="ghost" className="gap-1.5 text-red hover:text-red" onClick={() => removeRecord(r)}><IcoTrash /> Delete</Button>
                   </div>
@@ -535,6 +537,7 @@ export default function AgrishowPage() {
         )}
       </Card>
 
+      {detailRec && <TeamRecordViewModal record={detailRec} onClose={() => setDetailRec(null)} onEdit={() => { setViewRec(detailRec); setDetailRec(null); }} />}
       {viewRec && <TeamRecordEditModal record={viewRec} onClose={() => setViewRec(null)} onSave={saveRecord} />}
       </>)}
     </div>
@@ -581,6 +584,66 @@ const IcoUser = () => <svg {...fico}><circle cx="10" cy="7" r="2.8" /><path d="M
 const IcoUsers = () => <svg {...fico}><circle cx="8" cy="7.5" r="2.3" /><path d="M3.5 16c0-2.2 2-3.5 4.5-3.5s4.5 1.3 4.5 3.5" /><path d="M13.5 5.6a2.1 2.1 0 0 1 0 4M14 12.5c1.6.2 2.9 1.2 2.9 3" /></svg>;
 const IcoEdit = () => <svg {...fico}><path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" /></svg>;
 const IcoTrash = () => <svg {...fico}><path d="M4 6h12M8 6V4.5h4V6M6 6l.6 9.5h6.8L14 6" /></svg>;
+const IcoEye = () => <svg {...fico}><path d="M2.5 10S5 4.5 10 4.5 17.5 10 17.5 10 15 15.5 10 15.5 2.5 10 2.5 10Z" /><circle cx="10" cy="10" r="2.2" /></svg>;
+
+/** Read-only detail view of a team-details record — everything, incl. children. */
+function TeamRecordViewModal({ record, onClose, onEdit }: { record: TeamDetail; onClose: () => void; onEdit: () => void }) {
+  const r = record;
+  const row = (label: string, value?: string, mono?: boolean) => (
+    <div className="flex items-start justify-between gap-4 border-b border-line py-2.5 last:border-0">
+      <span className="text-sm text-muted">{label}</span>
+      <span className={`text-right text-sm font-medium text-ink ${mono ? "font-mono" : ""}`}>{value?.trim() ? value : "—"}</span>
+    </div>
+  );
+  return (
+    <Modal open onClose={onClose} title="Member details" className="max-w-lg"
+      footer={<><Button variant="ghost" onClick={onClose}>Close</Button><Button onClick={onEdit} className="gap-1.5"><IcoEdit /> Edit</Button></>}>
+      <div className="space-y-4">
+        <div className="flex items-center gap-3">
+          <Avatar user={{ name: r.fullName, avatar: undefined }} size={52} />
+          <div className="min-w-0">
+            <p className="text-lg font-bold text-ink">{r.fullName}</p>
+            {r.position && <span className="mt-0.5 inline-block"><Pill tone={roleTone(r.position)}>{r.position}</Pill></span>}
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-line bg-paper p-3">
+          <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-wide text-muted">Personal</p>
+          {row("National ID", r.nationalId, true)}
+          {row("Phone", r.phone)}
+          {row("Date of birth", r.birthDate ? formatDate(r.birthDate) : undefined)}
+          {row("Marital status", r.maritalStatus)}
+        </div>
+
+        <div className="rounded-xl border border-line bg-paper p-3">
+          <p className="mb-1 text-[0.62rem] font-semibold uppercase tracking-wide text-muted">Family</p>
+          {row("Spouse", r.spouseName)}
+          {row("Spouse ID", r.spouseId, true)}
+          <div className="pt-2.5">
+            <p className="mb-1.5 text-sm text-muted">Children {r.children.length ? `(${r.children.length})` : ""}</p>
+            {r.children.length === 0 ? (
+              <p className="text-sm text-ink">—</p>
+            ) : (
+              <div className="space-y-1.5">
+                {r.children.map((c, i) => (
+                  <div key={i} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm">
+                    <span className="font-medium text-ink">{c.name || `Child ${i + 1}`}</span>
+                    <span className="flex flex-wrap items-center gap-x-3 text-xs text-muted">
+                      {c.nationalId && <span className="font-mono">ID {c.nationalId}</span>}
+                      {c.birthDate && <span>{formatDate(c.birthDate)}</span>}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <p className="text-xs text-muted">Submitted {formatDateTime(r.on)}</p>
+      </div>
+    </Modal>
+  );
+}
 
 const MARITAL_OPTS = [
   { value: "Single", label: "Single" },
