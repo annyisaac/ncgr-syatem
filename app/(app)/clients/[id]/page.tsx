@@ -110,6 +110,11 @@ export default function ClientDetailPage() {
     `/orders/new?phone=${encodeURIComponent(client.phone)}&name=${encodeURIComponent(client.name)}` +
     (preferredProduct === "Ross 308" || preferredProduct === "Tetra Super Harco" ? `&product=${encodeURIComponent(preferredProduct)}` : "");
 
+  // Turn a confirmed plan line into an order: the new-order form prefilled with
+  // this client + the planned date and chicks (seller just sets the price).
+  const planOrderHref = (planDay: string, chicks: number) =>
+    `${newOrderHref}&date=${encodeURIComponent(planDay)}&chicks=${chicks}`;
+
   function openEdit() {
     if (!client || !user) return;
     const rec = client.record;
@@ -299,7 +304,7 @@ export default function ClientDetailPage() {
                     <Th className="text-right">Planned</Th>
                     <Th className="text-right">Ordered</Th>
                     <Th>Status</Th>
-                    {canWrite && <Th className="text-right">Remove</Th>}
+                    {canWrite && <Th className="text-right">Action</Th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -315,7 +320,12 @@ export default function ClientDetailPage() {
                         <Td className="text-right">{p.ordered.toLocaleString()}</Td>
                         <Td><Pill tone={tone}>{label}</Pill></Td>
                         {canWrite && (
-                          <Td className="text-right">
+                          <Td className="text-right whitespace-nowrap">
+                            {p.status !== "ordered" && (
+                              <Link href={planOrderHref(p.date, p.planned)} className="mr-3 text-xs font-semibold text-gold-dark hover:underline">
+                                Create order
+                              </Link>
+                            )}
                             <button type="button" onClick={() => removePlan(p.date)} title="Remove plan date" className="text-muted transition hover:text-red">✕</button>
                           </Td>
                         )}

@@ -40,6 +40,9 @@ export default function NewOrderPage() {
   const initialPhone = search.get("phone") ?? "";
   const initialName = search.get("name") ?? "";
   const initialProduct = search.get("product") ?? "";
+  // Opened from a client's confirmed plan line — prefill the date + chicks too.
+  const initialDate = search.get("date") ?? "";
+  const initialChicks = search.get("chicks") ?? "";
 
   // Roles allowed to create orders.
   const roleProduct: Product | undefined =
@@ -72,10 +75,10 @@ export default function NewOrderPage() {
   const [companyTin, setCompanyTin] = useState("");
   const [consignee, setConsignee] = useState("");
   const [consigneePhone, setConsigneePhone] = useState("");
-  const [chicks, setChicks] = useState("");
+  const [chicks, setChicks] = useState(initialChicks);
   const [comp, setComp] = useState("0");
   const [price, setPrice] = useState("");
-  const [date, setDate] = useState("");
+  const [date, setDate] = useState(initialDate);
   const [pickup, setPickup] = useState("");
   const [payAmt, setPayAmt] = useState("");
   const [payRef, setPayRef] = useState("");
