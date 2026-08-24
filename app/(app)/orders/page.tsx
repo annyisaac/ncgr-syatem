@@ -183,14 +183,16 @@ function OrdersInner() {
   // ran 5× per render, and twice per keystroke; this collapses it to once.
   const visible = useMemo(() => (user ? visibleOrders(orders, user) : []), [orders, user]);
 
-  const rows = useMemo(() => {
+  // The orders in scope for the CURRENT filters — everything EXCEPT the
+  // clickable stat-card selection. Both the KPI cards and the table read from
+  // this, so date/period/product/status/search all flow through to the cards;
+  // the card selection is layered on top only for the table (see `rows`) so
+  // clicking one card doesn't zero out the others.
+  const scoped = useMemo(() => {
     let list = visible;
 
     // Arrived from a notification — show only that order, ignoring other filters.
     if (orderParam) return list.filter((o) => o.id === orderParam);
-
-    // Payment checkers see every order for their product — including
-    // not-yet-confirmed ones — so they can record a payment and confirm it.
 
     // Dashboard tile filter.
     if (tile === "pending") list = list.filter((o) => o.status === "pending");
@@ -199,17 +201,6 @@ function OrdersInner() {
       list = list.filter((o) => !isClosed(o) && balance(o) > 0);
     else if (tile === "collected")
       list = list.filter((o) => allVerified(o));
-
-    // Clickable stat-card filter — same classification the KPI counts use.
-    if (cardFilter !== "all") {
-      list = list.filter((o) => {
-        const c =
-          o.status === "refunded" || o.status === "rejected" ? "cancelled"
-          : o.status === "fulfilled" ? "fulfilled"
-          : o.confirmedOk ? "confirmed" : "pending";
-        return c === cardFilter;
-      });
-    }
 
     // One dropdown covers both the order status and the payment status.
     if (statusFilter !== "all") {
@@ -249,6 +240,22 @@ function OrdersInner() {
         smartMatch(query, o.name, o.phone, o.district, o.sector, o.payments.map((p) => p.ref).join(" "))
       );
     }
+    return list;
+  }, [visible, tile, statusFilter, productFilter, dateFilter, range, query, orderParam]);
+
+  const rows = useMemo(() => {
+    let list = scoped;
+
+    // Clickable stat-card filter — same classification the KPI counts use.
+    if (cardFilter !== "all") {
+      list = list.filter((o) => {
+        const c =
+          o.status === "refunded" || o.status === "rejected" ? "cancelled"
+          : o.status === "fulfilled" ? "fulfilled"
+          : o.confirmedOk ? "confirmed" : "pending";
+        return c === cardFilter;
+      });
+    }
 
     // When viewing a single delivery date, order by the delivery plan so
     // "Move up / down" is meaningful; otherwise oldest order (by creation
@@ -264,7 +271,7 @@ function OrdersInner() {
               ? 1
               : 0
       );
-  }, [visible, tile, cardFilter, statusFilter, productFilter, dateFilter, range, query, orderParam]);
+  }, [scoped, cardFilter, dateFilter]);
 
   // As-you-type client-name suggestions from the orders this user can see.
   const searchSuggestions = useMemo(
@@ -298,7 +305,7 @@ function OrdersInner() {
 
   // KPI aggregates over every order this user can see (all time, unfiltered).
   const stats = useMemo(() => {
-    const all = visible;
+    const all = scoped;
     let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0;
     for (const o of all) {
       value += orderTotal(o);
@@ -310,7 +317,14 @@ function OrdersInner() {
     const total = all.length;
     const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
     return { total, fulfilled, confirmed, pending, cancelled, value, pct };
-  }, [visible]);
+  }, [scoped]);
+
+  // Whether any scope filter is active — the KPI cards say "All time" only when
+  // showing everything, otherwise "Filtered" so the counts aren't misread.
+  const isFiltered =
+    Boolean(orderParam) || tile !== "all" || statusFilter !== "all" ||
+    productFilter !== "all" || Boolean(dateFilter) || preset !== "all" || query.trim().length > 0;
+  const scopeSub = isFiltered ? "Filtered" : "All time";
 
   if (!user) return null;
 
@@ -645,12 +659,12 @@ function OrdersInner() {
       </div>
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
-        <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub="All time" active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
+        <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub={scopeSub} active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
         <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} active={cardFilter === "fulfilled"} onClick={() => setCardFilter((f) => (f === "fulfilled" ? "all" : "fulfilled"))} />
         <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} active={cardFilter === "confirmed"} onClick={() => setCardFilter((f) => (f === "confirmed" ? "all" : "confirmed"))} />
         <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} active={cardFilter === "pending"} onClick={() => setCardFilter((f) => (f === "pending" ? "all" : "pending"))} />
         <Kpi compact icon="cross" tone="red" value={stats.cancelled.toLocaleString()} label="Cancelled" sub={stats.pct(stats.cancelled)} active={cardFilter === "cancelled"} onClick={() => setCardFilter((f) => (f === "cancelled" ? "all" : "cancelled"))} />
-        <Kpi compact icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub="All time" />
+        <Kpi compact icon="money" tone="purple" value={formatRWF(stats.value)} label="Total Order Value" sub={scopeSub} />
       </div>
 
       {oversold.groups.length > 0 && (
