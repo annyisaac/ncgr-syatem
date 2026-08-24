@@ -306,17 +306,21 @@ function OrdersInner() {
   // KPI aggregates over every order this user can see (all time, unfiltered).
   const stats = useMemo(() => {
     const all = scoped;
-    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0;
+    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0, chicks = 0;
     for (const o of all) {
       value += orderTotal(o);
-      if (o.status === "refunded" || o.status === "rejected") cancelled++;
+      const isCancelled = o.status === "refunded" || o.status === "rejected";
+      // Chicks ordered — active orders only (a rejected/refunded order's chicks
+      // are no longer being delivered).
+      if (!isCancelled) chicks += o.chicks;
+      if (isCancelled) cancelled++;
       else if (o.status === "fulfilled") fulfilled++;
       else if (o.confirmedOk) confirmed++;
       else pending++;
     }
     const total = all.length;
     const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
-    return { total, fulfilled, confirmed, pending, cancelled, value, pct };
+    return { total, fulfilled, confirmed, pending, cancelled, value, chicks, pct };
   }, [scoped]);
 
   // Whether any scope filter is active — the KPI cards say "All time" only when
@@ -658,8 +662,9 @@ function OrdersInner() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-7">
         <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub={scopeSub} active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
+        <Kpi compact icon="chicks" tone="default" value={stats.chicks.toLocaleString()} label="Chicks Ordered" sub={scopeSub} />
         <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} active={cardFilter === "fulfilled"} onClick={() => setCardFilter((f) => (f === "fulfilled" ? "all" : "fulfilled"))} />
         <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} active={cardFilter === "confirmed"} onClick={() => setCardFilter((f) => (f === "confirmed" ? "all" : "confirmed"))} />
         <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} active={cardFilter === "pending"} onClick={() => setCardFilter((f) => (f === "pending" ? "all" : "pending"))} />
