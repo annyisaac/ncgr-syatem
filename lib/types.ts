@@ -106,7 +106,9 @@ export type NotificationType =
   | "refunded"
   | "deleted"
   | "allocated"
-  | "delivery_failed";
+  | "delivery_failed"
+  // A special/key client has a planned delivery date coming up with no order yet.
+  | "plan_due";
 export interface AppNotification {
   id: string;
   recipient: string;
@@ -535,6 +537,14 @@ export interface CreditRefund {
   note?: string;
 }
 
+/** One line of a special client's stated buying plan: how many chicks they
+ *  intend to take on a given delivery date. Tracked against actual orders. */
+export interface ClientPlanItem {
+  date: string; // delivery date yyyy-mm-dd
+  chicks: number; // planned chicks for that date
+  note?: string;
+}
+
 export interface Client {
   id: string; // client key: normalized phone, else `name:<slug>` (see clientRecordKey)
   /** Friendly customer id shown in the UI, e.g. "C-000123". Assigned once. */
@@ -553,6 +563,14 @@ export interface Client {
   active?: boolean;
   /** Credits paid back to the customer — subtracted from their computed credit. */
   creditRefunds?: CreditRefund[];
+  /** A "special"/key client — a recurring buyer who has given us a plan across
+   *  multiple delivery dates. Set by sales/checker/zone roles. */
+  special?: boolean;
+  specialBy?: string; // who marked them special
+  specialOn?: string; // ISO datetime
+  specialNote?: string; // e.g. "orders every cycle"
+  /** Their stated buying plan — delivery dates + planned chicks. */
+  plan?: ClientPlanItem[];
   by?: string; // creator email
   on?: string; // ISO created timestamp
 }

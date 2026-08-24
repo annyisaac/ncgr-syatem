@@ -19,7 +19,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { visibleOrders, productForRole, canWriteClients } from "@/lib/permissions";
 import { formatRWF } from "@/lib/config";
 import { formatDate, formatDateTime, nowISO } from "@/lib/format";
-import { clientById, clientPayments, nextClientCode } from "@/lib/clients";
+import { clientById, clientPayments, nextClientCode, planVsActual } from "@/lib/clients";
 import { clientStatementPDF } from "@/lib/reports";
 import { balance, settledAmount, orderTotal, toDeliver, type Client, type CreditRefund, type Order } from "@/lib/types";
 
@@ -59,6 +59,8 @@ export default function ClientDetailPage() {
   const [refunding, setRefunding] = useState(false);
   const [refundAmt, setRefundAmt] = useState("");
   const [refundMethod, setRefundMethod] = useState("MoMo");
+  const [planDate, setPlanDate] = useState("");
+  const [planChicks, setPlanChicks] = useState("");
 
   const client = useMemo(
     () => (user ? clientById(visibleOrders(orders, user), id, clients) : undefined),
@@ -155,6 +157,49 @@ export default function ClientDetailPage() {
     }
   }
 
+  // The backing record for this client, synthesised when it has none yet.
+  const baseRecord = (): Client =>
+    client!.record ?? {
+      id: client!.id, code: nextClientCode(clients), name: client!.name, phone: client!.phone,
+      district: client!.districts[0] ?? "", sector: client!.sectors[0] ?? "",
+      product: client!.product ?? productForRole(user!.role),
+      zone: client!.zone ?? (user!.role === "Tetra Zone Manager" ? user!.zone : undefined),
+      active: client!.active, by: user!.email, on: nowISO(),
+    };
+
+  const isSpecial = !!client.record?.special;
+  const planLines = planVsActual(client);
+
+  async function toggleSpecial() {
+    const base = baseRecord();
+    const now = !base.special;
+    try {
+      await upsertClient({ ...base, special: now, specialBy: now ? user!.email : base.specialBy, specialOn: now ? nowISO() : base.specialOn });
+      toast(now ? "Marked as special ★" : "No longer a special client.");
+    } catch { toast("Could not update the client.", "error"); }
+  }
+
+  async function addPlan() {
+    const chicks = Math.round(Number(planChicks) || 0);
+    if (!planDate || chicks <= 0) { toast("Pick a delivery date and a chick count.", "info"); return; }
+    const base = baseRecord();
+    // Replace any existing plan line for the same date, keep the rest.
+    const plan = [...(base.plan ?? []).filter((p) => p.date !== planDate), { date: planDate, chicks }];
+    try {
+      await upsertClient({ ...base, special: true, plan }); // adding a plan implies special
+      setPlanDate(""); setPlanChicks("");
+      toast("Plan updated.");
+    } catch { toast("Could not save the plan.", "error"); }
+  }
+
+  async function removePlan(date: string) {
+    const base = baseRecord();
+    try {
+      await upsertClient({ ...base, plan: (base.plan ?? []).filter((p) => p.date !== date) });
+      toast("Plan date removed.");
+    } catch { toast("Could not update the plan.", "error"); }
+  }
+
   const smsHref = client.phone ? `sms:${client.phone.replace(/\s+/g, "")}` : undefined;
   const infoRow = (label: string, value: React.ReactNode) => (
     <div className="flex items-center justify-between gap-3 py-2">
@@ -185,6 +230,16 @@ export default function ClientDetailPage() {
           <div className="flex flex-wrap items-center gap-2">
             <h1 className="text-2xl font-extrabold tracking-tight text-ink">{client.name}</h1>
             {client.active ? <Pill tone="green">Active</Pill> : <Pill tone="neutral">Inactive</Pill>}
+            {isSpecial && <Pill tone="gold">★ Special</Pill>}
+            {canWrite && (
+              <button
+                type="button"
+                onClick={toggleSpecial}
+                className="inline-flex items-center gap-1 rounded-full border border-line px-2.5 py-0.5 text-xs font-semibold text-muted transition hover:border-gold hover:text-gold-dark"
+              >
+                {isSpecial ? "Unmark special" : "★ Mark special"}
+              </button>
+            )}
           </div>
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-sm text-muted">
             <span>{client.phone || "no phone"}</span>
@@ -234,6 +289,50 @@ export default function ClientDetailPage() {
               </tbody>
             </TableWrap>
           </SectionCard>
+
+          {isSpecial && (
+            <SectionCard title="Delivery plan" action={<span className="text-xs text-muted">Planned vs ordered</span>}>
+              <TableWrap>
+                <thead>
+                  <tr>
+                    <Th>Delivery date</Th>
+                    <Th className="text-right">Planned</Th>
+                    <Th className="text-right">Ordered</Th>
+                    <Th>Status</Th>
+                    {canWrite && <Th className="text-right">Remove</Th>}
+                  </tr>
+                </thead>
+                <tbody>
+                  {planLines.length === 0 ? (
+                    <EmptyRow colSpan={canWrite ? 5 : 4} text="No plan dates yet — add the client's upcoming delivery dates below." />
+                  ) : planLines.map((p) => {
+                    const tone = p.status === "ordered" ? "green" : p.status === "partial" ? "gold" : p.status === "past" ? "red" : "info";
+                    const label = p.status === "ordered" ? "Ordered" : p.status === "partial" ? "Partial" : p.status === "past" ? "Missed" : "Awaiting order";
+                    return (
+                      <tr key={p.date}>
+                        <Td>{formatDate(p.date)}</Td>
+                        <Td className="text-right">{p.planned.toLocaleString()}</Td>
+                        <Td className="text-right">{p.ordered.toLocaleString()}</Td>
+                        <Td><Pill tone={tone}>{label}</Pill></Td>
+                        {canWrite && (
+                          <Td className="text-right">
+                            <button type="button" onClick={() => removePlan(p.date)} title="Remove plan date" className="text-muted transition hover:text-red">✕</button>
+                          </Td>
+                        )}
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </TableWrap>
+              {canWrite && (
+                <div className="mt-3 flex flex-wrap items-end gap-2">
+                  <Field label="Delivery date"><Input type="date" value={planDate} onChange={(e) => setPlanDate(e.target.value)} /></Field>
+                  <Field label="Planned chicks"><Input type="number" min={1} value={planChicks} onChange={(e) => setPlanChicks(e.target.value)} placeholder="e.g. 500" /></Field>
+                  <Button size="sm" onClick={addPlan}>Add / update</Button>
+                </div>
+              )}
+            </SectionCard>
+          )}
 
           <SectionCard
             title={`Payments (${payments.length})`}

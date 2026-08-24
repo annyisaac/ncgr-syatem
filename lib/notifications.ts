@@ -5,6 +5,10 @@ import type { AppNotification, Role } from "./types";
  * deals with what happened, deep-linked to the order where we can.
  */
 export function notificationHref(n: AppNotification, role: Role): string {
+  // A special client's plan is due — go to that client (orderId carries the
+  // client id). Only sales/checker/zone/admin get these, and all have /clients.
+  if (n.type === "plan_due") return n.orderId ? `/clients/${encodeURIComponent(n.orderId)}` : "/clients";
+
   // The order is gone — deep-linking to it would show an empty list.
   if (n.type === "deleted") {
     if (role === "DSR") return "/dsr/orders";

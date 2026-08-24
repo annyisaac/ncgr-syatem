@@ -21,7 +21,7 @@ import { smartMatch, suggest } from "@/lib/search";
 import { formatRWF } from "@/lib/config";
 import { formatDate, todayISO, nowISO } from "@/lib/format";
 import { presetToRange, type PeriodPreset } from "@/lib/period";
-import { buildClients, type ClientRecord } from "@/lib/clients";
+import { buildClients, materializeClient, planDueSoon, type ClientRecord } from "@/lib/clients";
 import { exportClientsExcel } from "@/lib/reports";
 import type { Client } from "@/lib/types";
 
@@ -33,11 +33,11 @@ function rangeLabel(r: DateRangeValue): string {
   return `up to ${r.to}`;
 }
 
-type TabKey = "all" | "active" | "owing" | "prepaid" | "inactive";
+type TabKey = "all" | "special" | "active" | "owing" | "prepaid" | "inactive";
 
 export default function ClientsPage() {
   const { user } = useAuth();
-  const { orders, clients, removeClient } = useData();
+  const { orders, clients, removeClient, upsertClient } = useData();
   const { toast } = useToast();
   const [q, setQ] = useState("");
   const [preset, setPreset] = useState<PeriodPreset>("all");
@@ -62,6 +62,7 @@ export default function ClientsPage() {
 
   const byTab = useMemo(() => {
     switch (tab) {
+      case "special": return all.filter((c) => c.special);
       case "active": return all.filter((c) => c.active);
       case "inactive": return all.filter((c) => !c.active);
       case "owing": return all.filter((c) => c.balance > 0);
@@ -76,6 +77,9 @@ export default function ClientsPage() {
   }, [byTab, q]);
 
   const searchSuggestions = useMemo(() => suggest(q, all, (c) => c.name, 6), [q, all]);
+
+  // Special clients with a planned delivery date within a week and no order yet.
+  const planDue = useMemo(() => planDueSoon(all, 7), [all]);
 
   // Any filter change returns to the first page so the view never lands on an
   // empty page past the new end.
@@ -94,6 +98,7 @@ export default function ClientsPage() {
 
   const tabs: { key: TabKey; label: string; count: number }[] = [
     { key: "all", label: "All", count: all.length },
+    { key: "special", label: "★ Special", count: all.filter((c) => c.special).length },
     { key: "active", label: "Active", count: all.filter((c) => c.active).length },
     { key: "owing", label: "Owing", count: owingCount },
     { key: "prepaid", label: "Prepaid", count: all.filter((c) => c.balance < 0).length },
@@ -126,6 +131,26 @@ export default function ClientsPage() {
     setPreset("all");
     setCustom(ALL_TIME);
     setTab("all");
+  }
+
+  // One-click ★ toggle — materialises a client record if this client has none
+  // yet (derived purely from orders), so it persists.
+  async function toggleSpecial(c: ClientRecord) {
+    if (!canWrite) return;
+    const base = materializeClient(c, user!.email);
+    const now = !base.special;
+    const next: Client = {
+      ...base,
+      special: now,
+      specialBy: now ? user!.email : base.specialBy,
+      specialOn: now ? nowISO() : base.specialOn,
+    };
+    try {
+      await upsertClient(next);
+      toast(now ? `${c.name} marked as special ★` : `${c.name} is no longer special.`);
+    } catch {
+      toast("Could not update the client.", "error");
+    }
   }
 
   function openNew() {
@@ -242,6 +267,29 @@ export default function ClientsPage() {
         </div>
       </div>
 
+      {canWrite && planDue.length > 0 && (
+        <div className="rounded-xl border border-gold/40 bg-gold-bg/40 px-4 py-3">
+          <div className="flex items-start gap-2.5">
+            <span className="mt-0.5 text-gold-dark" aria-hidden>★</span>
+            <div className="min-w-0 text-sm">
+              <p className="font-semibold text-ink">
+                {planDue.length} special-client plan{planDue.length === 1 ? "" : "s"} due within a week — no order yet
+              </p>
+              <ul className="mt-1 space-y-0.5 text-ink">
+                {planDue.slice(0, 6).map((d) => (
+                  <li key={`${d.client.id}|${d.date}`}>
+                    <Link href={`/clients/${encodeURIComponent(d.client.id)}`} className="font-medium text-gold-dark hover:underline">{d.client.name}</Link>
+                    {" · "}{formatDate(d.date)} — planned {d.planned.toLocaleString()}
+                    {d.ordered > 0 ? `, ordered ${d.ordered.toLocaleString()}` : ", not ordered"}
+                  </li>
+                ))}
+              </ul>
+              {planDue.length > 6 && <p className="mt-1 text-xs text-muted">+{planDue.length - 6} more…</p>}
+            </div>
+          </div>
+        </div>
+      )}
+
       <Card>
         <div className="mb-2 flex items-center gap-2">
           <span className="inline-block h-3.5 w-3.5 rounded bg-gold" />
@@ -262,7 +310,10 @@ export default function ClientsPage() {
             ) : pageRows.map((c) => (
               <tr key={c.id}>
                 <Td>
-                  <Link href={`/clients/${encodeURIComponent(c.id)}`} className="font-medium text-gold-dark">{c.name}</Link>
+                  <span className="inline-flex items-center gap-1.5">
+                    {c.special && <span className="text-gold-dark" title="Special / key client" aria-label="Special client">★</span>}
+                    <Link href={`/clients/${encodeURIComponent(c.id)}`} className="font-medium text-gold-dark">{c.name}</Link>
+                  </span>
                 </Td>
                 <Td>{c.phone || "—"}</Td>
                 <Td>{c.districts.join(", ") || "—"}</Td>
@@ -281,6 +332,18 @@ export default function ClientsPage() {
                         <path d="M2.5 10S5 4.5 10 4.5 17.5 10 17.5 10 15 15.5 10 15.5 2.5 10 2.5 10Z" /><circle cx="10" cy="10" r="2.2" />
                       </svg>
                     </Link>
+                    {canWrite && (
+                      <button
+                        type="button"
+                        title={c.special ? "Unmark special" : "Mark as special"}
+                        onClick={() => toggleSpecial(c)}
+                        className={cn(iconBtn, c.special ? "border-gold text-gold-dark" : "hover:border-gold hover:text-gold-dark")}
+                      >
+                        <svg width="16" height="16" viewBox="0 0 20 20" fill={c.special ? "currentColor" : "none"} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M10 2.5l2.2 4.6 5 .7-3.6 3.5.9 5L10 13.9 5.5 16.3l.9-5L2.8 7.8l5-.7z" />
+                        </svg>
+                      </button>
+                    )}
                     {canWrite && (
                       <button type="button" title="Edit client" onClick={() => openEdit(c)} className={iconBtn}>
                         <svg width="16" height="16" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">

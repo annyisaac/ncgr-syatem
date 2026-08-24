@@ -19,6 +19,7 @@ const TONE: Record<NotificationType, string> = {
   deleted: "bg-red-bg text-red",
   allocated: "bg-gold-bg text-gold-dark",
   delivery_failed: "bg-red-bg text-red",
+  plan_due: "bg-gold-bg text-gold-dark",
 };
 
 const LABEL: Record<NotificationType, string> = {
@@ -32,6 +33,7 @@ const LABEL: Record<NotificationType, string> = {
   deleted: "DEL",
   allocated: "ALC",
   delivery_failed: "FAIL",
+  plan_due: "PLAN",
 };
 
 function timeAgo(iso: string): string {
