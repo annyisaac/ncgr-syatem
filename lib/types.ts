@@ -118,6 +118,9 @@ export interface AppNotification {
   orderId?: string;
   read: boolean;
   createdAt: string;
+  /** For plan_due — lets the bell/banner deep-link straight to a prefilled
+   *  new-order form (client + planned date and chicks). */
+  plan?: { date: string; chicks: number; phone: string; name: string; product?: string };
 }
 
 /** Hatchery roles allowed to see & allocate sales orders. */

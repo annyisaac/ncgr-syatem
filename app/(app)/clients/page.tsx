@@ -133,6 +133,14 @@ export default function ClientsPage() {
     setTab("all");
   }
 
+  // Prefilled new-order form for a client's planned date + chicks.
+  function planOrderHref(c: ClientRecord, date: string, chicks: number): string {
+    const prod = c.product ?? c.orders[0]?.product;
+    const params = new URLSearchParams({ phone: c.phone, name: c.name, date, chicks: String(chicks) });
+    if (prod === "Ross 308" || prod === "Tetra Super Harco") params.set("product", prod);
+    return `/orders/new?${params.toString()}`;
+  }
+
   // One-click ★ toggle — materialises a client record if this client has none
   // yet (derived purely from orders), so it persists.
   async function toggleSpecial(c: ClientRecord) {
@@ -277,10 +285,17 @@ export default function ClientsPage() {
               </p>
               <ul className="mt-1 space-y-0.5 text-ink">
                 {planDue.slice(0, 6).map((d) => (
-                  <li key={`${d.client.id}|${d.date}`}>
-                    <Link href={`/clients/${encodeURIComponent(d.client.id)}`} className="font-medium text-gold-dark hover:underline">{d.client.name}</Link>
-                    {" · "}{formatDate(d.date)} — planned {d.planned.toLocaleString()}
-                    {d.ordered > 0 ? `, ordered ${d.ordered.toLocaleString()}` : ", not ordered"}
+                  <li key={`${d.client.id}|${d.date}`} className="flex flex-wrap items-center gap-x-2">
+                    <span>
+                      <Link href={`/clients/${encodeURIComponent(d.client.id)}`} className="font-medium text-gold-dark hover:underline">{d.client.name}</Link>
+                      {" · "}{formatDate(d.date)} — planned {d.planned.toLocaleString()}
+                      {d.ordered > 0 ? `, ordered ${d.ordered.toLocaleString()}` : ", not ordered"}
+                    </span>
+                    {canWrite && (
+                      <Link href={planOrderHref(d.client, d.date, d.planned)} className="text-xs font-semibold text-gold-dark underline">
+                        Create order
+                      </Link>
+                    )}
                   </li>
                 ))}
               </ul>

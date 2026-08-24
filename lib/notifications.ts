@@ -5,9 +5,19 @@ import type { AppNotification, Role } from "./types";
  * deals with what happened, deep-linked to the order where we can.
  */
 export function notificationHref(n: AppNotification, role: Role): string {
-  // A special client's plan is due — go to that client (orderId carries the
-  // client id). Only sales/checker/zone/admin get these, and all have /clients.
-  if (n.type === "plan_due") return n.orderId ? `/clients/${encodeURIComponent(n.orderId)}` : "/clients";
+  // A special client's plan is due — jump straight to the new-order form,
+  // prefilled with the client + planned date and chicks, so the reminder is
+  // one click from a placed order. Falls back to the client page.
+  if (n.type === "plan_due") {
+    if (n.plan) {
+      const params = new URLSearchParams({
+        phone: n.plan.phone, name: n.plan.name, date: n.plan.date, chicks: String(n.plan.chicks),
+      });
+      if (n.plan.product === "Ross 308" || n.plan.product === "Tetra Super Harco") params.set("product", n.plan.product);
+      return `/orders/new?${params.toString()}`;
+    }
+    return n.orderId ? `/clients/${encodeURIComponent(n.orderId)}` : "/clients";
+  }
 
   // The order is gone — deep-linking to it would show an empty list.
   if (n.type === "deleted") {
