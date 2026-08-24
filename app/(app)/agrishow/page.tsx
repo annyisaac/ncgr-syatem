@@ -7,6 +7,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
+import { Avatar } from "@/components/ui/Avatar";
 import { Field, Input, Select } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { Modal } from "@/components/ui/Modal";
@@ -495,33 +496,43 @@ export default function AgrishowPage() {
             <Button variant="secondary" onClick={() => { if (shownTeam.length === 0) return toast("No team records to download.", "info"); void teamDetailsPDF(shownTeam); }}>PDF</Button>
           </div>
         </div>
-        <TableWrap>
-          <thead><tr>
-            <Th>Name</Th><Th>National ID</Th><Th>Phone</Th><Th>Position</Th><Th>Marital status</Th><Th>Spouse</Th><Th className="text-right">Children</Th><Th>Submitted</Th><Th></Th>
-          </tr></thead>
-          <tbody>
-            {shownTeam.length === 0 ? (
-              <EmptyRow colSpan={9} text={loading ? "" : "No team records yet — share the link with your team."} />
-            ) : shownTeam.map((r) => (
-              <tr key={r.id}>
-                <Td className="font-medium">{r.fullName}</Td>
-                <Td>{r.nationalId || "—"}</Td>
-                <Td>{r.phone || "—"}</Td>
-                <Td>{r.position || "—"}</Td>
-                <Td>{r.maritalStatus || "—"}</Td>
-                <Td>{r.spouseName || "—"}</Td>
-                <Td className="text-right">{r.children.length || "—"}</Td>
-                <Td>{formatDateTime(r.on)}</Td>
-                <Td>
-                  <div className="flex justify-end gap-1">
-                    <Button size="sm" variant="ghost" onClick={() => setViewRec(r)}>Edit</Button>
-                    <Button size="sm" variant="ghost" onClick={() => removeRecord(r)}>Delete</Button>
+        {shownTeam.length === 0 ? (
+          <p className="py-10 text-center text-sm text-muted">{loading ? "" : "No team records yet — share the link with your team."}</p>
+        ) : (
+          <div className="mt-4 space-y-3">
+            {shownTeam.map((r) => (
+              <div key={r.id} className="rounded-2xl border border-line bg-paper p-4 shadow-card transition hover:border-gold/50 sm:p-5">
+                {/* Header: identity + submitted */}
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <Avatar user={{ name: r.fullName, avatar: undefined }} size={46} />
+                    <div className="min-w-0">
+                      <p className="truncate font-bold text-ink">{r.fullName}</p>
+                      {r.position && <span className="mt-1 inline-block"><Pill tone={roleTone(r.position)}>{r.position}</Pill></span>}
+                    </div>
                   </div>
-                </Td>
-              </tr>
+                  <div className="text-right">
+                    <p className="flex items-center justify-end gap-1 text-[0.7rem] font-medium text-muted"><IcoCal /> Submitted</p>
+                    <p className="text-xs font-medium text-ink">{formatDateTime(r.on)}</p>
+                  </div>
+                </div>
+
+                {/* Details grid */}
+                <div className="mt-4 grid grid-cols-1 gap-x-6 gap-y-4 border-t border-line pt-4 sm:grid-cols-3">
+                  <TeamField icon={<IcoId />} label="National ID" value={r.nationalId || "—"} mono />
+                  <TeamField icon={<IcoPhone />} label="Phone" value={r.phone || "—"} />
+                  <TeamField icon={<IcoHeart />} label="Marital status" value={r.maritalStatus || "—"} />
+                  <TeamField icon={<IcoUser />} label="Spouse" value={r.spouseName || "—"} />
+                  <TeamField icon={<IcoUsers />} label="Children" value={r.children.length ? String(r.children.length) : "—"} />
+                  <div className="flex items-end justify-start gap-2 sm:justify-end">
+                    <Button size="sm" variant="secondary" className="gap-1.5" onClick={() => setViewRec(r)}><IcoEdit /> Edit</Button>
+                    <Button size="sm" variant="ghost" className="gap-1.5 text-red hover:text-red" onClick={() => removeRecord(r)}><IcoTrash /> Delete</Button>
+                  </div>
+                </div>
+              </div>
             ))}
-          </tbody>
-        </TableWrap>
+          </div>
+        )}
       </Card>
 
       {viewRec && <TeamRecordEditModal record={viewRec} onClose={() => setViewRec(null)} onSave={saveRecord} />}
@@ -538,6 +549,38 @@ function Info({ label, value }: { label: string; value: string }) {
     </div>
   );
 }
+
+/** One labelled field with a leading icon, used on the team-record cards. */
+function TeamField({ icon, label, value, mono }: { icon: React.ReactNode; label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="mt-0.5 shrink-0 text-gold-dark/70">{icon}</span>
+      <div className="min-w-0">
+        <p className="text-[0.62rem] font-semibold uppercase tracking-wide text-muted">{label}</p>
+        <p className={`truncate font-medium text-ink ${mono ? "font-mono text-sm" : ""}`}>{value}</p>
+      </div>
+    </div>
+  );
+}
+
+/** Tint the position/role tag on a team-record card. */
+function roleTone(position: string): "gold" | "green" | "info" | "neutral" {
+  const p = position.toLowerCase();
+  if (p.includes("owner")) return "gold";
+  if (p.includes("vet")) return "green";
+  if (p.includes("manager") || p.includes("admin") || p.includes("officer")) return "info";
+  return "neutral";
+}
+
+const fico = { width: 16, height: 16, viewBox: "0 0 20 20", fill: "none", stroke: "currentColor", strokeWidth: 1.6, strokeLinecap: "round", strokeLinejoin: "round" } as const;
+const IcoCal = () => <svg {...fico} width={13} height={13}><rect x="3.5" y="4.5" width="13" height="12" rx="2" /><path d="M3.5 8h13M7 3v3M13 3v3" /></svg>;
+const IcoId = () => <svg {...fico}><rect x="2.5" y="5" width="15" height="10" rx="2" /><circle cx="7" cy="9.5" r="1.6" /><path d="M4.6 13.2c.3-1.2 1.3-1.8 2.4-1.8s2.1.6 2.4 1.8M12 8.5h3M12 11.5h3" /></svg>;
+const IcoPhone = () => <svg {...fico}><path d="M6 3.5c.5 0 .9.3 1 .8l.5 2c.1.5-.1.9-.5 1.2l-1 .7c.7 1.5 1.8 2.6 3.3 3.3l.7-1c.3-.4.7-.6 1.2-.5l2 .5c.5.1.8.5.8 1V15c0 .8-.7 1.5-1.5 1.4C7.5 16 4 12.5 3.6 7 3.5 4.7 4.2 3.5 6 3.5Z" /></svg>;
+const IcoHeart = () => <svg {...fico}><path d="M10 16s-5.5-3.4-5.5-7A2.8 2.8 0 0 1 10 6.6 2.8 2.8 0 0 1 15.5 9c0 3.6-5.5 7-5.5 7Z" /></svg>;
+const IcoUser = () => <svg {...fico}><circle cx="10" cy="7" r="2.8" /><path d="M4.5 16c0-2.6 2.4-4.2 5.5-4.2s5.5 1.6 5.5 4.2" /></svg>;
+const IcoUsers = () => <svg {...fico}><circle cx="8" cy="7.5" r="2.3" /><path d="M3.5 16c0-2.2 2-3.5 4.5-3.5s4.5 1.3 4.5 3.5" /><path d="M13.5 5.6a2.1 2.1 0 0 1 0 4M14 12.5c1.6.2 2.9 1.2 2.9 3" /></svg>;
+const IcoEdit = () => <svg {...fico}><path d="M13.5 3.5l3 3L7 16l-3.5.5L4 13z" /></svg>;
+const IcoTrash = () => <svg {...fico}><path d="M4 6h12M8 6V4.5h4V6M6 6l.6 9.5h6.8L14 6" /></svg>;
 
 const MARITAL_OPTS = [
   { value: "Single", label: "Single" },
