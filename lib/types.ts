@@ -266,6 +266,10 @@ export interface Order {
   createdAt: string; // ISO datetime of record creation
   history: string[]; // audit log lines, each tagged with actor
   plan: number; // route sort key within a delivery date
+  /** Set when this order was moved here from another delivery date — it sorts to
+   *  the front of the day and shows a "Rescheduled" mark. */
+  rescheduled?: boolean;
+  rescheduledFrom?: string; // the delivery date it was last moved from
   payments: Payment[];
   confirmedOk?: boolean; // order has been confirmed (>=1 payment)
   /** The hatchery has finalized an allocation of chicks to this order (reserved). */

@@ -421,7 +421,7 @@ export function rescheduleOrder(
       }
     : {};
   return withHistory(
-    { ...order, ...reopen, date: newDate, created: newDate, plan },
+    { ...order, ...reopen, date: newDate, created: newDate, plan, rescheduled: true, rescheduledFrom: order.date },
     actor,
     order.deliverOk
       ? `Rescheduled delivery to ${newDate} — reopened for delivery, placed first`

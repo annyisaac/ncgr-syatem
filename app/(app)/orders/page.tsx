@@ -848,6 +848,11 @@ function OrdersInner() {
                     <Td>
                       {formatDate(o.date)}
                       <div className="text-xs text-ink/50">Ordered {formatDateTime(o.createdAt)}</div>
+                      {o.rescheduled && (
+                        <div className="mt-1" title={o.rescheduledFrom ? `Moved from ${formatDate(o.rescheduledFrom)}` : "Rescheduled"}>
+                          <Pill tone="info">↪ Rescheduled</Pill>
+                        </div>
+                      )}
                       {oversold.keys.has(`${o.date}|${o.product}`) && (
                         <div className="mt-1"><Pill tone="red">Oversold day</Pill></div>
                       )}

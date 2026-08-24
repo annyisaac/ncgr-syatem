@@ -346,7 +346,11 @@ export default function NewOrderPage() {
       );
     }
 
-    const samedate = orders.filter((o) => o.date === date).length;
+    // A new customer appends to the end of the day's sequence (ascending). Use
+    // max(active plan)+1 — robust to gaps, rejected rows, and the negative plans
+    // rescheduled orders carry (which keep them at the front of the day).
+    const activeOnDate = orders.filter((o) => o.date === date && o.status !== "rejected" && o.status !== "refunded");
+    const samedate = activeOnDate.length ? Math.max(...activeOnDate.map((o) => o.plan)) + 1 : 0;
     const finalName = (existingCustomer?.name ?? name).trim();
     const clientId = clientRecordKey({ phone: phone.trim(), name: finalName });
 

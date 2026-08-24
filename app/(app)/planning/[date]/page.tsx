@@ -488,6 +488,7 @@ export default function DayPlanPage() {
                     <span className="text-xs text-muted">{o.phone}</span>
                     {o.debtOk && <span className="align-middle"><Pill tone="info">On debt</Pill></span>}
                     {o.splitOf && <span className="align-middle"><Pill tone="purple">Split</Pill></span>}
+                    {o.rescheduled && <span className="align-middle" title={o.rescheduledFrom ? `Moved from ${formatDate(o.rescheduledFrom)}` : "Rescheduled"}><Pill tone="gold">↪ Rescheduled</Pill></span>}
                   </div>
                 </Td>
                 <Td>{o.product}</Td>
