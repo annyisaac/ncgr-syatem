@@ -310,9 +310,9 @@ function OrdersInner() {
     for (const o of all) {
       value += orderTotal(o);
       const isCancelled = o.status === "refunded" || o.status === "rejected";
-      // Chicks ordered — active orders only (a rejected/refunded order's chicks
-      // are no longer being delivered).
-      if (!isCancelled) chicks += o.chicks;
+      // Chicks to deliver — the delivery total (ordered + 2% padding + free/comp
+      // chicks), active orders only (a rejected/refunded order delivers nothing).
+      if (!isCancelled) chicks += toDeliver(o);
       if (isCancelled) cancelled++;
       else if (o.status === "fulfilled") fulfilled++;
       else if (o.confirmedOk) confirmed++;
@@ -664,7 +664,7 @@ function OrdersInner() {
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-7">
         <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub={scopeSub} active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
-        <Kpi compact icon="chicks" tone="default" value={stats.chicks.toLocaleString()} label="Chicks Ordered" sub={scopeSub} />
+        <Kpi compact icon="chicks" tone="default" value={stats.chicks.toLocaleString()} label="Chicks to Deliver" sub={scopeSub} />
         <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} active={cardFilter === "fulfilled"} onClick={() => setCardFilter((f) => (f === "fulfilled" ? "all" : "fulfilled"))} />
         <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} active={cardFilter === "confirmed"} onClick={() => setCardFilter((f) => (f === "confirmed" ? "all" : "confirmed"))} />
         <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} active={cardFilter === "pending"} onClick={() => setCardFilter((f) => (f === "pending" ? "all" : "pending"))} />
