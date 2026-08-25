@@ -407,15 +407,17 @@ export default function NewOrderPage() {
       ...(isCompany && consigneePhone.trim() ? { consigneePhone: consigneePhone.trim() } : {}),
     };
 
-    // One live order per customer per delivery date — phone is the primary key,
-    // so this holds across products (matches the DB guard in place_order).
+    // One live order per customer per delivery date PER PRODUCT — a customer may
+    // take different products on the same day, but not two of the same product
+    // (matches the DB guard in place_order + orders_dedup_guard).
     const dupKey = normalizePhone(order.phone);
     const dupMsg = (o: Order) =>
-      `${order.name} (${order.phone}) already has an order for ${formatDate(order.date)}${o.by ? ` — created by ${o.by}` : ""}. A customer can only have one order per delivery date.`;
+      `${order.name} (${order.phone}) already has a ${order.product} order for ${formatDate(order.date)}${o.by ? ` — created by ${o.by}` : ""}. A customer can only have one order per product per delivery date.`;
     const dup = orders.find(
       (o) =>
         o.id !== order.id &&
         o.date === order.date &&
+        o.product === order.product &&
         o.status !== "rejected" &&
         o.status !== "refunded" &&
         (dupKey
@@ -435,7 +437,7 @@ export default function NewOrderPage() {
           : `Not enough ${product} chicks available on ${formatDate(date)}. Please pick another day or a smaller order.`);
       }
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
-      if (res.reason === "duplicate") return setError(`${order.name} already has an order for ${formatDate(date)}. A customer can only have one order per delivery date.`);
+      if (res.reason === "duplicate") return setError(`${order.name} already has a ${order.product} order for ${formatDate(date)}. A customer can only have one order per product per delivery date.`);
       if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order. Check the reference and enter the correct one.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }

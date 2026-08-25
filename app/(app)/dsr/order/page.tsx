@@ -174,13 +174,14 @@ export default function DsrOrderPage() {
       ...(isCompany && consignee.trim() ? { consignee: consignee.trim() } : {}),
       ...(isCompany && consigneePhone.trim() ? { consigneePhone: consigneePhone.trim() } : {}),
     };
-    // One live order per customer per delivery date — phone is the primary key,
-    // so this holds across products (matches the DB guard in place_order).
+    // One live order per customer per delivery date PER PRODUCT — different
+    // products on the same day are allowed (matches the DB guard in place_order).
     const dupKey = normalizePhone(order.phone);
     const dup = orders.find(
       (o) =>
         o.id !== order.id &&
         o.date === order.date &&
+        o.product === order.product &&
         o.status !== "rejected" &&
         o.status !== "refunded" &&
         (dupKey
@@ -188,7 +189,7 @@ export default function DsrOrderPage() {
           : order.name.trim() !== "" &&
             o.name.trim().toLowerCase() === order.name.trim().toLowerCase())
     );
-    if (dup) return setError(`${order.name} (${order.phone}) already has an order for ${formatDate(order.date)}. A customer can only have one order per delivery date.`);
+    if (dup) return setError(`${order.name} (${order.phone}) already has a ${order.product} order for ${formatDate(order.date)}. A customer can only have one order per product per delivery date.`);
 
     setSaving(true);
     const res = await placeOrder(order);
@@ -198,7 +199,7 @@ export default function DsrOrderPage() {
         return setError(`Not enough ${product} chicks available on ${formatDate(date)} anymore. Please pick another day or a smaller order.`);
       if (res.reason === "date_closed") return setError("That delivery date is no longer open.");
       if (res.reason === "out_of_zone") return setError(`That client is outside your zone (${myDsr!.zone}). You can only take clients in your zone.`);
-      if (res.reason === "duplicate") return setError(`${order.name} already has an order for ${formatDate(order.date)}. A customer can only have one order per delivery date.`);
+      if (res.reason === "duplicate") return setError(`${order.name} already has a ${order.product} order for ${formatDate(order.date)}. A customer can only have one order per product per delivery date.`);
       if (res.reason === "dup_payment") return setError(`That transaction reference${res.message ? ` (${res.message})` : ""} is already recorded on another order. Check the reference and enter the correct one.`);
       return setError("Could not place the order. Please check your connection and try again.");
     }
