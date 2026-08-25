@@ -16,6 +16,7 @@ import { ALL_TIME, inRange } from "@/components/ui/DateRange";
 import { FarmsManager } from "@/components/hatchery/FarmsManager";
 import { nowISO, todayISO, formatDate } from "@/lib/format";
 import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
+import { receptionsPDF } from "@/lib/reports";
 import { PRODUCTS } from "@/lib/types";
 import type { Reception, ReceptionLocation } from "@/lib/hatchery/types";
 import { settableEggs, remainingSettable } from "@/lib/hatchery/lifecycle";
@@ -152,18 +153,52 @@ export default function ReceptionPage() {
     toast("Reception deleted.");
   }
 
-  function exportCsv() {
+  // Header + body for the filtered set — shared by the CSV and PDF exports so
+  // both always reflect the exact same filter + search.
+  function reportRows(): { header: string[]; body: string[][] } {
     const header = ["Date", "Farm", "Location", "Flock", "Product", "Received", "Cracked", "Misshapen", "Dirty", "Others", "Settable", "Where", "Batch"];
     const body = filtered.map((r) => [
       formatDate(r.date), r.farm, farmLoc(r.farm), r.flockId, r.productType,
       String(r.eggsReceived), String(crackedOf(r)), String(r.misshapen), String(r.dirty), String(r.others ?? 0), String(settableEggs(r)),
       r.batchId ? "Set" : r.location ?? "Pending", batchNo(r.batchId) ?? "",
     ]);
+    return { header, body };
+  }
+
+  // A human label describing the active filter + search — printed on the report.
+  function reportLabel(): string {
+    const parts: string[] = [];
+    if (preset !== "all") parts.push(PERIODS.find((p) => p.value === preset)?.label ?? preset);
+    if (farmF !== "all") parts.push(`Farm: ${farmF}`);
+    if (productF !== "all") parts.push(`Product: ${productF}`);
+    if (batchF !== "all") parts.push(`Batch: ${batchF}`);
+    if (q.trim()) parts.push(`Search: "${q.trim()}"`);
+    return parts.length ? parts.join(" · ") : "All receptions";
+  }
+
+  function exportCsv() {
+    const { header, body } = reportRows();
     const blob = new Blob([[header, ...body].map((row) => row.map(csvCell).join(",")).join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url; a.download = `receptions-${todayISO()}.csv`; a.click();
     URL.revokeObjectURL(url);
+  }
+
+  async function exportPdf() {
+    if (filtered.length === 0) return toast("No receptions to export for this filter.", "info");
+    const { header, body } = reportRows();
+    const summary = [
+      `Received: ${totalReceived.toLocaleString()}`,
+      `Cracked: ${totalCracked.toLocaleString()}`,
+      `Dirty: ${totalDirty.toLocaleString()}`,
+      `Settable: ${totalSettable.toLocaleString()} (${avgSettablePct.toFixed(1)}%)`,
+    ];
+    try {
+      await receptionsPDF(header, body, reportLabel(), summary);
+    } catch {
+      toast("Could not build the PDF.", "error");
+    }
   }
 
   const HG = "bg-onyx px-3 py-2.5 text-left text-[0.62rem] font-bold uppercase tracking-wider text-[#f3e9c9] whitespace-nowrap";
@@ -243,7 +278,8 @@ export default function ReceptionPage() {
         <div className="w-40"><Select value={farmF} onChange={(e) => { setFarmF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Farms" }, ...farmOptions.map((n) => ({ value: n, label: n }))]} /></div>
         <div className="w-40"><Select value={productF} onChange={(e) => { setProductF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Products" }, ...PRODUCTS.map((p) => ({ value: p, label: p }))]} /></div>
         <div className="w-40"><Select value={batchF} onChange={(e) => { setBatchF(e.target.value); setPage(1); }} options={[{ value: "all", label: "All Batches" }, ...batchOptions.map((b) => ({ value: b, label: b }))]} /></div>
-        <Button variant="secondary" size="sm" onClick={exportCsv}>⭳ Export</Button>
+        <Button variant="secondary" size="sm" onClick={exportCsv}>⭳ CSV</Button>
+        <Button variant="secondary" size="sm" onClick={exportPdf}>⭳ PDF</Button>
       </div>
 
       {/* Table */}

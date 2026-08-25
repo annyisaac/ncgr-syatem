@@ -445,6 +445,35 @@ export async function visitorsPDF(
 }
 
 // ---------------------------------------------------------------------------
+// PDF: Egg reception records — mirrors the reception page's active filter+search
+// ---------------------------------------------------------------------------
+
+export async function receptionsPDF(
+  header: string[],
+  body: string[][],
+  filterLabel: string,
+  summary: string[]
+): Promise<void> {
+  const { doc, autoTable, startY, logo } = await brandedDoc("Egg Reception Report", [
+    `Filter: ${filterLabel}`,
+    `Records: ${body.length}`,
+    ...summary,
+    `Generated: ${formatDateTime(nowISO())}`,
+  ], "landscape");
+
+  autoTable(doc, {
+    startY,
+    head: [header],
+    body,
+    styles: { fontSize: 7, cellPadding: 2.5 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  finalizeAndSave(doc, logo, `NCGR-Egg-Reception-${nowISO().slice(0, 10)}.pdf`);
+}
+
+// ---------------------------------------------------------------------------
 // PDF: Team member details (personal & family) — Confidential
 // ---------------------------------------------------------------------------
 
