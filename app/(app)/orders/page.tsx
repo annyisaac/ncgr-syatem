@@ -337,23 +337,35 @@ function OrdersInner() {
   // KPI aggregates over every order this user can see (all time, unfiltered).
   const stats = useMemo(() => {
     const all = scoped;
-    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0, chicks = 0, paid = 0, bal = 0;
+    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0, chicks = 0;
+    // Money is aggregated PER CUSTOMER (cash vs order value) so an overpayment
+    // never double-counts as "paid" and never nets away another customer's debt.
+    // Applied credit is ignored here — it's internal cash reallocation, so cash
+    // received (paidAmount) is the single source of truth.
+    const byCust = new Map<string, { value: number; cash: number }>();
     for (const o of all) {
-      value += orderTotal(o);
-      paid += settledAmount(o); // cash paid + applied customer credit
-      bal += balance(o);        // outstanding (value = paid + balance per order)
       const isCancelled = o.status === "refunded" || o.status === "rejected";
-      // Chicks to deliver — the delivery total (ordered + 2% padding + free/comp
-      // chicks), active orders only (a rejected/refunded order delivers nothing).
-      if (!isCancelled) chicks += toDeliver(o);
-      if (isCancelled) cancelled++;
-      else if (o.status === "fulfilled") fulfilled++;
+      if (isCancelled) { cancelled++; continue; } // cancelled orders carry no value
+      value += orderTotal(o);
+      chicks += toDeliver(o);
+      if (o.status === "fulfilled") fulfilled++;
       else if (o.confirmedOk) confirmed++;
       else pending++;
+      const k = clientKey(o);
+      const e = byCust.get(k) ?? { value: 0, cash: 0 };
+      e.value += orderTotal(o);
+      e.cash += paidAmount(o);
+      byCust.set(k, e);
+    }
+    let paid = 0, outstanding = 0, overpaid = 0;
+    for (const e of byCust.values()) {
+      paid += e.cash;                                   // true cash collected
+      if (e.value > e.cash) outstanding += e.value - e.cash; // still owed by this customer
+      else overpaid += e.cash - e.value;                // this customer's prepayment/credit
     }
     const total = all.length;
     const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
-    return { total, fulfilled, confirmed, pending, cancelled, value, chicks, paid, bal, pct };
+    return { total, fulfilled, confirmed, pending, cancelled, value, chicks, paid, outstanding, overpaid, pct };
   }, [scoped]);
 
   // Whether any scope filter is active — the KPI cards say "All time" only when
@@ -735,14 +747,20 @@ function OrdersInner() {
           <p className="mt-1 text-[0.6rem] font-semibold uppercase tracking-[0.09em] text-muted">Total Order Value</p>
           <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2">
             <div>
-              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Paid</p>
+              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Paid (cash)</p>
               <p className="text-[0.95rem] font-bold leading-tight text-green tabular-nums">{formatRWF(stats.paid)}</p>
             </div>
             <div>
-              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Balance</p>
-              <p className="text-[0.95rem] font-bold leading-tight text-red tabular-nums">{formatRWF(stats.bal)}</p>
+              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Outstanding</p>
+              <p className="text-[0.95rem] font-bold leading-tight text-red tabular-nums">{formatRWF(stats.outstanding)}</p>
             </div>
           </div>
+          {stats.overpaid > 0 && (
+            <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5">
+              <span className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Overpaid (credit held)</span>
+              <span className="text-[0.8rem] font-bold text-blue tabular-nums">{formatRWF(stats.overpaid)}</span>
+            </div>
+          )}
         </div>
       </div>
 
