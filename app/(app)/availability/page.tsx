@@ -236,6 +236,19 @@ export default function AvailabilityPage() {
     toast(`${a.closed ? "Reopened" : "Closed"} ${formatDate(a.date)} for ordering.`);
   }
 
+  // Delete a MANUALLY-added delivery date (Admin only) — but never one that
+  // carries orders (they'd be orphaned): those must be closed, not deleted.
+  function deleteDate(a: Availability) {
+    if (a.fromBatch) return; // batch-derived dates aren't manually deletable
+    if (hasActiveOrders(a.id)) {
+      toast("This date has orders — close it instead of deleting.", "error");
+      return;
+    }
+    if (!confirm(`Delete the delivery date ${formatDate(a.date)}?\n\nOnly for a date added by mistake — it has no orders. This removes it entirely.`)) return;
+    void removeAvailability(a.id);
+    toast(`Deleted delivery date ${formatDate(a.date)}.`);
+  }
+
   // Publish one delivery date's availability from the (possibly updated) batch list.
   function publishDate(deliveryDate: string, list = batches) {
     const v = availabilityFromBatches(list).get(deliveryDate);
@@ -600,9 +613,16 @@ export default function AvailabilityPage() {
                   </div>
                   <div className="mt-2.5 flex items-center justify-between text-sm"><span className="text-muted">Status</span>{past ? <Pill tone="neutral">Ended</Pill> : a.closed ? <Pill tone="neutral">Closed</Pill> : over ? <Pill tone="red">Oversold</Pill> : <Pill tone="green">Open</Pill>}</div>
                   {canManage && !past && (
-                    <div className="mt-3 grid grid-cols-2 gap-2 border-t border-line pt-3">
-                      <Button size="sm" variant="ghost" onClick={() => toggleClose(a)}>{a.closed ? "Reopen" : "Close"}</Button>
-                      {a.fromBatch ? <Button size="sm" variant="ghost" onClick={() => publishDate(a.id)}>Auto</Button> : <Button size="sm" variant="ghost" onClick={() => editRow(a)}>Edit</Button>}
+                    <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
+                      <Button size="sm" variant="ghost" className="flex-1" onClick={() => toggleClose(a)}>{a.closed ? "Reopen" : "Close"}</Button>
+                      {a.fromBatch ? (
+                        <Button size="sm" variant="ghost" className="flex-1" onClick={() => publishDate(a.id)}>Auto</Button>
+                      ) : (
+                        <>
+                          <Button size="sm" variant="ghost" className="flex-1" onClick={() => editRow(a)}>Edit</Button>
+                          <Button size="sm" variant="ghost" className="flex-1 text-red hover:text-red" disabled={hasActiveOrders(a.id)} title={hasActiveOrders(a.id) ? "Has orders — close it instead" : "Delete this manually-added date"} onClick={() => deleteDate(a)}>Delete</Button>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>
