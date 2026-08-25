@@ -18,6 +18,8 @@ import {
   customerCredit,
   isFullyPaid,
   orderTotal,
+  paidAmount,
+  sameCustomer,
   toDeliver,
   type Availability,
   type Order,
@@ -242,6 +244,55 @@ export function fulfillOrder(
  *  excluded so its own bill doesn't cancel the credit). */
 export function creditToApply(order: Order, orders: Order[]): number {
   return Math.min(customerCredit(orders, order, order.id), orderTotal(order));
+}
+
+/**
+ * Re-allocate a customer's credit across ALL their active orders so applied
+ * credit is never stale — the fix for "edit one order, another order's balance
+ * silently goes wrong". The customer's total cash surplus (from any overpaid
+ * order) is spread onto their underpaid orders, oldest delivery date first,
+ * capped at each order's shortfall.
+ *
+ * `orders` must already contain the just-changed order(s). Returns ONLY the
+ * orders whose `creditApplied` actually changed (each with an audit line), so
+ * callers persist a minimal set and no spurious history is written.
+ */
+export function recomputeCustomerCredit(
+  orders: Order[],
+  ref: Pick<Order, "phone" | "name">,
+  actor: User
+): Order[] {
+  const mine = orders.filter((o) => !isClosed(o) && sameCustomer(o, ref));
+  // Gross surplus cash from any overpaid order, minus credit already consumed by
+  // DELIVERED orders (their credit is locked — never reclaimed after delivery).
+  const grossSurplus = mine.reduce((s, o) => s + Math.max(0, paidAmount(o) - orderTotal(o)), 0);
+  const lockedDelivered = mine.reduce((s, o) => s + (o.deliverOk ? o.creditApplied ?? 0 : 0), 0);
+  let pool = Math.max(0, grossSurplus - lockedDelivered);
+  // Fill still-open orders oldest delivery date first (createdAt breaks ties).
+  const open = mine
+    .filter((o) => !o.deliverOk)
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.createdAt < b.createdAt ? -1 : 1));
+
+  const changed: Order[] = [];
+  for (const o of open) {
+    const shortfall = orderTotal(o) - paidAmount(o);
+    let target = 0;
+    if (shortfall > 0 && pool > 0) {
+      target = Math.min(pool, shortfall);
+    }
+    target = Math.round(target);
+    pool -= target;
+    if (target === Math.round(o.creditApplied ?? 0)) continue; // no change
+    const next: Order = target > 0
+      ? { ...o, creditApplied: target }
+      : (() => { const rest = { ...o }; delete rest.creditApplied; return rest; })();
+    changed.push(
+      withHistory(next, actor, target > 0
+        ? `Applied customer credit auto-updated to ${target.toLocaleString()} RWF`
+        : "Applied customer credit auto-cleared")
+    );
+  }
+  return changed;
 }
 
 /**

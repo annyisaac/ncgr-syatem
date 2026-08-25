@@ -55,6 +55,7 @@ import {
   refundOrder,
   rejectOrder,
   reverseRejection,
+  recomputeCustomerCredit,
   reorderPlan,
   rescheduleOrder,
   shortDeliver,
@@ -377,10 +378,22 @@ function OrdersInner() {
 
   // ---- Action handlers -----------------------------------------------------
   function act(next: Order, message: string) {
+    // Re-balance the customer's applied credit across ALL their orders so any
+    // money change (edit, payment, void, refund) never leaves a stale balance
+    // on a related order. Only orders whose credit actually changes are saved.
+    const merged = orders.some((o) => o.id === next.id)
+      ? orders.map((o) => (o.id === next.id ? next : o))
+      : [...orders, next];
+    const changes = user ? recomputeCustomerCredit(merged, next, user) : [];
+    const selfChange = changes.find((o) => o.id === next.id);
+    const primary = selfChange ?? next;
+    const deps = changes.filter((o) => o.id !== next.id);
+    const toSave = [primary, ...deps];
+
     // Optimistic save; on a server rejection (e.g. a payment reference already
     // used on another order) tell the user and resync with the true DB state.
-    upsertOrder(next)
-      .then(() => toast(message))
+    Promise.all(toSave.map((o) => upsertOrder(o)))
+      .then(() => toast(deps.length ? `${message} Related balances updated.` : message))
       .catch((err) => {
         const m = err instanceof Error ? err.message : "";
         if (m.includes("DUPLICATE_PAYMENT_REF")) {
