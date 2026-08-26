@@ -353,29 +353,38 @@ function OrdersInner() {
 
   // Money + chicks over the FULLY filtered set `rows` (includes the stat-card
   // selection) so these totals always match exactly what the table shows.
-  // Money is aggregated PER CUSTOMER (cash vs order value) so an overpayment
-  // never double-counts as "paid" nor nets away another customer's debt; applied
-  // credit is ignored — cash received (paidAmount) is the single source of truth.
+  // Money is aggregated PER CUSTOMER, and each customer's cash is split by
+  // verification: VERIFIED (checked against bank statements, plus applied credit
+  // which is already-verified money) vs AWAITING (recorded but not yet verified).
+  // Verified covers the order value first, then awaiting, then the rest is unpaid.
   const money = useMemo(() => {
     let value = 0, chicks = 0;
-    const byCust = new Map<string, { value: number; cash: number }>();
+    const byCust = new Map<string, { value: number; vcash: number; ucash: number }>();
     for (const o of rows) {
       if (o.status === "refunded" || o.status === "rejected") continue; // no value
       value += orderTotal(o);
       chicks += toDeliver(o);
+      let vc = o.creditApplied ?? 0; // applied credit is already-verified money
+      let uc = 0;
+      for (const p of o.payments) {
+        if (p.voided) continue;
+        if (p.verified) vc += p.amt; else uc += p.amt;
+      }
       const k = clientKey(o);
-      const e = byCust.get(k) ?? { value: 0, cash: 0 };
+      const e = byCust.get(k) ?? { value: 0, vcash: 0, ucash: 0 };
       e.value += orderTotal(o);
-      e.cash += paidAmount(o);
+      e.vcash += vc;
+      e.ucash += uc;
       byCust.set(k, e);
     }
-    let paid = 0, outstanding = 0, overpaid = 0;
+    let verified = 0, awaiting = 0, notPaid = 0, overpaid = 0;
     for (const e of byCust.values()) {
-      paid += e.cash;                                   // true cash collected
-      if (e.value > e.cash) outstanding += e.value - e.cash; // still owed by this customer
-      else overpaid += e.cash - e.value;                // this customer's prepayment/credit
+      verified += Math.min(e.value, e.vcash);                          // confirmed money covering the order
+      awaiting += Math.min(Math.max(0, e.value - e.vcash), e.ucash);   // recorded, awaiting verification
+      notPaid += Math.max(0, e.value - e.vcash - e.ucash);             // no payment at all
+      overpaid += Math.max(0, e.vcash + e.ucash - e.value);            // paid beyond the order (credit held)
     }
-    return { value, chicks, paid, outstanding, overpaid };
+    return { value, chicks, verified, awaiting, notPaid, overpaid };
   }, [rows]);
 
   // Whether any scope filter is active — the KPI cards say "All time" only when
@@ -757,14 +766,20 @@ function OrdersInner() {
           <p className="mt-1 text-[0.6rem] font-semibold uppercase tracking-[0.09em] text-muted">Total Order Value</p>
           <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2">
             <div>
-              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Paid (cash)</p>
-              <p className="text-[0.95rem] font-bold leading-tight text-green tabular-nums">{formatRWF(money.paid)}</p>
+              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Paid &amp; verified</p>
+              <p className="text-[0.95rem] font-bold leading-tight text-green tabular-nums">{formatRWF(money.verified)}</p>
             </div>
             <div>
-              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Outstanding</p>
-              <p className="text-[0.95rem] font-bold leading-tight text-red tabular-nums">{formatRWF(money.outstanding)}</p>
+              <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Not paid</p>
+              <p className="text-[0.95rem] font-bold leading-tight text-red tabular-nums">{formatRWF(money.notPaid)}</p>
             </div>
           </div>
+          {money.awaiting > 0 && (
+            <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5">
+              <span className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Paid — awaiting verification</span>
+              <span className="text-[0.8rem] font-bold text-amber tabular-nums">{formatRWF(money.awaiting)}</span>
+            </div>
+          )}
           {money.overpaid > 0 && (
             <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5">
               <span className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Overpaid (credit held)</span>
