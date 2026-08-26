@@ -21,8 +21,9 @@ export interface DailyLog {
   date: string;          // ISO date
   mortality?: number;
   culls?: number;
-  bodyWeightG?: number;
-  uniformityPct?: number;
+  bodyWeightG?: number;      // mean body weight of the weighed sample
+  uniformityPct?: number;    // % of the sample within ±10% of the mean
+  cvPct?: number;            // coefficient of variation of the sample (SD/mean %)
   feedKg?: number;
   waterL?: number;
   // Egg production (laying females)
