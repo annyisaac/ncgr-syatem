@@ -182,6 +182,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Egg transfers", href: "/parent-stock/eggs" },
     { label: "Farm health", href: "/parent-stock/health" },
     { label: "Farm inventory", href: "/parent-stock/inventory" },
+    { label: "Feed", href: "/parent-stock/feed" },
     { label: "Production costing", href: "/parent-stock/costing" },
     { label: "Farm reports", href: "/parent-stock/reports" },
     // Hatchery
@@ -298,6 +299,7 @@ const NAV: Record<Role, NavItem[]> = {
     { label: "Egg transfers", href: "/parent-stock/eggs" },
     { label: "Health", href: "/parent-stock/health" },
     { label: "Inventory", href: "/parent-stock/inventory" },
+    { label: "Feed", href: "/parent-stock/feed" },
     { label: "Production costing", href: "/parent-stock/costing" },
     { label: "Reports", href: "/parent-stock/reports" },
   ],
