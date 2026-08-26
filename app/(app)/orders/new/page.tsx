@@ -247,7 +247,9 @@ export default function NewOrderPage() {
   const total = nChicks * nPrice;
   // Live order summary figures
   const firstPay = Number(payAmt) || 0;
-  const creditToApply = Math.min(custCredit, total);
+  // Credit only covers what the cash payment doesn't — never on top of it, or an
+  // order paid in full by cash would still pull credit (a phantom overpayment).
+  const creditToApply = Math.min(custCredit, Math.max(0, total - firstPay));
   const orderBalance = Math.max(0, total - creditToApply - firstPay);
 
   function resetProductDependent() {
@@ -360,7 +362,7 @@ export default function NewOrderPage() {
     const orderTotalValue = orderTotal({ chicks: nChicks, price: nPrice });
     const applied = Math.min(
       customerCredit(orders, { phone: phone.trim(), name: finalName }, undefined, refunded),
-      orderTotalValue
+      Math.max(0, orderTotalValue - payAmount) // only cover the shortfall after cash
     );
     // Credit fully covers the order and no cash was recorded → it's paid by
     // already-verified money, so confirm it automatically (nothing to verify).
