@@ -58,7 +58,7 @@ function splitRefs(input: string): string[] {
   return input.split(/[\s,\-]+/).map((s) => s.trim()).filter(Boolean);
 }
 function lookupRefs(refs: string[], statements: BankStatement[]) {
-  const all = statements.flatMap((s) => s.rows);
+  const all = statements.flatMap((s) => s.rows ?? []).filter(Boolean);
   // Collapse identical repeats (same ref + amount) so a re-uploaded or
   // overlapping statement doesn't read as a duplicate. `normRef` keeps this in
   // step with the automatic check (spacing / padding tolerated).
@@ -422,18 +422,25 @@ export default function VerificationPage() {
   // already prevents excess credit; this reallocates. (Existing orders only.)
   async function saveWithRebalance(changed: Order[]): Promise<void> {
     if (changed.length === 0) return;
-    if (!user) { await Promise.all(changed.map((o) => upsertOrder(o))); return; }
-    const byId = new Map(changed.map((o) => [o.id, o] as const));
-    const merged = orders.map((o) => byId.get(o.id) ?? o);
-    const finalById = new Map<string, Order>(byId);
-    const seen = new Set<string>();
-    for (const o of changed) {
-      const key = clientKey(o);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      for (const cc of recomputeCustomerCredit(merged, o, user)) finalById.set(cc.id, cc);
+    let toSave: Order[] = changed;
+    try {
+      if (user) {
+        const byId = new Map(changed.map((o) => [o.id, o] as const));
+        const merged = orders.map((o) => byId.get(o.id) ?? o);
+        const finalById = new Map<string, Order>(byId);
+        const seen = new Set<string>();
+        for (const o of changed) {
+          const key = clientKey(o);
+          if (seen.has(key)) continue;
+          seen.add(key);
+          for (const cc of recomputeCustomerCredit(merged, o, user)) finalById.set(cc.id, cc);
+        }
+        toSave = [...finalById.values()];
+      }
+    } catch {
+      toSave = changed; // rebalancing must never block the actual payment save
     }
-    await Promise.all([...finalById.values()].map((o) => upsertOrder(o)));
+    await Promise.all(toSave.map((o) => upsertOrder(o)));
   }
 
   async function openSlip(path: string) {
@@ -1194,7 +1201,7 @@ function ManualModal({
     cash ? "cash" : allClean ? "verify" : anyMissing ? "missing" : "dup";
   const verifyLabel =
     action === "cash" ? "Confirm (cash)"
-    : bankTotal !== payment.amt ? `Verify at ${formatMoney(bankTotal!, order.currency)}` : "Confirm verification";
+    : bankTotal !== null && bankTotal !== payment.amt ? `Verify at ${formatMoney(bankTotal, order.currency)}` : "Confirm verification";
 
   const submit = (choice: "auto" | "admin" | "seller") => {
     if (!ref.trim()) return setErr("Enter the transaction id(s) or CASH.");
