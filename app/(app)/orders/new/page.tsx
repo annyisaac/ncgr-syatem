@@ -261,7 +261,7 @@ export default function NewOrderPage() {
 
   const [saving, setSaving] = useState(false);
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent) {
     e.preventDefault();
     if (saving) return; // guard against a double-submit while one is in flight
     setError(null);
@@ -450,6 +450,16 @@ export default function NewOrderPage() {
     router.push("/orders");
   }
 
+  // Pressing Enter in any input creates the order — except in a select / textarea
+  // / button, where Enter has its own meaning (pick an option, newline, click).
+  function onFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Enter") return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON") return;
+    e.preventDefault();
+    void submit(e);
+  }
+
   if (!canCreate) {
     return (
       <Card>
@@ -463,7 +473,7 @@ export default function NewOrderPage() {
   return (
     <div className="space-y-4">
 
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} onKeyDown={onFormKeyDown} className="space-y-4">
         <Card>
           <CardHeader title="Product & location" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

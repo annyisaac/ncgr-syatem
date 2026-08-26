@@ -104,7 +104,7 @@ export default function DsrOrderPage() {
   if (!user) return null;
   if (!myDsr) return <Card><p className="text-sm text-muted">Your DSR profile could not be found. Ask your zone manager.</p></Card>;
 
-  async function submit(e: React.FormEvent) {
+  async function submit(e: React.SyntheticEvent) {
     e.preventDefault();
     setError(null);
     if (!product) return setError("Choose a product.");
@@ -207,10 +207,20 @@ export default function DsrOrderPage() {
     router.push("/dsr/orders");
   }
 
+  // Enter in any input creates the order (select/textarea/button keep their own
+  // Enter behaviour).
+  function onFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    if (e.key !== "Enter") return;
+    const tag = (e.target as HTMLElement).tagName;
+    if (tag === "TEXTAREA" || tag === "SELECT" || tag === "BUTTON") return;
+    e.preventDefault();
+    void submit(e);
+  }
+
   return (
     <div className="space-y-4">
 
-      <form onSubmit={submit} className="space-y-4">
+      <form onSubmit={submit} onKeyDown={onFormKeyDown} className="space-y-4">
         <Card>
           <CardHeader title="Product & delivery day" />
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
