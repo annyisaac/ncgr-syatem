@@ -40,7 +40,8 @@ import {
   type AutoOutcome,
 } from "@/lib/verification";
 import { verificationPDF, verificationExcel, type ReconReportRow } from "@/lib/reports";
-import { withHistory } from "@/lib/orders";
+import { withHistory, recomputeCustomerCredit } from "@/lib/orders";
+import { clientKey } from "@/lib/clients";
 
 interface Staged {
   fileName: string;
@@ -382,7 +383,7 @@ export default function VerificationPage() {
     // new statement explicitly.
     const res = runAutoCheck(orders, [...statements, stmt], user!, visibleIds);
     const before = new Map(orders.map((o) => [o.id, o]));
-    res.orders.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
+    void saveWithRebalance(res.orders.filter((o) => before.get(o.id) !== o));
     const cleared = res.outcomes.filter((x) => x.result === "verified" || x.result === "corrected").length;
     setOutcomes(res.outcomes);
     if (res.outcomes.length > 0) setShowAutoResults(true);
@@ -408,11 +409,31 @@ export default function VerificationPage() {
     // Save ONLY the orders the check actually changed. Never re-send the whole
     // collection — that deletes rows this tab hasn't loaded yet.
     const before = new Map(orders.map((o) => [o.id, o]));
-    res.orders.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
+    void saveWithRebalance(res.orders.filter((o) => before.get(o.id) !== o));
     setOutcomes(res.outcomes);
     if (res.outcomes.length > 0) setShowAutoResults(true);
     const verified = res.outcomes.filter((o) => o.result === "verified" || o.result === "corrected").length;
     toast(`Automatic check done — ${verified} verified/corrected, ${res.outcomes.length} checked.`);
+  }
+
+  // Save the changed orders AND re-balance each affected customer's applied
+  // credit across their orders, so credit freed by a verification / correction /
+  // rejection flows to that customer's other underpaid orders. The DB clamp
+  // already prevents excess credit; this reallocates. (Existing orders only.)
+  async function saveWithRebalance(changed: Order[]): Promise<void> {
+    if (changed.length === 0) return;
+    if (!user) { await Promise.all(changed.map((o) => upsertOrder(o))); return; }
+    const byId = new Map(changed.map((o) => [o.id, o] as const));
+    const merged = orders.map((o) => byId.get(o.id) ?? o);
+    const finalById = new Map<string, Order>(byId);
+    const seen = new Set<string>();
+    for (const o of changed) {
+      const key = clientKey(o);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      for (const cc of recomputeCustomerCredit(merged, o, user)) finalById.set(cc.id, cc);
+    }
+    await Promise.all([...finalById.values()].map((o) => upsertOrder(o)));
   }
 
   async function openSlip(path: string) {
@@ -426,7 +447,7 @@ export default function VerificationPage() {
     // Single-row write: replacing the whole collection would delete any order
     // created since this tab loaded.
     try {
-      await upsertOrder(withHistory({ ...order, payments }, user!, line));
+      await saveWithRebalance([withHistory({ ...order, payments }, user!, line)]);
       return true;
     } catch (err) {
       const m = err instanceof Error ? err.message : "";
@@ -592,6 +613,7 @@ export default function VerificationPage() {
     const note = bulkNote.trim();
     if (!note) return toast("Add an approval comment for the selected payments.", "error");
     let count = 0;
+    const changed: Order[] = [];
     for (const [oid, idxs] of groupSelection()) {
       const order = myOrders.find((o) => o.id === oid);
       if (!order) continue;
@@ -609,8 +631,9 @@ export default function VerificationPage() {
         updated = withHistory({ ...updated, payments }, user!, `Admin approved payment (${refs.length ? refs.join(", ") : ref}) — ${formatMoney(p0.amt, order.currency)} — ${note}`);
         count++;
       }
-      if (updated !== order) void upsertOrder(updated);
+      if (updated !== order) changed.push(updated);
     }
+    void saveWithRebalance(changed);
     setSel(new Set());
     setBulkNote("");
     toast(count ? `${count} payment(s) approved.` : "Nothing to approve.", count ? "success" : "info");
@@ -618,6 +641,7 @@ export default function VerificationPage() {
 
   function bulkReject() {
     let count = 0;
+    const changed: Order[] = [];
     for (const [oid, idxs] of groupSelection()) {
       const order = myOrders.find((o) => o.id === oid);
       if (!order) continue;
@@ -633,8 +657,9 @@ export default function VerificationPage() {
         updated = withHistory({ ...updated, payments }, user!, `Admin rejected payment (${(p0.pendingApproval?.refs ?? []).join(", ")}) — voided, ${formatMoney(p0.amt, order.currency)} removed from paid`);
         count++;
       }
-      if (updated !== order) void upsertOrder(updated);
+      if (updated !== order) changed.push(updated);
     }
+    void saveWithRebalance(changed);
     setSel(new Set());
     toast(count ? `${count} payment(s) rejected and voided.` : "Nothing to reject.", "info");
   }
