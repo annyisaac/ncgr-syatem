@@ -335,22 +335,34 @@ function OrdersInner() {
   }, [availability, role, visible]);
 
   // KPI aggregates over every order this user can see (all time, unfiltered).
+  // Breakdown COUNTS over the scoped set (excludes the clickable stat-card
+  // selection so the cards keep showing the full composition to switch between).
   const stats = useMemo(() => {
     const all = scoped;
-    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0, value = 0, chicks = 0;
-    // Money is aggregated PER CUSTOMER (cash vs order value) so an overpayment
-    // never double-counts as "paid" and never nets away another customer's debt.
-    // Applied credit is ignored here — it's internal cash reallocation, so cash
-    // received (paidAmount) is the single source of truth.
-    const byCust = new Map<string, { value: number; cash: number }>();
+    let fulfilled = 0, confirmed = 0, pending = 0, cancelled = 0;
     for (const o of all) {
-      const isCancelled = o.status === "refunded" || o.status === "rejected";
-      if (isCancelled) { cancelled++; continue; } // cancelled orders carry no value
-      value += orderTotal(o);
-      chicks += toDeliver(o);
-      if (o.status === "fulfilled") fulfilled++;
+      if (o.status === "refunded" || o.status === "rejected") cancelled++;
+      else if (o.status === "fulfilled") fulfilled++;
       else if (o.confirmedOk) confirmed++;
       else pending++;
+    }
+    const total = all.length;
+    const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
+    return { total, fulfilled, confirmed, pending, cancelled, pct };
+  }, [scoped]);
+
+  // Money + chicks over the FULLY filtered set `rows` (includes the stat-card
+  // selection) so these totals always match exactly what the table shows.
+  // Money is aggregated PER CUSTOMER (cash vs order value) so an overpayment
+  // never double-counts as "paid" nor nets away another customer's debt; applied
+  // credit is ignored — cash received (paidAmount) is the single source of truth.
+  const money = useMemo(() => {
+    let value = 0, chicks = 0;
+    const byCust = new Map<string, { value: number; cash: number }>();
+    for (const o of rows) {
+      if (o.status === "refunded" || o.status === "rejected") continue; // no value
+      value += orderTotal(o);
+      chicks += toDeliver(o);
       const k = clientKey(o);
       const e = byCust.get(k) ?? { value: 0, cash: 0 };
       e.value += orderTotal(o);
@@ -363,10 +375,8 @@ function OrdersInner() {
       if (e.value > e.cash) outstanding += e.value - e.cash; // still owed by this customer
       else overpaid += e.cash - e.value;                // this customer's prepayment/credit
     }
-    const total = all.length;
-    const pct = (n: number) => (total ? `${((n / total) * 100).toFixed(1)}%` : "0%");
-    return { total, fulfilled, confirmed, pending, cancelled, value, chicks, paid, outstanding, overpaid, pct };
-  }, [scoped]);
+    return { value, chicks, paid, outstanding, overpaid };
+  }, [rows]);
 
   // Whether any scope filter is active — the KPI cards say "All time" only when
   // showing everything, otherwise "Filtered" so the counts aren't misread.
@@ -727,7 +737,7 @@ function OrdersInner() {
 
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 xl:grid-cols-8">
         <Kpi compact icon="orders" tone="gold" value={stats.total.toLocaleString()} label="Total Orders" sub={scopeSub} active={cardFilter === "all"} onClick={() => setCardFilter("all")} />
-        <Kpi compact icon="chicks" tone="default" value={stats.chicks.toLocaleString()} label="Chicks to Deliver" sub={scopeSub} />
+        <Kpi compact icon="chicks" tone="default" value={money.chicks.toLocaleString()} label="Chicks to Deliver" sub={scopeSub} />
         <Kpi compact icon="check" tone="green" value={stats.fulfilled.toLocaleString()} label="Fulfilled" sub={stats.pct(stats.fulfilled)} active={cardFilter === "fulfilled"} onClick={() => setCardFilter((f) => (f === "fulfilled" ? "all" : "fulfilled"))} />
         <Kpi compact icon="orders" tone="blue" value={stats.confirmed.toLocaleString()} label="Confirmed" sub={stats.pct(stats.confirmed)} active={cardFilter === "confirmed"} onClick={() => setCardFilter((f) => (f === "confirmed" ? "all" : "confirmed"))} />
         <Kpi compact icon="pending" tone="amber" value={stats.pending.toLocaleString()} label="Pending" sub={stats.pct(stats.pending)} active={cardFilter === "pending"} onClick={() => setCardFilter((f) => (f === "pending" ? "all" : "pending"))} />
@@ -743,22 +753,22 @@ function OrdersInner() {
             </span>
             <span className="text-[0.66rem] text-muted">{scopeSub}</span>
           </div>
-          <p className="mt-2 text-[1.2rem] font-bold leading-none tracking-tight text-ink tabular-nums">{formatRWF(stats.value)}</p>
+          <p className="mt-2 text-[1.2rem] font-bold leading-none tracking-tight text-ink tabular-nums">{formatRWF(money.value)}</p>
           <p className="mt-1 text-[0.6rem] font-semibold uppercase tracking-[0.09em] text-muted">Total Order Value</p>
           <div className="mt-2 grid grid-cols-2 gap-2 border-t border-line pt-2">
             <div>
               <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Paid (cash)</p>
-              <p className="text-[0.95rem] font-bold leading-tight text-green tabular-nums">{formatRWF(stats.paid)}</p>
+              <p className="text-[0.95rem] font-bold leading-tight text-green tabular-nums">{formatRWF(money.paid)}</p>
             </div>
             <div>
               <p className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Outstanding</p>
-              <p className="text-[0.95rem] font-bold leading-tight text-red tabular-nums">{formatRWF(stats.outstanding)}</p>
+              <p className="text-[0.95rem] font-bold leading-tight text-red tabular-nums">{formatRWF(money.outstanding)}</p>
             </div>
           </div>
-          {stats.overpaid > 0 && (
+          {money.overpaid > 0 && (
             <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5">
               <span className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Overpaid (credit held)</span>
-              <span className="text-[0.8rem] font-bold text-blue tabular-nums">{formatRWF(stats.overpaid)}</span>
+              <span className="text-[0.8rem] font-bold text-blue tabular-nums">{formatRWF(money.overpaid)}</span>
             </div>
           )}
         </div>
