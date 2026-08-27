@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/cn";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type { ReactNode } from "react";
 import { Button } from "./Button";
 
@@ -22,6 +22,8 @@ export function Modal({
   footer,
   className,
 }: ModalProps) {
+  const footerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
@@ -30,6 +32,17 @@ export function Modal({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [open, onClose]);
+
+  // Enter in a text/number input triggers the modal's primary action (the last
+  // enabled footer button) — so any form submits from the keyboard. Select,
+  // textarea and buttons keep their own Enter behaviour.
+  function onKeyDown(e: React.KeyboardEvent) {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    if ((e.target as HTMLElement).tagName !== "INPUT") return;
+    const btns = footerRef.current?.querySelectorAll<HTMLButtonElement>("button:not([disabled])");
+    const primary = btns && btns.length ? btns[btns.length - 1] : null;
+    if (primary) { e.preventDefault(); primary.click(); }
+  }
 
   if (!open) return null;
 
@@ -53,6 +66,7 @@ export function Modal({
           "max-h-[92vh] overflow-hidden",
           className
         )}
+        onKeyDown={onKeyDown}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-line bg-paper px-5 py-3.5">
           <h3 className="text-[0.95rem] font-bold text-ink">{title}</h3>
@@ -62,7 +76,7 @@ export function Modal({
         </div>
         <div className="grow overflow-y-auto px-4 py-4">{children}</div>
         {footer && (
-          <div className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-ink/10 bg-paper px-4 py-3">
+          <div ref={footerRef} className="flex shrink-0 flex-wrap justify-end gap-2 border-t border-ink/10 bg-paper px-4 py-3">
             {footer}
           </div>
         )}

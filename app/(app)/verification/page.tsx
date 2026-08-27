@@ -97,6 +97,7 @@ export default function VerificationPage() {
   const [pSize, setPSize] = useState(10);
   const [outcomes, setOutcomes] = useState<AutoOutcome[]>([]);
   const [manual, setManual] = useState<{ order: Order; payIndex: number } | null>(null);
+  const [slip, setSlip] = useState<{ path: string; url: string | null } | null>(null);
   const [approveFor, setApproveFor] = useState<{ order: Order; payIndex: number } | null>(null);
 
   // Bulk admin approval — selected pending payments + a shared comment.
@@ -444,9 +445,10 @@ export default function VerificationPage() {
   }
 
   async function openSlip(path: string) {
+    setSlip({ path, url: null }); // open the preview immediately with a loading state
     const url = await paymentSlipUrl(path);
-    if (url) window.open(url, "_blank", "noopener");
-    else toast("Could not open the slip.", "error");
+    if (!url) { toast("Could not load the slip.", "error"); setSlip(null); return; }
+    setSlip({ path, url });
   }
 
   async function patchPayment(order: Order, payIndex: number, patch: Partial<Payment>, line: string): Promise<boolean> {
@@ -1098,6 +1100,19 @@ export default function VerificationPage() {
                 )}
               </tbody>
             </TableWrap>
+          )}
+        </Modal>
+      )}
+
+      {slip && (
+        <Modal open onClose={() => setSlip(null)} title="Payment bank slip" className="max-w-2xl"
+          footer={slip.url ? <a href={slip.url} target="_blank" rel="noopener noreferrer"><Button variant="secondary">Open in new tab</Button></a> : undefined}>
+          {!slip.url ? (
+            <p className="py-10 text-center text-sm text-muted">Loading slip…</p>
+          ) : /\.pdf(\?|$)/i.test(slip.path) ? (
+            <iframe src={slip.url} title="Payment bank slip" className="h-[70vh] w-full rounded-lg border border-line" />
+          ) : (
+            <img src={slip.url} alt="Payment bank slip" className="mx-auto max-h-[70vh] w-auto rounded-lg border border-line" />
           )}
         </Modal>
       )}
