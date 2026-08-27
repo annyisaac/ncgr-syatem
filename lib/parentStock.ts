@@ -36,6 +36,7 @@ export interface BreederFlock {
   bodyWeightG?: number;      // latest average body weight (grams)
   uniformityPct?: number;    // latest uniformity %
   laying?: boolean;          // females: laying has begun
+  lastGradedOn?: string;     // ISO date the flock was last graded for uniformity
   stage: FlockStage;
   notes?: string;
   active: boolean;

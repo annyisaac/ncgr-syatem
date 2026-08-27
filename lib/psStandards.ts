@@ -97,6 +97,53 @@ export function feedAdvice(status: BwStatus): string {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Grading (Handbook §Grading + Appendix 4): split a poor-uniformity flock into
+// weight classes at ±10% of the sample mean, then feed each to its own target.
+// ---------------------------------------------------------------------------
+
+export interface GradeClass { pct: number; count: number; avgG: number; }
+export interface GradeResult {
+  meanG: number;
+  light: GradeClass;   // ≤ mean − 10%
+  normal: GradeClass;  // within ±10%
+  heavy: GradeClass;   // ≥ mean + 10%
+  recommend: "none" | "2-way" | "3-way";
+  note: string;
+}
+
+/** Classify a weighed sample into Light / Normal / Heavy and recommend a grade,
+ *  scaling the class %s to the flock population for bird counts. */
+export function gradeSample(weights: number[], population: number): GradeResult | null {
+  const w = weights.filter((x) => Number.isFinite(x) && x > 0);
+  const n = w.length;
+  if (n === 0) return null;
+  const mean = w.reduce((s, x) => s + x, 0) / n;
+  const lo = mean * 0.9, hi = mean * 1.1;
+  const cls = (pred: (x: number) => boolean): GradeClass => {
+    const g = w.filter(pred);
+    return { pct: Math.round((g.length / n) * 100), count: Math.round((g.length / n) * (Number(population) || 0)), avgG: g.length ? Math.round(g.reduce((s, x) => s + x, 0) / g.length) : 0 };
+  };
+  const light = cls((x) => x < lo);
+  const normal = cls((x) => x >= lo && x <= hi);
+  const heavy = cls((x) => x > hi);
+  const outside = light.pct + heavy.pct;
+  let recommend: GradeResult["recommend"] = "none";
+  let note = "";
+  if (normal.pct >= UNIFORMITY_TARGET || outside < 15) {
+    note = "Flock is even enough — no grading needed; manage to one target line.";
+  } else if (light.pct >= 10 && heavy.pct >= 10) {
+    recommend = "3-way";
+    note = "Grade 3-way — separate Light, Normal and Heavy into their own pens and feed each to its own target.";
+  } else {
+    recommend = "2-way";
+    note = light.pct > heavy.pct
+      ? "Grade 2-way — pull out the Light birds and feed them up toward target to catch back the flock."
+      : "Grade 2-way — pull out the Heavy birds and hold their feed so the flock re-levels.";
+  }
+  return { meanG: Math.round(mean), light, normal, heavy, recommend, note };
+}
+
 /** Uniformity guidance — grading is the tool to fix a poor CV%. */
 export function uniformityAdvice(cvPct: number, uniformityPct: number, weeks: number | null): string {
   const even = cvPct <= CV_TARGET || uniformityPct >= UNIFORMITY_TARGET;

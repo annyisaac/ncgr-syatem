@@ -16,8 +16,8 @@ import { getSupabase } from "@/lib/supabase";
 import { ageWeeks, listFlocks, upsertFlock, type BreederFlock } from "@/lib/parentStock";
 import { dailyLogId, listDailyLogs, recomputeFlock, upsertDailyLog, type DailyLog } from "@/lib/psDaily";
 import {
-  CV_TARGET, UNIFORMITY_TARGET, assessBodyWeight, feedAdvice, sampleSize, sampleStats,
-  targetBodyWeightG, uniformityAdvice,
+  CV_TARGET, UNIFORMITY_TARGET, assessBodyWeight, feedAdvice, gradeSample, sampleSize, sampleStats,
+  targetBodyWeightG, uniformityAdvice, type GradeResult,
 } from "@/lib/psStandards";
 
 const toneForStatus = (s: "under" | "on" | "over") => (s === "on" ? "green" : s === "under" ? "red" : "gold");
@@ -28,6 +28,7 @@ export default function GrowthPage() {
   const [flocks, setFlocks] = useState<BreederFlock[]>([]);
   const [logs, setLogs] = useState<DailyLog[]>([]);
   const [weigh, setWeigh] = useState<BreederFlock | null>(null);
+  const [grade, setGrade] = useState<BreederFlock | null>(null);
 
   const canUse = user?.role === "Admin" || user?.role === "Parent Stock Manager";
   const today = todayISO();
@@ -91,6 +92,18 @@ export default function GrowthPage() {
     }
   }
 
+  async function recordGrade(flock: BreederFlock, date: string, result: GradeResult) {
+    const line = `${nowISO()} — Graded (${result.recommend}) — Light ${result.light.pct}% (~${result.light.count}), Normal ${result.normal.pct}%, Heavy ${result.heavy.pct}% at mean ${result.meanG} g (by ${user!.name})`;
+    try {
+      await upsertFlock({ ...flock, lastGradedOn: date, history: [...(flock.history ?? []), line] });
+      setFlocks((p) => p.map((f) => (f.id === flock.id ? { ...f, lastGradedOn: date } : f)));
+      toast(`Grading recorded for ${flock.code}.`);
+      setGrade(null);
+    } catch {
+      toast("Could not record the grading.", "error");
+    }
+  }
+
   return (
     <div className="space-y-5">
       <div>
@@ -129,7 +142,10 @@ export default function GrowthPage() {
                 <Td>{r.bw > 0 && r.assess.target > 0 ? <Pill tone={toneForStatus(r.assess.status)}>{r.assess.deltaPct > 0 ? "+" : ""}{r.assess.deltaPct}%</Pill> : "—"}</Td>
                 <Td className="text-right tabular-nums">{r.cv ? <span className={r.cv > CV_TARGET ? "font-semibold text-red" : "text-ink"}>{r.cv}%</span> : "—"}</Td>
                 <Td className="text-right tabular-nums">{r.uni ? <span className={r.uni < UNIFORMITY_TARGET ? "font-semibold text-red" : "text-ink"}>{r.uni}%</span> : "—"}</Td>
-                <Td className="text-right"><Button size="sm" variant="secondary" onClick={() => setWeigh(r.flock)}>Weigh</Button></Td>
+                <Td className="text-right whitespace-nowrap">
+                  <Button size="sm" variant="secondary" className="mr-1.5" onClick={() => setWeigh(r.flock)}>Weigh</Button>
+                  <Button size="sm" variant="ghost" onClick={() => setGrade(r.flock)}>Grade</Button>
+                </Td>
               </tr>
             ))}
           </tbody>
@@ -153,7 +169,67 @@ export default function GrowthPage() {
       )}
 
       {weigh && <WeighModal flock={weigh} today={today} onClose={() => setWeigh(null)} onSave={saveWeighing} />}
+      {grade && <GradeModal flock={grade} today={today} onClose={() => setGrade(null)} onRecord={recordGrade} />}
     </div>
+  );
+}
+
+function GradeModal({
+  flock, today, onClose, onRecord,
+}: {
+  flock: BreederFlock;
+  today: string;
+  onClose: () => void;
+  onRecord: (flock: BreederFlock, date: string, result: GradeResult) => void;
+}) {
+  const [date, setDate] = useState(today);
+  const [raw, setRaw] = useState("");
+  const weights = useMemo(() => raw.split(/[\s,;]+/).map((s) => Number(s)).filter((n) => Number.isFinite(n) && n > 0), [raw]);
+  const result = useMemo(() => gradeSample(weights, flock.currentPopulation), [weights, flock.currentPopulation]);
+  const needed = sampleSize(flock.currentPopulation);
+
+  const Row = ({ label, c, tone }: { label: string; c: GradeResult["light"]; tone: string }) => (
+    <div className="flex items-center justify-between rounded-lg border border-line px-3 py-2 text-sm">
+      <span className="flex items-center gap-2"><span className={`inline-block h-2.5 w-2.5 rounded-full ${tone}`} /> {label}</span>
+      <span className="tabular-nums text-ink"><b>{c.pct}%</b> <span className="text-muted">· ~{c.count.toLocaleString()} birds · avg {c.avgG ? `${c.avgG} g` : "—"}</span></span>
+    </div>
+  );
+
+  return (
+    <Modal open onClose={onClose} title={`Grade — ${flock.code}`} className="max-w-lg"
+      footer={<><Button variant="ghost" onClick={onClose}>Cancel</Button><Button disabled={!result} onClick={() => result && onRecord(flock, date, result)}>Record grading</Button></>}>
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Date"><Input type="date" value={date} onChange={(e) => setDate(e.target.value)} /></Field>
+          <div className="flex flex-col justify-end text-sm text-muted">Population: <b className="text-ink">{flock.currentPopulation.toLocaleString()}</b> · sample ≥ {needed}</div>
+        </div>
+        <Field label="Individual weights (g) — paste, separated by space, comma or new line">
+          <textarea value={raw} onChange={(e) => setRaw(e.target.value)} rows={5}
+            className="w-full rounded-lg border border-line bg-paper px-3 py-2 text-sm text-ink focus:border-gold focus:outline-none"
+            placeholder="1520 1480 1610 1550 1495 …" />
+        </Field>
+
+        {result && (
+          <>
+            <div className="space-y-1.5">
+              <Row label="Light (≤ −10%)" c={result.light} tone="bg-red" />
+              <Row label="Normal (±10%)" c={result.normal} tone="bg-green" />
+              <Row label="Heavy (≥ +10%)" c={result.heavy} tone="bg-gold" />
+            </div>
+            <div className={`rounded-xl border p-3 text-sm ${result.recommend === "none" ? "border-green/40 bg-green-bg/40" : "border-gold/40 bg-gold-bg/40"}`}>
+              <p className="font-semibold text-ink">
+                {result.recommend === "none" ? "No grading needed" : `Recommend: grade ${result.recommend}`}
+                <span className="font-normal text-muted"> · mean {result.meanG} g</span>
+              </p>
+              <p className="mt-1 text-ink">{result.note}</p>
+              {result.recommend !== "none" && (
+                <p className="mt-1 text-xs text-muted">After grading: feed each pen to its own target — Light up toward target (by 21 weeks), Normal on the target line, Heavy held/redrawn.</p>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </Modal>
   );
 }
 
