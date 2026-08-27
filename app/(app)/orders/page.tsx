@@ -95,6 +95,32 @@ const ListIcon = () => <svg {...ico}><path d="M7 6h9M7 10h9M7 14h9M3.5 6h.01M3.5
 const PlusIcon = () => <svg {...ico}><path d="M10 4v12M4 10h12" /></svg>;
 const BoxIcon = () => <svg {...ico} width={14} height={14}><path d="M4 6.5 10 4l6 2.5v7L10 16l-6-2.5v-7Z M4 6.5 10 9l6-2.5M10 9v7" /></svg>;
 
+/** One money-card breakdown section (by product, by zone, …). Each row shows a
+ *  label + its order value, with the verified/awaiting/not-paid/overpaid split
+ *  underneath. Rows sum exactly to the card's headline totals. */
+type MoneyRow = { label: string; value: number; verified: number; awaiting: number; notPaid: number; overpaid: number };
+function MoneySplit({ title, rows }: { title: string; rows: MoneyRow[] }) {
+  return (
+    <div className="mt-2 space-y-1.5 border-t border-line pt-2">
+      <p className="text-[0.55rem] font-semibold uppercase tracking-[0.09em] text-muted">{title}</p>
+      {rows.map((b) => (
+        <div key={b.label}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="truncate text-[0.62rem] font-semibold text-ink">{b.label}</span>
+            <span className="shrink-0 text-[0.72rem] font-bold text-ink tabular-nums">{formatRWF(b.value)}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.55rem] font-medium tabular-nums">
+            <span className="text-green">✓ {b.verified.toLocaleString()}</span>
+            {b.awaiting > 0 && <span className="text-amber">⏳ {b.awaiting.toLocaleString()}</span>}
+            {b.notPaid > 0 && <span className="text-red">✗ {b.notPaid.toLocaleString()}</span>}
+            {b.overpaid > 0 && <span className="text-blue">+{b.overpaid.toLocaleString()}</span>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function OrdersInner() {
   const { user } = useAuth();
   const { orders, availability, upsertOrder, removeOrder, newId, reload } = useData();
@@ -361,10 +387,22 @@ function OrdersInner() {
   // self-contained, so the per-product rows sum exactly to the headline totals.
   const money = useMemo(() => {
     let value = 0, chicks = 0;
-    const byCP = new Map<string, { product: Order["product"]; value: number; vcash: number; ucash: number }>();
+    // Customer cash pooled two ways in one pass — per (customer, product) and
+    // per (customer, zone) — so each dimension's verified/awaiting split is
+    // self-contained and its rows sum exactly to the headline totals.
+    type Cell = { label: string; value: number; vcash: number; ucash: number };
+    const byCP = new Map<string, Cell>(); // customer × product
+    const byCZ = new Map<string, Cell>(); // customer × zone
+    const addCell = (map: Map<string, Cell>, label: string, cust: string, val: number, vc: number, uc: number) => {
+      const k = `${label}__${cust}`;
+      const e = map.get(k) ?? { label, value: 0, vcash: 0, ucash: 0 };
+      e.value += val; e.vcash += vc; e.ucash += uc;
+      map.set(k, e);
+    };
     for (const o of rows) {
       if (o.status === "refunded" || o.status === "rejected") continue; // no value
-      value += orderTotal(o);
+      const total = orderTotal(o);
+      value += total;
       chicks += toDeliver(o);
       let vc = o.creditApplied ?? 0; // applied credit is already-verified money
       let uc = 0;
@@ -372,29 +410,30 @@ function OrdersInner() {
         if (p.voided) continue;
         if (p.verified) vc += p.amt; else uc += p.amt;
       }
-      const k = `${o.product}__${clientKey(o)}`;
-      const e = byCP.get(k) ?? { product: o.product, value: 0, vcash: 0, ucash: 0 };
-      e.value += orderTotal(o);
-      e.vcash += vc;
-      e.ucash += uc;
-      byCP.set(k, e);
+      const cust = clientKey(o);
+      addCell(byCP, o.product, cust, total, vc, uc);
+      addCell(byCZ, o.zone, cust, total, vc, uc);
     }
-    // Roll the customer-product cells up into one bucket per product.
-    type Bucket = { product: Order["product"]; value: number; verified: number; awaiting: number; notPaid: number; overpaid: number };
-    const prodMap = new Map<Order["product"], Bucket>();
-    for (const e of byCP.values()) {
-      const b = prodMap.get(e.product) ?? { product: e.product, value: 0, verified: 0, awaiting: 0, notPaid: 0, overpaid: 0 };
-      b.value += e.value;
-      b.verified += Math.min(e.value, e.vcash);                          // confirmed money covering the order
-      b.awaiting += Math.min(Math.max(0, e.value - e.vcash), e.ucash);   // recorded, awaiting verification
-      b.notPaid += Math.max(0, e.value - e.vcash - e.ucash);             // no payment at all
-      b.overpaid += Math.max(0, e.vcash + e.ucash - e.value);            // paid beyond the order (credit held)
-      prodMap.set(e.product, b);
-    }
-    const byProduct = [...prodMap.values()].sort((a, b) => b.value - a.value);
+    // Roll customer cells up into one bucket per label, split by verification.
+    type Bucket = { label: string; value: number; verified: number; awaiting: number; notPaid: number; overpaid: number };
+    const rollUp = (cells: Iterable<Cell>): Bucket[] => {
+      const m = new Map<string, Bucket>();
+      for (const e of cells) {
+        const b = m.get(e.label) ?? { label: e.label, value: 0, verified: 0, awaiting: 0, notPaid: 0, overpaid: 0 };
+        b.value += e.value;
+        b.verified += Math.min(e.value, e.vcash);                          // confirmed money covering the order
+        b.awaiting += Math.min(Math.max(0, e.value - e.vcash), e.ucash);   // recorded, awaiting verification
+        b.notPaid += Math.max(0, e.value - e.vcash - e.ucash);             // no payment at all
+        b.overpaid += Math.max(0, e.vcash + e.ucash - e.value);            // paid beyond the order (credit held)
+        m.set(e.label, b);
+      }
+      return [...m.values()].sort((a, b) => b.value - a.value);
+    };
+    const byProduct = rollUp(byCP.values());
+    const byZone = rollUp(byCZ.values());
     let verified = 0, awaiting = 0, notPaid = 0, overpaid = 0;
     for (const b of byProduct) { verified += b.verified; awaiting += b.awaiting; notPaid += b.notPaid; overpaid += b.overpaid; }
-    return { value, chicks, verified, awaiting, notPaid, overpaid, byProduct };
+    return { value, chicks, verified, awaiting, notPaid, overpaid, byProduct, byZone };
   }, [rows]);
 
   // Whether any scope filter is active — the KPI cards say "All time" only when
@@ -796,26 +835,14 @@ function OrdersInner() {
               <span className="text-[0.8rem] font-bold text-blue tabular-nums">{formatRWF(money.overpaid)}</span>
             </div>
           )}
-          {/* Per-product split — only when more than one product is in scope, so
-              a single-product view (or a product filter) stays clean. */}
-          {money.byProduct.length > 1 && (
-            <div className="mt-2 space-y-1.5 border-t border-line pt-2">
-              <p className="text-[0.55rem] font-semibold uppercase tracking-[0.09em] text-muted">By product</p>
-              {money.byProduct.map((b) => (
-                <div key={b.product}>
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-[0.62rem] font-semibold text-ink">{b.product}</span>
-                    <span className="shrink-0 text-[0.72rem] font-bold text-ink tabular-nums">{formatRWF(b.value)}</span>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.55rem] font-medium tabular-nums">
-                    <span className="text-green">✓ {b.verified.toLocaleString()}</span>
-                    {b.awaiting > 0 && <span className="text-amber">⏳ {b.awaiting.toLocaleString()}</span>}
-                    {b.notPaid > 0 && <span className="text-red">✗ {b.notPaid.toLocaleString()}</span>}
-                    {b.overpaid > 0 && <span className="text-blue">+{b.overpaid.toLocaleString()}</span>}
-                  </div>
-                </div>
-              ))}
-            </div>
+          {/* Per-product split — for cross-product roles (Admin/Accountant/…),
+              shown only when more than one product is in scope so a single-
+              product view (or a product filter) stays clean. */}
+          {money.byProduct.length > 1 && <MoneySplit title="By product" rows={money.byProduct} />}
+          {/* Per-zone split — payment checkers see one product across BOTH zones,
+              so break their total down by zone the way Admin gets it by product. */}
+          {(user.role === "Ross Payment Checker" || user.role === "Tetra Payment Checker") && money.byZone.length > 1 && (
+            <MoneySplit title="By zone" rows={money.byZone} />
           )}
         </div>
       </div>
