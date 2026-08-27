@@ -353,13 +353,15 @@ function OrdersInner() {
 
   // Money + chicks over the FULLY filtered set `rows` (includes the stat-card
   // selection) so these totals always match exactly what the table shows.
-  // Money is aggregated PER CUSTOMER, and each customer's cash is split by
-  // verification: VERIFIED (checked against bank statements, plus applied credit
-  // which is already-verified money) vs AWAITING (recorded but not yet verified).
-  // Verified covers the order value first, then awaiting, then the rest is unpaid.
+  // Cash is pooled PER CUSTOMER-AND-PRODUCT, then each customer-product cell is
+  // split by verification: VERIFIED (checked against bank statements, plus
+  // applied credit which is already-verified money) vs AWAITING (recorded but
+  // not yet verified). Verified covers the order value first, then awaiting,
+  // then the rest is unpaid. Pooling per product keeps every product's split
+  // self-contained, so the per-product rows sum exactly to the headline totals.
   const money = useMemo(() => {
     let value = 0, chicks = 0;
-    const byCust = new Map<string, { value: number; vcash: number; ucash: number }>();
+    const byCP = new Map<string, { product: Order["product"]; value: number; vcash: number; ucash: number }>();
     for (const o of rows) {
       if (o.status === "refunded" || o.status === "rejected") continue; // no value
       value += orderTotal(o);
@@ -370,21 +372,29 @@ function OrdersInner() {
         if (p.voided) continue;
         if (p.verified) vc += p.amt; else uc += p.amt;
       }
-      const k = clientKey(o);
-      const e = byCust.get(k) ?? { value: 0, vcash: 0, ucash: 0 };
+      const k = `${o.product}__${clientKey(o)}`;
+      const e = byCP.get(k) ?? { product: o.product, value: 0, vcash: 0, ucash: 0 };
       e.value += orderTotal(o);
       e.vcash += vc;
       e.ucash += uc;
-      byCust.set(k, e);
+      byCP.set(k, e);
     }
+    // Roll the customer-product cells up into one bucket per product.
+    type Bucket = { product: Order["product"]; value: number; verified: number; awaiting: number; notPaid: number; overpaid: number };
+    const prodMap = new Map<Order["product"], Bucket>();
+    for (const e of byCP.values()) {
+      const b = prodMap.get(e.product) ?? { product: e.product, value: 0, verified: 0, awaiting: 0, notPaid: 0, overpaid: 0 };
+      b.value += e.value;
+      b.verified += Math.min(e.value, e.vcash);                          // confirmed money covering the order
+      b.awaiting += Math.min(Math.max(0, e.value - e.vcash), e.ucash);   // recorded, awaiting verification
+      b.notPaid += Math.max(0, e.value - e.vcash - e.ucash);             // no payment at all
+      b.overpaid += Math.max(0, e.vcash + e.ucash - e.value);            // paid beyond the order (credit held)
+      prodMap.set(e.product, b);
+    }
+    const byProduct = [...prodMap.values()].sort((a, b) => b.value - a.value);
     let verified = 0, awaiting = 0, notPaid = 0, overpaid = 0;
-    for (const e of byCust.values()) {
-      verified += Math.min(e.value, e.vcash);                          // confirmed money covering the order
-      awaiting += Math.min(Math.max(0, e.value - e.vcash), e.ucash);   // recorded, awaiting verification
-      notPaid += Math.max(0, e.value - e.vcash - e.ucash);             // no payment at all
-      overpaid += Math.max(0, e.vcash + e.ucash - e.value);            // paid beyond the order (credit held)
-    }
-    return { value, chicks, verified, awaiting, notPaid, overpaid };
+    for (const b of byProduct) { verified += b.verified; awaiting += b.awaiting; notPaid += b.notPaid; overpaid += b.overpaid; }
+    return { value, chicks, verified, awaiting, notPaid, overpaid, byProduct };
   }, [rows]);
 
   // Whether any scope filter is active — the KPI cards say "All time" only when
@@ -784,6 +794,27 @@ function OrdersInner() {
             <div className="mt-1.5 flex items-center justify-between border-t border-line pt-1.5">
               <span className="text-[0.58rem] font-semibold uppercase tracking-wide text-muted">Overpaid (credit held)</span>
               <span className="text-[0.8rem] font-bold text-blue tabular-nums">{formatRWF(money.overpaid)}</span>
+            </div>
+          )}
+          {/* Per-product split — only when more than one product is in scope, so
+              a single-product view (or a product filter) stays clean. */}
+          {money.byProduct.length > 1 && (
+            <div className="mt-2 space-y-1.5 border-t border-line pt-2">
+              <p className="text-[0.55rem] font-semibold uppercase tracking-[0.09em] text-muted">By product</p>
+              {money.byProduct.map((b) => (
+                <div key={b.product}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="truncate text-[0.62rem] font-semibold text-ink">{b.product}</span>
+                    <span className="shrink-0 text-[0.72rem] font-bold text-ink tabular-nums">{formatRWF(b.value)}</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[0.55rem] font-medium tabular-nums">
+                    <span className="text-green">✓ {b.verified.toLocaleString()}</span>
+                    {b.awaiting > 0 && <span className="text-amber">⏳ {b.awaiting.toLocaleString()}</span>}
+                    {b.notPaid > 0 && <span className="text-red">✗ {b.notPaid.toLocaleString()}</span>}
+                    {b.overpaid > 0 && <span className="text-blue">+{b.overpaid.toLocaleString()}</span>}
+                  </div>
+                </div>
+              ))}
             </div>
           )}
         </div>
