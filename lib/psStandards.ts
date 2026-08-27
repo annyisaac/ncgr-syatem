@@ -150,6 +150,20 @@ export function photostimReadiness(weeks: number | null, bwStatus: BwStatus, cvP
 }
 
 // ---------------------------------------------------------------------------
+// Environment (Handbook §7): brooding air temperature (°C) by age, at 60-70% RH,
+// declining from ~30°C at placement to a ~20°C house temperature.
+// ---------------------------------------------------------------------------
+
+const HOUSE_TEMP_C: [number, number][] = [[0, 30], [1, 28], [2, 26], [3, 24], [4, 22], [6, 20], [64, 20]];
+export const HOUSE_RH = "60–70%";
+export const EGG_STORE_MAX_DAYS = 7;
+/** Target air temperature (°C) for a flock's age. */
+export function houseTempTarget(weeks: number | null): number {
+  if (weeks == null || weeks < 0) return 20;
+  return Math.round(interp(HOUSE_TEMP_C, weeks));
+}
+
+// ---------------------------------------------------------------------------
 // Grading (Handbook §Grading + Appendix 4): split a poor-uniformity flock into
 // weight classes at ±10% of the sample mean, then feed each to its own target.
 // ---------------------------------------------------------------------------
