@@ -176,6 +176,7 @@ const NAV: Record<Role, NavItem[]> = {
     // Parent stock
     { label: "Breeder farm", href: "/parent-stock" },
     { label: "Daily records", href: "/parent-stock/daily" },
+    { label: "Farm advisor", href: "/parent-stock/advisor" },
     { label: "Growth & uniformity", href: "/parent-stock/growth" },
     { label: "Lighting", href: "/parent-stock/lighting" },
     { label: "Male breeders", href: "/parent-stock/males" },
@@ -295,6 +296,7 @@ const NAV: Record<Role, NavItem[]> = {
   "Parent Stock Manager": [
     { label: "Dashboard", href: "/parent-stock" },
     { label: "Daily records", href: "/parent-stock/daily" },
+    { label: "Farm advisor", href: "/parent-stock/advisor" },
     { label: "Growth & uniformity", href: "/parent-stock/growth" },
     { label: "Lighting", href: "/parent-stock/lighting" },
     { label: "Male breeders", href: "/parent-stock/males" },

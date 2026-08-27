@@ -98,6 +98,23 @@ export function feedAdvice(status: BwStatus): string {
 }
 
 // ---------------------------------------------------------------------------
+// Production (Handbook §Management in Lay): Ross 308 PS hen-day % standard by
+// flock age (weeks). Adjustable — exact figures are in the Performance
+// Objectives sheet. Lay begins ~week 24-25 and peaks ~week 30.
+// ---------------------------------------------------------------------------
+
+const HEN_DAY: [number, number][] = [
+  [24, 5], [25, 25], [26, 55], [27, 74], [28, 83], [29, 86], [30, 87], [31, 86],
+  [33, 84], [35, 82], [38, 78], [40, 75], [43, 71], [45, 68], [48, 64], [50, 62],
+  [55, 57], [60, 52], [64, 48],
+];
+/** Ross standard hen-day production % for a flock's age (weeks). 0 before lay. */
+export function henDayTarget(weeks: number | null): number {
+  if (weeks == null || weeks < HEN_DAY[0][0]) return 0;
+  return Math.round(interp(HEN_DAY, weeks) * 10) / 10;
+}
+
+// ---------------------------------------------------------------------------
 // Lighting & photostimulation (Handbook §Lighting): 23h brooding → 8h constant
 // by day 10 → hold through rearing → first light increase NOT before 21 weeks
 // (147 days), only when at target body weight and uniform.
