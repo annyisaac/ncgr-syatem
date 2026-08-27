@@ -98,6 +98,41 @@ export function feedAdvice(status: BwStatus): string {
 }
 
 // ---------------------------------------------------------------------------
+// Lighting & photostimulation (Handbook §Lighting): 23h brooding → 8h constant
+// by day 10 → hold through rearing → first light increase NOT before 21 weeks
+// (147 days), only when at target body weight and uniform.
+// ---------------------------------------------------------------------------
+
+export const PHOTOSTIM_MIN_WEEKS = 21;
+
+export type LightPhase = "brooding" | "reducing" | "rearing" | "stimulated";
+export interface LightRec { hours: number | null; label: string; phase: LightPhase; }
+
+/** Recommended light hours for a flock's stage. Pass days since photostimulation
+ *  once the flock has been light-stimulated (else null/undefined). */
+export function recommendedLight(weeks: number | null, daysSincePhotostim: number | null | undefined): LightRec {
+  if (daysSincePhotostim != null && daysSincePhotostim >= 0) {
+    const hours = Math.min(14, 11 + Math.floor(daysSincePhotostim / 7)); // ~11h at stim, +1h/wk to a 14h plateau
+    return { hours, label: `${hours}h (post-stimulation)`, phase: "stimulated" };
+  }
+  if (weeks == null) return { hours: 8, label: "8h", phase: "rearing" };
+  const days = weeks * 7;
+  if (days <= 2) return { hours: 23, label: "23h light / 1h dark (brooding)", phase: "brooding" };
+  if (days <= 10) return { hours: null, label: "Reduce 23h → 8h by day 10", phase: "reducing" };
+  return { hours: 8, label: "8h constant (rearing)", phase: "rearing" };
+}
+
+export interface PhotostimReadiness { ready: boolean; reasons: string[]; }
+/** Whether a flock is ready for first light stimulation (age + weight + uniformity). */
+export function photostimReadiness(weeks: number | null, bwStatus: BwStatus, cvPct: number, uniformityPct: number): PhotostimReadiness {
+  const reasons: string[] = [];
+  if (weeks == null || weeks < PHOTOSTIM_MIN_WEEKS) reasons.push(`Not before ${PHOTOSTIM_MIN_WEEKS} weeks (147 days)`);
+  if (bwStatus === "under") reasons.push("Below target body weight — bring to target first");
+  if (cvPct > 0 && cvPct > CV_TARGET && uniformityPct > 0 && uniformityPct < UNIFORMITY_TARGET) reasons.push("Uniformity low (CV > 8%) — level the flock first");
+  return { ready: reasons.length === 0, reasons };
+}
+
+// ---------------------------------------------------------------------------
 // Grading (Handbook §Grading + Appendix 4): split a poor-uniformity flock into
 // weight classes at ±10% of the sample mean, then feed each to its own target.
 // ---------------------------------------------------------------------------

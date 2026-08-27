@@ -37,6 +37,7 @@ export interface BreederFlock {
   uniformityPct?: number;    // latest uniformity %
   laying?: boolean;          // females: laying has begun
   lastGradedOn?: string;     // ISO date the flock was last graded for uniformity
+  photostimOn?: string;      // ISO date of first light stimulation (photostimulation)
   stage: FlockStage;
   notes?: string;
   active: boolean;
