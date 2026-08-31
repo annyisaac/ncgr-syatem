@@ -15,7 +15,7 @@ import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 
 import { balance, paidAmount, orderTotal, toDeliver } from "@/lib/types";
 import { orderStage } from "@/lib/orders";
-import { formatRWF } from "@/lib/config";
+import { formatMoney } from "@/lib/config";
 import { formatDate, formatDateTime } from "@/lib/format";
 import { dsrAddPayment, dsrRequestEdit } from "@/lib/db";
 
@@ -50,12 +50,14 @@ export default function DsrOrderDetailPage() {
 
   const isMine = !!myDsr && order.dsrId === myDsr.id;
   const bal = balance(order);
+  const cur = order.currency ?? "RWF";
 
   async function addPayment(e: React.FormEvent) {
     e.preventDefault();
     setErr(null);
     const amt = num(amount);
     if (amt <= 0) return setErr("Enter a valid amount.");
+    if (amt > bal) return setErr(`That is more than the ${formatMoney(bal, cur)} still owed on this order.`);
     if (!ref.trim()) return setErr("Enter the transaction ID / reference.");
     setSaving(true);
     const res = await dsrAddPayment(order!.id, amt, ref.trim());
@@ -83,7 +85,14 @@ export default function DsrOrderDetailPage() {
     <div className="space-y-5">
       <Link href="/dsr/orders" className="text-sm text-gold-dark underline">← Back to orders</Link>
 
+      {/* Who the order belongs to, and where it stands. */}
       <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="min-w-0">
+          <h1 className="truncate text-lg font-bold text-ink">{order.name}</h1>
+          <p className="text-sm text-muted">
+            {order.phone} · {isMine ? "your order" : `DSR: ${order.dsr ?? "—"}`}
+          </p>
+        </div>
         <Pill tone={orderStage(order).tone}>{orderStage(order).label}</Pill>
       </div>
 
@@ -97,12 +106,12 @@ export default function DsrOrderDetailPage() {
           <Info label="Delivery date" value={formatDate(order.date)} />
           <Info label="Chicks ordered" value={order.chicks.toLocaleString()} />
           <Info label="To deliver" value={toDeliver(order).toLocaleString()} />
-          <Info label="Unit price" value={formatRWF(order.price)} />
+          <Info label="Unit price" value={formatMoney(order.price, cur)} />
         </div>
         <div className="mt-4 grid grid-cols-3 gap-3 rounded-md bg-ink/5 p-3 text-sm">
-          <Info label="Total" value={formatRWF(orderTotal(order))} />
-          <Info label="Paid" value={formatRWF(paidAmount(order))} />
-          <Info label="Balance" value={formatRWF(bal)} />
+          <Info label="Total" value={formatMoney(orderTotal(order), cur)} />
+          <Info label="Paid" value={formatMoney(paidAmount(order), cur)} />
+          <Info label="Balance" value={formatMoney(bal, cur)} />
         </div>
       </Card>
 
@@ -111,15 +120,16 @@ export default function DsrOrderDetailPage() {
         <CardHeader title="Payments" />
         <TableWrap>
           <thead>
-            <tr><Th>When</Th><Th className="text-right">Amount</Th><Th>Reference</Th><Th>Status</Th></tr>
+            <tr><Th>When</Th><Th className="text-right">Amount</Th><Th>Method</Th><Th>Reference</Th><Th>Status</Th></tr>
           </thead>
           <tbody>
             {order.payments.length === 0 ? (
-              <EmptyRow colSpan={4} text="No payments yet." />
+              <EmptyRow colSpan={5} text="No payments yet." />
             ) : order.payments.map((p, i) => (
               <tr key={i}>
                 <Td>{formatDateTime(p.on)}</Td>
-                <Td className="text-right">{formatRWF(p.amt)}</Td>
+                <Td className="text-right">{formatMoney(p.amt, cur)}</Td>
+                <Td>{p.method ? `${p.method}${p.bankName ? ` · ${p.bankName}` : ""}` : "—"}</Td>
                 <Td>{p.ref || "—"}</Td>
                 <Td>{p.verified ? <Pill tone="fulfilled">Verified</Pill> : <Pill tone="gold">Pending</Pill>}</Td>
               </tr>
@@ -130,7 +140,9 @@ export default function DsrOrderDetailPage() {
         {isMine ? (
           bal > 0 ? (
             <form onSubmit={addPayment} className="mt-4 flex flex-wrap items-end gap-3 border-t border-line pt-4">
-              <Field label="Amount (RWF)"><Input type="number" min={1} value={amount} onChange={(e) => setAmount(e.target.value)} /></Field>
+              <Field label={`Amount (${cur})`} hint={`${formatMoney(bal, cur)} still owed`}>
+                <Input type="number" min={1} max={bal} value={amount} onChange={(e) => setAmount(e.target.value)} />
+              </Field>
               <Field label="Transaction ID"><Input value={ref} onChange={(e) => setRef(e.target.value)} placeholder="MTN / bank ref" /></Field>
               <Button type="submit" disabled={saving}>{saving ? "Saving…" : "Add payment"}</Button>
               {err && <p className="w-full text-sm text-status-refunded">{err}</p>}

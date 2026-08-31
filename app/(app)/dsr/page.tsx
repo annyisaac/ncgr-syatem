@@ -2,24 +2,27 @@
 
 import { useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { useAuth } from "@/components/AuthProvider";
 import { useData } from "@/components/DataProvider";
 import { Card } from "@/components/ui/Card";
 import { GreetingHeader, StatTile, SectionTitle } from "@/components/dashboard/DashKit";
-import { formatRWF } from "@/lib/config";
+import { formatMoney } from "@/lib/config";
 import { balance, toDeliver } from "@/lib/types";
 import { formatDate, todayISO } from "@/lib/format";
 
 const TILES = [
   { href: "/dsr/order", label: "New order", hint: "Order chicks for a client" },
   { href: "/dsr/orders", label: "Zone orders", hint: "All orders in your zone" },
+  { href: "/dsr/visits", label: "Farm visits", hint: "Log the farms you visit" },
   { href: "/dsr/commission", label: "Commission", hint: "What you've earned" },
 ];
 
 export default function DsrHome() {
   const { user } = useAuth();
   const { dsrs, orders } = useData();
+  const router = useRouter();
 
   const myDsr = useMemo(() => dsrs.find((d) => d.authEmail === user?.email), [dsrs, user]);
   // Personal orders (drive the DSR's own monthly target).
@@ -40,6 +43,8 @@ export default function DsrHome() {
   const pct = target > 0 ? Math.min(100, Math.round((monthChicks / target) * 100)) : 0;
   const zoneActive = zoneOrders.filter((o) => o.status !== "refunded" && o.status !== "rejected");
   const zoneChicks = zoneActive.reduce((s, o) => s + o.chicks, 0);
+  // Orders of mine still owing money — what the DSR has to chase today.
+  const myOwing = myActive.filter((o) => balance(o) > 0 && !o.debtOk);
 
   const s = q.trim().toLowerCase();
   const digits = s.replace(/\D/g, "");
@@ -68,7 +73,7 @@ export default function DsrHome() {
             ) : results.map((o) => (
               <Link key={o.id} href={`/dsr/orders/${o.id}`} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line px-3 py-2 text-sm transition hover:border-gold hover:bg-gold-bg">
                 <span><strong className="text-ink">{o.name}</strong> <span className="text-muted">· {o.phone} · {formatDate(o.date)}</span></span>
-                <span className="text-muted">{toDeliver(o).toLocaleString()} chicks · <span className={balance(o) > 0 ? "font-semibold text-red" : "text-green"}>{formatRWF(balance(o))}</span></span>
+                <span className="text-muted">{toDeliver(o).toLocaleString()} chicks · <span className={balance(o) > 0 ? "font-semibold text-red" : "text-green"}>{formatMoney(balance(o), o.currency)}</span></span>
               </Link>
             ))}
           </div>
@@ -76,10 +81,15 @@ export default function DsrHome() {
       </Card>
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-        <StatTile label={`Orders in ${myDsr.zone}`} value={String(zoneActive.length)} />
-        <StatTile label="Zone chicks" value={zoneChicks.toLocaleString()} />
+        <StatTile label={`Orders in ${myDsr.zone}`} value={String(zoneActive.length)} onClick={() => router.push("/dsr/orders")} />
+        <StatTile label="Zone chicks" value={zoneChicks.toLocaleString()} onClick={() => router.push("/dsr/orders")} />
         <StatTile label="My chicks this month" value={monthChicks.toLocaleString()} tone="gold" />
-        <StatTile label="My orders" value={String(myActive.length)} />
+        <StatTile
+          label="My orders owing"
+          value={String(myOwing.length)}
+          tone={myOwing.length > 0 ? "red" : "green"}
+          onClick={() => router.push("/dsr/orders?f=owing")}
+        />
       </div>
 
       {target > 0 && (
@@ -95,7 +105,7 @@ export default function DsrHome() {
         </Card>
       )}
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {TILES.map((t) => (
           <Link key={t.href} href={t.href} className="group flex min-h-[110px] flex-col justify-between rounded-2xl border border-line bg-paper p-5 shadow-card transition hover:-translate-y-0.5 hover:border-gold hover:shadow-pop">
             <span className="text-xl font-bold text-ink group-hover:text-gold-dark">{t.label}</span>
