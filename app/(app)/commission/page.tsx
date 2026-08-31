@@ -22,6 +22,7 @@ import {
   initiateCommission,
   payCommissionNow,
   rejectCommission,
+  type PayoutScope,
 } from "@/lib/commissionActions";
 import { commissionPDF } from "@/lib/reports";
 import type { CommissionRequest } from "@/lib/types";
@@ -69,20 +70,29 @@ export default function CommissionPage() {
     next.filter((o) => before.get(o.id) !== o).forEach((o) => void upsertOrder(o));
   }
 
+  /** A payout covers only the period on screen — never orders outside it. */
+  function scopeFor(dsrId: string): PayoutScope {
+    return {
+      only: new Set(rangeOrders.filter((o) => o.dsrId === dsrId).map((o) => o.id)),
+      ...(range.from ? { periodFrom: range.from } : {}),
+      ...(range.to ? { periodTo: range.to } : {}),
+    };
+  }
+
   function initiate(dsrId: string, dsrName: string, product: CommissionRequest["product"]) {
-    const res = initiateCommission(orders, dsrId, dsrName, product, user!, newId);
+    const res = initiateCommission(orders, dsrId, dsrName, product, user!, newId, scopeFor(dsrId));
     if (!res) return toast("No commission currently due for this DSR.", "info");
     saveChanged(res.orders);
     upsertCommission(res.request);
-    toast(`Commission request initiated for ${dsrName}.`);
+    toast(`Commission request initiated for ${dsrName} — ${rangeLabel}.`);
   }
 
   function payNow(dsrId: string, dsrName: string, product: CommissionRequest["product"]) {
-    const res = payCommissionNow(orders, dsrId, dsrName, product, user!, newId);
+    const res = payCommissionNow(orders, dsrId, dsrName, product, user!, newId, scopeFor(dsrId));
     if (!res) return toast("No commission currently due for this DSR.", "info");
     saveChanged(res.orders);
     upsertCommission(res.request);
-    toast(`Commission paid to ${dsrName}.`);
+    toast(`Commission paid to ${dsrName} — ${formatRWF(res.request.amount)}.`);
   }
 
   function approve(req: CommissionRequest) {
@@ -228,6 +238,7 @@ export default function CommissionPage() {
             <tr>
               <Th>DSR</Th>
               <Th>Product</Th>
+              <Th>Period covered</Th>
               <Th className="text-right">Amount</Th>
               <Th>Status</Th>
               <Th>Decided by</Th>
@@ -236,7 +247,7 @@ export default function CommissionPage() {
           </thead>
           <tbody>
             {commissions.length === 0 ? (
-              <EmptyRow colSpan={6} text="No commission requests yet." />
+              <EmptyRow colSpan={7} text="No commission requests yet." />
             ) : (
               commissions
                 .slice()
@@ -245,6 +256,11 @@ export default function CommissionPage() {
                   <tr key={c.id}>
                     <Td>{c.dsrName}</Td>
                     <Td>{c.product}</Td>
+                    <Td className="text-muted">
+                      {c.periodFrom || c.periodTo
+                        ? `${c.periodFrom ? formatDate(c.periodFrom) : "start"} – ${c.periodTo ? formatDate(c.periodTo) : "today"}`
+                        : "All outstanding"}
+                    </Td>
                     <Td className="text-right">{formatRWF(c.amount)}</Td>
                     <Td>
                       <Pill

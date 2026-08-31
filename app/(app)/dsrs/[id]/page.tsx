@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
 import { Field, Input } from "@/components/ui/Select";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
+import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 
 import { formatRWF } from "@/lib/config";
 import { formatDate, todayISO, nowISO, isValidEmail } from "@/lib/format";
@@ -20,6 +21,7 @@ import type { DSR, Order } from "@/lib/types";
 import { adminCreateUser, adminSetPassword } from "@/lib/adminApi";
 import { genDsrCode } from "@/lib/dsrAuth";
 import { visibleOrders } from "@/lib/permissions";
+import { PERIODS, presetToRange, type PeriodPreset } from "@/lib/period";
 import {
   commissionByDSR,
   isCommissionEligible,
@@ -29,7 +31,9 @@ import {
   dueOrdersForDSR,
   initiateCommission,
   payCommissionNow,
+  type PayoutScope,
 } from "@/lib/commissionActions";
+import { dsrCommissionPDF } from "@/lib/reports";
 
 export default function DSRDetailPage() {
   const params = useParams<{ id: string }>();
@@ -48,6 +52,13 @@ export default function DSRDetailPage() {
   const [authErr, setAuthErr] = useState<string | null>(null);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
+  // Commission is paid per period — everything below (totals, the orders table,
+  // the PDF and the payout itself) is scoped to this range of delivery dates.
+  const [preset, setPreset] = useState<PeriodPreset>("all");
+  const [custom, setCustom] = useState<DateRangeValue>(ALL_TIME);
+  const range = presetToRange(preset, custom, todayISO());
+  const rangeLabel =
+    range.from || range.to ? `${range.from || "start"} to ${range.to || "today"}` : "All time";
 
   const dsr = dsrs.find((d) => d.id === id);
 
@@ -56,9 +67,14 @@ export default function DSRDetailPage() {
     return visibleOrders(orders, user).filter((o) => o.dsrId === id);
   }, [orders, user, id]);
 
+  const periodOrders = useMemo(
+    () => (!range.from && !range.to ? dsrOrders : dsrOrders.filter((o) => inRange(o.date, range))),
+    [dsrOrders, range]
+  );
+
   const commissionRow = useMemo(
-    () => commissionByDSR(dsrOrders)[0],
-    [dsrOrders]
+    () => commissionByDSR(periodOrders)[0],
+    [periodOrders]
   );
 
   if (!dsr) {
@@ -77,32 +93,47 @@ export default function DSRDetailPage() {
   const isAdmin = user?.role === "Admin";
   const canInitiate =
     user?.role === "Tetra Zone Manager" || user?.role === "Ross Order Receiver";
-  const due = dueOrdersForDSR(dsrOrders, dsr.id);
+  // The payout covers only the orders on screen, so "Pay now" on August never
+  // silently settles July and September too.
+  const scope: PayoutScope = {
+    only: new Set(periodOrders.map((o) => o.id)),
+    ...(range.from ? { periodFrom: range.from } : {}),
+    ...(range.to ? { periodTo: range.to } : {}),
+  };
+  const due = dueOrdersForDSR(dsrOrders, dsr.id, scope);
+  const dueAmount = due.reduce((s, o) => s + orderCommission(o), 0);
   // Determine product from the DSR's orders (fallback Tetra).
   const dsrProduct = dsrOrders[0]?.product ?? "Tetra Super Harco";
+  const eligibleInPeriod = periodOrders.filter(isCommissionEligible);
 
   function handleInitiate() {
     if (!user || !dsr) return;
-    const res = initiateCommission(orders, dsr.id, dsr.name, dsrProduct, user, newId);
+    const res = initiateCommission(orders, dsr.id, dsr.name, dsrProduct, user, newId, scope);
     if (!res) {
-      toast("No commission due for this DSR.", "info");
+      toast("No commission due for this DSR in this period.", "info");
       return;
     }
     saveChanged(res.orders);
     upsertCommission(res.request);
-    toast(`Commission request initiated for ${dsr.name}.`);
+    toast(`Commission request initiated for ${dsr.name} — ${rangeLabel}.`);
   }
 
   function handlePayNow() {
     if (!user || !dsr) return;
-    const res = payCommissionNow(orders, dsr.id, dsr.name, dsrProduct, user, newId);
+    const res = payCommissionNow(orders, dsr.id, dsr.name, dsrProduct, user, newId, scope);
     if (!res) {
-      toast("No commission due for this DSR.", "info");
+      toast("No commission due for this DSR in this period.", "info");
       return;
     }
     saveChanged(res.orders);
     upsertCommission(res.request);
-    toast(`Commission paid to ${dsr.name}.`);
+    toast(`Commission paid to ${dsr.name} — ${formatRWF(res.request.amount)}.`);
+  }
+
+  async function downloadPDF() {
+    if (!dsr) return;
+    if (eligibleInPeriod.length === 0) return toast("Nothing to export for this period.", "info");
+    await dsrCommissionPDF(dsr, eligibleInPeriod, rangeLabel);
   }
 
   async function setupLogin(e: React.FormEvent) {
@@ -224,13 +255,36 @@ export default function DSRDetailPage() {
       {/* Commission controls */}
       <Card>
         <CardHeader title="Commission" />
+
+        {/* Pick the period first — the totals, the orders below, the PDF and the
+            payout all follow it. */}
+        <div className="mb-4 flex flex-wrap items-center gap-2 border-b border-line pb-4">
+          <span className="text-[0.66rem] font-semibold uppercase tracking-wide text-muted">Period</span>
+          <select
+            value={preset}
+            onChange={(e) => setPreset(e.target.value as PeriodPreset)}
+            className="h-10 rounded-lg border border-line bg-paper px-3 text-sm text-ink outline-none focus:border-gold"
+          >
+            {PERIODS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+          </select>
+          {preset === "custom" && (
+            <div className="flex items-center gap-1.5">
+              <input type="date" value={custom.from} onChange={(e) => setCustom({ ...custom, from: e.target.value })} className="h-10 rounded-lg border border-line bg-paper px-3 text-sm text-ink outline-none focus:border-gold" />
+              <span className="text-muted">–</span>
+              <input type="date" value={custom.to} onChange={(e) => setCustom({ ...custom, to: e.target.value })} className="h-10 rounded-lg border border-line bg-paper px-3 text-sm text-ink outline-none focus:border-gold" />
+            </div>
+          )}
+          <span className="text-xs text-muted">by delivery date</span>
+          <Button variant="secondary" onClick={downloadPDF} className="ml-auto">Download PDF</Button>
+        </div>
+
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <Info label="Eligible chicks" value={String(commissionRow?.chicks ?? 0)} />
+          <Info label="Eligible chicks" value={(commissionRow?.chicks ?? 0).toLocaleString()} />
           <Info label="Total commission" value={formatRWF(commissionRow?.amount ?? 0)} />
           <Info label="To give" value={formatRWF((commissionRow?.dueAmount ?? 0) + (commissionRow?.initiatedAmount ?? 0))} />
           <Info label="Given" value={formatRWF(commissionRow?.paidAmount ?? 0)} />
         </div>
-        <div className="mt-4 flex flex-wrap gap-2">
+        <div className="mt-4 flex flex-wrap items-center gap-2">
           {canInitiate && (
             <Button onClick={handleInitiate} disabled={due.length === 0}>
               Initiate payment
@@ -241,9 +295,13 @@ export default function DSRDetailPage() {
               Pay now
             </Button>
           )}
-          {due.length === 0 && (
+          {due.length === 0 ? (
             <span className="self-center text-xs text-ink/50">
-              No commission currently due.
+              No commission due for {rangeLabel === "All time" ? "this DSR" : rangeLabel}.
+            </span>
+          ) : (
+            <span className="self-center text-xs text-ink/60">
+              Pays <strong className="text-ink">{formatRWF(dueAmount)}</strong> across {due.length} order(s) in {rangeLabel === "All time" ? "all time" : rangeLabel}.
             </span>
           )}
         </div>
@@ -251,7 +309,7 @@ export default function DSRDetailPage() {
 
       {/* Orders */}
       <Card>
-        <CardHeader title="Orders" />
+        <CardHeader title={`Orders — ${rangeLabel}`} />
         <TableWrap>
           <thead>
             <tr>
@@ -267,10 +325,10 @@ export default function DSRDetailPage() {
             </tr>
           </thead>
           <tbody>
-            {dsrOrders.length === 0 ? (
-              <EmptyRow colSpan={9} text="No orders for this DSR yet." />
+            {periodOrders.length === 0 ? (
+              <EmptyRow colSpan={9} text={dsrOrders.length === 0 ? "No orders for this DSR yet." : "No orders in this period."} />
             ) : (
-              dsrOrders.map((o) => (
+              periodOrders.map((o) => (
                 <tr key={o.id}>
                   <Td>{formatDate(o.date)}</Td>
                   <Td>{o.name}</Td>

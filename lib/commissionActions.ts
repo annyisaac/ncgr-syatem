@@ -7,11 +7,27 @@ import { nowISO } from "./format";
 import { isCommissionEligible, orderCommission } from "./commission";
 import type { CommissionRequest, Order, Product, User } from "./types";
 
-/** Eligible orders for a DSR that have not been requested or paid yet. */
-export function dueOrdersForDSR(orders: Order[], dsrId: string): Order[] {
+/**
+ * A payout run limited to a period. `only` is the set of order ids on screen
+ * (already filtered by delivery date); `periodFrom`/`periodTo` are recorded on
+ * the request so the history says what the payment covered. Omit the whole
+ * object to pay everything outstanding, as before.
+ */
+export interface PayoutScope {
+  only?: Set<string>;
+  periodFrom?: string;
+  periodTo?: string;
+}
+
+/**
+ * Eligible orders for a DSR that have not been requested or paid yet,
+ * optionally narrowed to the period's orders (`scope.only`).
+ */
+export function dueOrdersForDSR(orders: Order[], dsrId: string, scope?: PayoutScope): Order[] {
   return orders.filter(
     (o) =>
       o.dsrId === dsrId &&
+      (!scope?.only || scope.only.has(o.id)) &&
       isCommissionEligible(o) &&
       !o.commReq &&
       !o.commPaid
@@ -25,7 +41,8 @@ function buildRequest(
   product: Product,
   actor: User,
   id: string,
-  status: CommissionRequest["status"]
+  status: CommissionRequest["status"],
+  scope?: PayoutScope
 ): CommissionRequest {
   return {
     id,
@@ -39,6 +56,8 @@ function buildRequest(
     by: actor.email,
     on: nowISO(),
     status,
+    ...(scope?.periodFrom ? { periodFrom: scope.periodFrom } : {}),
+    ...(scope?.periodTo ? { periodTo: scope.periodTo } : {}),
     ...(status !== "initiated"
       ? { decidedBy: actor.email, decidedOn: nowISO() }
       : {}),
@@ -52,11 +71,12 @@ export function initiateCommission(
   dsrName: string,
   product: Product,
   actor: User,
-  newId: () => string
+  newId: () => string,
+  scope?: PayoutScope
 ): { request: CommissionRequest; orders: Order[] } | null {
-  const due = dueOrdersForDSR(orders, dsrId);
+  const due = dueOrdersForDSR(orders, dsrId, scope);
   if (due.length === 0) return null;
-  const request = buildRequest(due, dsrId, dsrName, product, actor, newId(), "initiated");
+  const request = buildRequest(due, dsrId, dsrName, product, actor, newId(), "initiated", scope);
   const ids = new Set(due.map((o) => o.id));
   const updated = orders.map((o) =>
     ids.has(o.id) ? { ...o, commReq: true } : o
@@ -103,11 +123,12 @@ export function payCommissionNow(
   dsrName: string,
   product: Product,
   actor: User,
-  newId: () => string
+  newId: () => string,
+  scope?: PayoutScope
 ): { request: CommissionRequest; orders: Order[] } | null {
-  const due = dueOrdersForDSR(orders, dsrId);
+  const due = dueOrdersForDSR(orders, dsrId, scope);
   if (due.length === 0) return null;
-  const request = buildRequest(due, dsrId, dsrName, product, actor, newId(), "approved");
+  const request = buildRequest(due, dsrId, dsrName, product, actor, newId(), "approved", scope);
   const ids = new Set(due.map((o) => o.id));
   const updated = orders.map((o) =>
     ids.has(o.id) ? { ...o, commReq: true, commPaid: true } : o

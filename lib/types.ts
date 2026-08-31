@@ -486,6 +486,10 @@ export interface CommissionRequest {
   by: string; // who initiated
   on: string; // ISO datetime initiated
   status: CommissionStatus;
+  /** Delivery-date period this payout covered, when it was run for a selected
+   *  period rather than everything outstanding. Absent on older requests. */
+  periodFrom?: string;
+  periodTo?: string;
   decidedBy?: string;
   decidedOn?: string;
 }

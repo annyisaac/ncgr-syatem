@@ -21,7 +21,7 @@ import {
   type Route,
 } from "./types";
 import { doubleCountedAmount, type OrderIssue } from "./duplicates";
-import type { DSRCommissionRow } from "./commission";
+import { orderCommission, type DSRCommissionRow } from "./commission";
 import type { ClientRecord } from "./clients";
 import type { EventRegistration } from "./events";
 import type { TeamDetail } from "./team";
@@ -729,6 +729,61 @@ export async function commissionPDF(
 
   addSignatures(doc);
   finalizeAndSave(doc, logo, `NCGR-Commission-${rangeLabel.replace(/\s+/g, "_")}.pdf`);
+}
+
+/**
+ * One DSR's commission for a period, order by order — the voucher a manager
+ * signs when paying a payout run. `orders` are already filtered to the period
+ * and to commission-eligible ones by the caller.
+ */
+export async function dsrCommissionPDF(
+  dsr: DSR,
+  orders: Order[],
+  rangeLabel: string
+): Promise<void> {
+  const commissionOf = orderCommission;
+  const total = orders.reduce((s, o) => s + commissionOf(o), 0);
+  const given = orders.filter((o) => o.commPaid).reduce((s, o) => s + commissionOf(o), 0);
+
+  const { doc, autoTable, startY, logo } = await brandedDoc("DSR Commission Payout", [
+    `DSR: ${dsr.name}`,
+    `Zone: ${dsr.zone}`,
+    `Period (delivery dates): ${rangeLabel}`,
+    `Orders: ${orders.length}`,
+    `Total commission: ${formatRWF(total)}`,
+    `Already given: ${formatRWF(given)}  ·  To give: ${formatRWF(total - given)}`,
+  ]);
+
+  autoTable(doc, {
+    startY,
+    head: [["Delivery date", "Client", "Sector", "Product", "Chicks", "Commission", "Status"]],
+    body: orders.map((o) => [
+      formatDate(o.date),
+      o.name,
+      o.clientSector || o.sector,
+      o.product,
+      o.chicks,
+      formatRWF(commissionOf(o)),
+      o.commPaid ? "Paid" : o.commReq ? "Initiated" : "Due",
+    ]),
+    foot: [[
+      "Totals", "", "", "",
+      orders.reduce((s, o) => s + o.chicks, 0),
+      formatRWF(total),
+      "",
+    ]],
+    styles: { fontSize: 9, cellPadding: 4 },
+    headStyles: { fillColor: GOLD, textColor: INK, fontStyle: "bold" },
+    footStyles: { fillColor: [240, 238, 232], textColor: INK, fontStyle: "bold" },
+    theme: "grid",
+  });
+
+  addSignatures(doc);
+  finalizeAndSave(
+    doc,
+    logo,
+    `NCGR-Commission-${dsr.name.replace(/\s+/g, "_")}-${rangeLabel.replace(/\s+/g, "_")}.pdf`
+  );
 }
 
 // ---------------------------------------------------------------------------
