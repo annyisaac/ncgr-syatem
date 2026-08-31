@@ -691,15 +691,21 @@ export async function financeExcel(
 
 export async function commissionPDF(
   rows: DSRCommissionRow[],
-  rangeLabel: string
+  rangeLabel: string,
+  dsrs: DSR[] = []
 ): Promise<void> {
   const { doc, autoTable, startY, logo } = await brandedDoc("DSR Commission Report", [
     `Period: ${rangeLabel}`,
     `DSRs: ${rows.length}`,
   ]);
 
+  // The phone is what a payout is actually sent to, so it belongs on the sheet
+  // the payment is made from.
+  const phoneOf = new Map(dsrs.map((d) => [d.id, d.phone ?? ""]));
+
   const body = rows.map((r) => [
     r.dsrName,
+    phoneOf.get(r.dsrId) || "—",
     r.district,
     r.product,
     r.chicks,
@@ -712,10 +718,10 @@ export async function commissionPDF(
 
   autoTable(doc, {
     startY,
-    head: [["DSR", "District", "Product", "Chicks", "Commission", "To Give", "Given"]],
+    head: [["DSR", "Phone", "District", "Product", "Chicks", "Commission", "To Give", "Given"]],
     body,
     foot: [[
-      "Totals", "", "",
+      "Totals", "", "", "",
       sum((r) => r.chicks),
       sum((r) => r.amount),
       sum((r) => r.dueAmount + r.initiatedAmount),
@@ -747,6 +753,7 @@ export async function dsrCommissionPDF(
 
   const { doc, autoTable, startY, logo } = await brandedDoc("DSR Commission Payout", [
     `DSR: ${dsr.name}`,
+    `Phone: ${dsr.phone || "—"}`,
     `Zone: ${dsr.zone}`,
     `Period (delivery dates): ${rangeLabel}`,
     `Orders: ${orders.length}`,

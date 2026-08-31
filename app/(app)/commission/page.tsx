@@ -29,7 +29,7 @@ import type { CommissionRequest } from "@/lib/types";
 
 export default function CommissionPage() {
   const { user } = useAuth();
-  const { orders, commissions, upsertOrder, upsertCommission, newId } = useData();
+  const { orders, commissions, dsrs, upsertOrder, upsertCommission, newId } = useData();
   const { toast } = useToast();
 
   const [q, setQ] = useState("");
@@ -111,7 +111,7 @@ export default function CommissionPage() {
 
   async function downloadPDF() {
     if (rows.length === 0) return toast("Nothing to export.", "info");
-    await commissionPDF(rows, rangeLabel);
+    await commissionPDF(rows, rangeLabel, dsrs);
   }
 
   return (
@@ -136,6 +136,7 @@ export default function CommissionPage() {
             <thead>
               <tr>
                 <Th>DSR</Th>
+                <Th>Phone</Th>
                 <Th>District</Th>
                 <Th>Product</Th>
                 <Th className="text-right">Chicks</Th>
@@ -146,11 +147,12 @@ export default function CommissionPage() {
             </thead>
             <tbody>
               {pendingRequests.length === 0 ? (
-                <EmptyRow colSpan={7} text="No pending requests." />
+                <EmptyRow colSpan={8} text="No pending requests." />
               ) : (
                 pendingRequests.map((c) => (
                   <tr key={c.id}>
                     <Td>{c.dsrName}</Td>
+                    <Td className="text-muted">{dsrs.find((d) => d.id === c.dsrId)?.phone ?? "—"}</Td>
                     <Td>{c.district}</Td>
                     <Td>{c.product}</Td>
                     <Td className="text-right">{c.chicks.toLocaleString()}</Td>
@@ -275,7 +277,14 @@ export default function CommissionPage() {
                         {c.status}
                       </Pill>
                     </Td>
-                    <Td>{c.decidedBy ?? "—"}</Td>
+                    <Td>
+                      {c.decidedBy ?? "—"}
+                      {c.statementRef && (
+                        <span className="block text-xs text-green">
+                          auto · statement ref {c.statementRef}
+                        </span>
+                      )}
+                    </Td>
                     <Td>{c.decidedOn ? formatDate(c.decidedOn) : "—"}</Td>
                   </tr>
                 ))

@@ -91,6 +91,9 @@ export function runAutoCheck(
   // single bank credit can only ever verify one payment — the rest "collision".
   const byRef = new Map<string, number[]>();
   for (const s of statements) {
+    // Payout exports are money going OUT to DSRs — never a customer payment.
+    // They settle commission instead (see lib/commissionAuto.ts).
+    if (s.kind === "payouts") continue;
     const cur = s.currency ?? "RWF";
     for (const row of s.rows) {
       const key = cur + "|" + norm(row.ref);

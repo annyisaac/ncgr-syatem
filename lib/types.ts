@@ -492,6 +492,10 @@ export interface CommissionRequest {
   periodTo?: string;
   decidedBy?: string;
   decidedOn?: string;
+  /** Evidence when a payouts bank statement settled this request automatically:
+   *  the statement row's transaction id and the file it came from. */
+  statementRef?: string;
+  statementFile?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -523,6 +527,15 @@ export interface BankStatement {
   /** Currency of this statement's amounts. Payments only match a statement in
    *  their own currency. Defaults to RWF for statements uploaded before this. */
   currency?: Currency;
+  /**
+   * What this statement contains. "payments" (the default, and every statement
+   * uploaded before this existed) is money coming IN from customers and is the
+   * only kind customer-payment verification looks at. "payouts" is money going
+   * OUT — the DSR commission export — and is the only kind that can settle a
+   * commission request. Keeping them apart stops an incoming payment from a DSR
+   * who is also a customer from settling that DSR's own commission.
+   */
+  kind?: "payments" | "payouts";
   rows: StatementRow[];
 }
 

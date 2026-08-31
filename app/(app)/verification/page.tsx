@@ -39,6 +39,7 @@ import {
   normRef,
   type AutoOutcome,
 } from "@/lib/verification";
+import { runCommissionAutoCheck, type CommissionAutoOutcome } from "@/lib/commissionAuto";
 import { verificationPDF, verificationExcel, type ReconReportRow } from "@/lib/reports";
 import { withHistory, recomputeCustomerCredit } from "@/lib/orders";
 import { clientKey } from "@/lib/clients";
@@ -51,6 +52,7 @@ interface Staged {
   dateCol: string;
   phoneCol: string;
   currency: Currency;
+  kind: "payments" | "payouts";
 }
 
 /** A checker may enter several transaction ids separated by a dash/space/comma. */
@@ -81,7 +83,7 @@ function payMatch(o: Order): { tone: "green" | "gold" | "blue"; label: string } 
 
 export default function VerificationPage() {
   const { user } = useAuth();
-  const { orders, statements, availability, upsertStatement, removeStatement, upsertOrder, newId, reload } = useData();
+  const { orders, statements, availability, commissions, dsrs, upsertStatement, removeStatement, upsertOrder, upsertCommission, newId, reload } = useData();
   const { toast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -96,6 +98,8 @@ export default function VerificationPage() {
   const [pPage, setPPage] = useState(1);
   const [pSize, setPSize] = useState(10);
   const [outcomes, setOutcomes] = useState<AutoOutcome[]>([]);
+  const [commOutcomes, setCommOutcomes] = useState<CommissionAutoOutcome[]>([]);
+  const [showCommResults, setShowCommResults] = useState(false); // commission-settlement results modal
   const [manual, setManual] = useState<{ order: Order; payIndex: number } | null>(null);
   const [slip, setSlip] = useState<{ path: string; url: string | null } | null>(null);
   const [approveFor, setApproveFor] = useState<{ order: Order; payIndex: number } | null>(null);
@@ -329,6 +333,7 @@ export default function VerificationPage() {
         dateCol: guessDateColumn(sheet.headers),
         phoneCol: guessPhoneColumn(sheet.headers),
         currency: "RWF",
+        kind: "payments",
       });
     } catch {
       toast("Could not read that file.", "error");
@@ -339,15 +344,26 @@ export default function VerificationPage() {
 
   function addStatement() {
     if (!staged) return;
+    // Payouts are matched on phone; without that column the check would silently
+    // find nothing, so refuse the upload rather than look like it worked.
+    if (staged.kind === "payouts" && !staged.phoneCol) {
+      toast("Map the phone / receiver column — payouts are matched on the DSR's phone.", "error");
+      return;
+    }
     const allRows = buildStatementRows(staged.sheet, staged.refCol, staged.amtCol, staged.dateCol || undefined, staged.phoneCol || undefined);
     if (allRows.length === 0) {
       toast("No rows found with those columns.", "error");
       return;
     }
     // One transaction id per table: only keep transactions we don't already have
-    // (across every uploaded statement), and drop duplicates within this file too.
+    // and drop duplicates within this file too. Scoped to statements of the same
+    // kind, so an outgoing payout is never dropped for sharing a reference with
+    // an incoming customer payment.
     const existingRefs = new Set<string>();
-    for (const s of statements) for (const r of s.rows) { const n = normRef(r.ref); if (n) existingRefs.add(n); }
+    for (const s of statements) {
+      if ((s.kind ?? "payments") !== staged.kind) continue;
+      for (const r of s.rows) { const n = normRef(r.ref); if (n) existingRefs.add(n); }
+    }
     const seen = new Set<string>();
     const rows = allRows.filter((r) => {
       const n = normRef(r.ref);
@@ -371,12 +387,33 @@ export default function VerificationPage() {
       dateColumn: staged.dateCol || undefined,
       phoneColumn: staged.phoneCol || undefined,
       currency: staged.currency,
+      kind: staged.kind,
       rows,
     };
     // Single-row write — sending the whole list would delete statements another
     // checker uploaded since this tab loaded.
     void upsertStatement(stmt);
     setStaged(null);
+    const skippedNoteBase = skipped > 0 ? ` (skipped ${skipped} already in the table)` : "";
+
+    // A payouts export settles DSR commission instead of verifying customer
+    // payments — the two never mix.
+    if (stmt.kind === "payouts") {
+      const cres = runCommissionAutoCheck(commissions, dsrs, [...statements, stmt], orders, user!);
+      const beforeReq = new Map(commissions.map((c) => [c.id, c]));
+      cres.requests.filter((c) => beforeReq.get(c.id) !== c).forEach((c) => void upsertCommission(c));
+      const beforeOrd = new Map(orders.map((o) => [o.id, o]));
+      cres.orders.filter((o) => beforeOrd.get(o.id) !== o).forEach((o) => void upsertOrder(o));
+      const paid = cres.outcomes.filter((x) => x.result === "paid").length;
+      setCommOutcomes(cres.outcomes);
+      if (cres.outcomes.length > 0) setShowCommResults(true);
+      toast(
+        paid > 0
+          ? `Added ${rows.length} payout(s)${skippedNoteBase} — ${paid} commission request(s) settled.`
+          : `Added ${rows.length} payout(s)${skippedNoteBase} — nothing matched an initiated request.`
+      );
+      return;
+    }
 
     // Auto-check every unverified payment (including the ones held for Admin
     // approval) against the updated statements — anything that now matches is
@@ -735,10 +772,29 @@ export default function VerificationPage() {
           <div className="mt-4 rounded-xl border border-line bg-field/50 p-3">
             <p className="mb-2 text-sm font-medium text-ink">Map columns for “{staged.fileName}”</p>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field
+                label="What is in this file?"
+                hint={staged.kind === "payouts"
+                  ? "Money paid OUT to DSRs. Settles initiated commission requests by phone + exact amount — map the phone column below."
+                  : "Money paid IN by customers. Verifies order payments by transaction id."}
+              >
+                <Select
+                  value={staged.kind}
+                  onChange={(e) => setStaged({ ...staged, kind: e.target.value as "payments" | "payouts" })}
+                  options={[
+                    { value: "payments", label: "Customer payments (money in)" },
+                    { value: "payouts", label: "DSR commission payouts (money out)" },
+                  ]}
+                />
+              </Field>
               <Field label="Reference column"><Select value={staged.refCol} onChange={(e) => setStaged({ ...staged, refCol: e.target.value })} options={staged.sheet.headers.map((h) => ({ value: h, label: h }))} /></Field>
               <Field label="Amount column"><Select value={staged.amtCol} onChange={(e) => setStaged({ ...staged, amtCol: e.target.value })} options={staged.sheet.headers.map((h) => ({ value: h, label: h }))} /></Field>
               <Field label="Date column (optional)"><Select value={staged.dateCol} onChange={(e) => setStaged({ ...staged, dateCol: e.target.value })} options={[{ value: "", label: "— none —" }, ...staged.sheet.headers.map((h) => ({ value: h, label: h }))]} /></Field>
-              <Field label="Phone / sender column (optional)"><Select value={staged.phoneCol} onChange={(e) => setStaged({ ...staged, phoneCol: e.target.value })} options={[{ value: "", label: "— none —" }, ...staged.sheet.headers.map((h) => ({ value: h, label: h }))]} /></Field>
+              <Field
+                label={staged.kind === "payouts" ? "Phone / receiver column" : "Phone / sender column (optional)"}
+                required={staged.kind === "payouts"}
+                error={staged.kind === "payouts" && !staged.phoneCol ? "Required — payouts are matched on the DSR's phone." : undefined}
+              ><Select value={staged.phoneCol} onChange={(e) => setStaged({ ...staged, phoneCol: e.target.value })} options={[{ value: "", label: "— none —" }, ...staged.sheet.headers.map((h) => ({ value: h, label: h }))]} /></Field>
               <Field label="Currency"><Select value={staged.currency} onChange={(e) => setStaged({ ...staged, currency: e.target.value as Currency })} options={[
                 { value: "RWF", label: "RWF" }, { value: "USD", label: "USD" }, { value: "EUR", label: "EUR" },
               ]} /></Field>
@@ -1017,6 +1073,45 @@ export default function VerificationPage() {
                     <Pill tone={o.result === "verified" ? "fulfilled" : o.result === "corrected" || o.result === "review" ? "gold" : o.result === "duplicate" ? "info" : "refunded"}>{o.result}</Pill>
                   </Td>
                   <Td>{o.detail}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Modal>
+      )}
+
+
+      {/* Commission settlement results — after a payouts statement is uploaded */}
+      {showCommResults && (
+        <Modal open onClose={() => setShowCommResults(false)} title="DSR commission settlement" className="max-w-3xl">
+          <p className="mb-3 text-sm text-muted">
+            Only commission a manager already <strong className="text-ink">initiated</strong> is settled, and only on an exact
+            phone + amount match. Anything else is left for you to handle by hand.
+          </p>
+          <TableWrap>
+            <thead>
+              <tr>
+                <Th>DSR</Th>
+                <Th>Phone</Th>
+                <Th className="text-right">Amount</Th>
+                <Th>Result</Th>
+                <Th>Detail</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {commOutcomes.length === 0 ? (
+                <EmptyRow colSpan={5} text="No initiated commission requests to settle." />
+              ) : commOutcomes.map((o, i) => (
+                <tr key={i}>
+                  <Td className="font-medium">{o.dsrName}</Td>
+                  <Td>{o.phone}</Td>
+                  <Td className="text-right tabular-nums">{formatMoney(o.amount, "RWF")}</Td>
+                  <Td>
+                    <Pill tone={o.result === "paid" ? "fulfilled" : o.result === "ambiguous" ? "gold" : o.result === "missing" ? "info" : "refunded"}>
+                      {o.result === "no_phone_column" ? "no phone data" : o.result === "no_phone" ? "no DSR phone" : o.result}
+                    </Pill>
+                  </Td>
+                  <Td className="text-muted">{o.detail}</Td>
                 </tr>
               ))}
             </tbody>
