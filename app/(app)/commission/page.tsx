@@ -8,6 +8,7 @@ import { useToast } from "@/components/ui/Toast";
 import { Card, CardHeader } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Pill } from "@/components/ui/Pill";
+import { Modal } from "@/components/ui/Modal";
 import { TableWrap, Th, Td, EmptyRow } from "@/components/ui/Table";
 import { ALL_TIME, inRange, type DateRangeValue } from "@/components/ui/DateRange";
 import { SearchTimeBar } from "@/components/dashboard/DashKit";
@@ -24,13 +25,16 @@ import {
   rejectCommission,
   type PayoutScope,
 } from "@/lib/commissionActions";
+import { runCommissionAutoCheck, type CommissionAutoOutcome } from "@/lib/commissionAuto";
 import { commissionPDF } from "@/lib/reports";
 import type { CommissionRequest } from "@/lib/types";
 
 export default function CommissionPage() {
   const { user } = useAuth();
-  const { orders, commissions, dsrs, upsertOrder, upsertCommission, newId } = useData();
+  const { orders, commissions, dsrs, statements, upsertOrder, upsertCommission, newId } = useData();
   const { toast } = useToast();
+  const [commOutcomes, setCommOutcomes] = useState<CommissionAutoOutcome[]>([]);
+  const [showCommResults, setShowCommResults] = useState(false);
 
   const [q, setQ] = useState("");
   const [preset, setPreset] = useState<PeriodPreset>("all");
@@ -109,6 +113,26 @@ export default function CommissionPage() {
     toast(`Rejected commission request for ${req.dsrName}.`);
   }
 
+  /**
+   * Re-run settlement against payouts statements already uploaded. The check
+   * also runs automatically when a payouts statement is uploaded, but that only
+   * helps if the request was initiated first — this button removes that
+   * ordering trap.
+   */
+  function runSettlement() {
+    if (!statements.some((s) => s.kind === "payouts")) {
+      return toast("No payouts statement uploaded yet — add one on the Verification page.", "info");
+    }
+    const res = runCommissionAutoCheck(commissions, dsrs, statements, orders, user!);
+    const beforeReq = new Map(commissions.map((c) => [c.id, c]));
+    res.requests.filter((c) => beforeReq.get(c.id) !== c).forEach((c) => void upsertCommission(c));
+    saveChanged(res.orders);
+    const paid = res.outcomes.filter((x) => x.result === "paid").length;
+    setCommOutcomes(res.outcomes);
+    setShowCommResults(true);
+    if (paid > 0) toast(`${paid} commission request(s) settled from the statement.`);
+  }
+
   async function downloadPDF() {
     if (rows.length === 0) return toast("Nothing to export.", "info");
     await commissionPDF(rows, rangeLabel, dsrs);
@@ -120,6 +144,9 @@ export default function CommissionPage() {
         <div className="min-w-0 flex-1">
           <SearchTimeBar q={q} setQ={setQ} placeholder="Search DSR — name or district…" preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} />
         </div>
+        {isAdmin && (
+          <Button variant="secondary" onClick={runSettlement}>Run settlement check</Button>
+        )}
         <Button variant="secondary" onClick={downloadPDF}>Download PDF report</Button>
       </div>
 
@@ -292,6 +319,43 @@ export default function CommissionPage() {
           </tbody>
         </TableWrap>
       </Card>
+
+      {showCommResults && (
+        <Modal open onClose={() => setShowCommResults(false)} title="DSR commission settlement" className="max-w-3xl">
+          <p className="mb-3 text-sm text-muted">
+            Only commission a manager already <strong className="text-ink">initiated</strong> is settled, and only on an exact
+            phone + amount match against a payouts statement. Anything else is left for you to handle by hand.
+          </p>
+          <TableWrap>
+            <thead>
+              <tr>
+                <Th>DSR</Th>
+                <Th>Phone</Th>
+                <Th className="text-right">Amount</Th>
+                <Th>Result</Th>
+                <Th>Detail</Th>
+              </tr>
+            </thead>
+            <tbody>
+              {commOutcomes.length === 0 ? (
+                <EmptyRow colSpan={5} text="No initiated commission requests to settle." />
+              ) : commOutcomes.map((o, i) => (
+                <tr key={i}>
+                  <Td className="font-medium">{o.dsrName}</Td>
+                  <Td>{o.phone}</Td>
+                  <Td className="text-right tabular-nums">{formatRWF(o.amount)}</Td>
+                  <Td>
+                    <Pill tone={o.result === "paid" ? "fulfilled" : o.result === "ambiguous" ? "gold" : o.result === "missing" ? "info" : "refunded"}>
+                      {o.result === "no_phone_column" ? "no phone data" : o.result === "no_phone" ? "no DSR phone" : o.result}
+                    </Pill>
+                  </Td>
+                  <Td className="text-muted">{o.detail}</Td>
+                </tr>
+              ))}
+            </tbody>
+          </TableWrap>
+        </Modal>
+      )}
     </div>
   );
 }
